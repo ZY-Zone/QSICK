@@ -241,29 +241,6 @@ def reset_queue_files(root: Path | str = ROOT_NAME) -> dict[str, int]:
     return removed
 
 
-def reset_session_dll_dir(root: Path | str = ROOT_NAME) -> None:
-    """Empty the DLL scratch directory, called once at QSICK startup.
-
-    Copies from a previous run serve no purpose: each launch writes its own. Leaving them would grow the
-    tree by one DLL per launch forever, and a stale copy next to a stale config is exactly the kind of
-    leftover that later gets mistaken for the live one.
-
-    A copy still mapped into a running QQ cannot be deleted on Windows; those are skipped rather than
-    treated as an error, since the point is housekeeping, not enforcement.
-    """
-    directory = session_dll_dir(root)
-    if not directory.is_dir():
-        return
-    for entry in directory.iterdir():
-        try:
-            if entry.is_dir():
-                shutil.rmtree(entry, ignore_errors=True)
-            else:
-                entry.unlink()
-        except OSError:
-            continue
-
-
 def read_session_config(tmp_id: str, root: Path | str = ROOT_NAME) -> dict[str, Any]:
     """Read one session's config, or an empty dict if it cannot be read.
 
