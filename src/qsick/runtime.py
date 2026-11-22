@@ -445,6 +445,14 @@ class Runtime:
         try:
             from . import headless as _headless
 
+            # The queues and event streams are transport: nothing in them outlives the process that wrote them.
+            # Left in place, the event streams are replayed from offset zero (every message stored again) and an
+            # unanswered task is retried against a session that has since restarted.
+            cleared = await asyncio.to_thread(_headless.reset_queue_files, self.config.headless_root)
+            if cleared.get("files") or cleared.get("dirs"):
+                log.info("cleared the queue and event files", files=cleared.get("files", 0),
+                         dirs=cleared.get("dirs", 0))
+
             _headless.reset_port_override()
             # `Pipe/dll/` is deliberately NOT cleared here.
             #

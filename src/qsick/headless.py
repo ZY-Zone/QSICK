@@ -172,6 +172,75 @@ def session_dll_dir(root: Path | str = ROOT_NAME) -> Path:
     return Path(root) / PIPE_INSTANCE_ID / "dll"
 
 
+#: Files that hold queued work rather than session identity. Cleared on every start.
+#:
+#: Deliberately a named list and not "everything except qsick_pipe.json": a session directory also holds the
+#: DLL copy and is the place the operator's port lives, and a broad delete would take those with it.
+QUEUE_FILES = ("tasks.jsonl", "results.jsonl", "events.jsonl")
+#: Directories the queue splits into (login.info, group files) plus the claim markers.
+QUEUE_DIRS = ("claims", "q-login", "q-groupfile")
+
+
+def reset_queue_files(root: Path | str = ROOT_NAME) -> dict[str, int]:
+    """Empty the action queues and event streams. Called once, before anything starts.
+
+    Why this has to happen: the event streams are *ingested*, and the reader starts from offset zero on every run.
+    An `events.jsonl` left from the previous run is therefore replayed -- every message in it is written to the
+    store again as if it had just arrived. The queue files have the same problem in a worse form: a task written
+    but never answered is retried against a session that has since restarted, and its claim file survives as a
+    marker saying "someone is handling this".
+
+    Both kinds of file are pure transport: they hold nothing that outlives the process that wrote them. The
+    session's own `qsick_pipe.json` and the DLL copy are **not** touched -- those are the session's identity.
+
+    Returns what was removed, per kind, so a caller can log it rather than guess.
+    """
+    removed = {"files": 0, "dirs": 0}
+    base = Path(root) / PIPE_INSTANCE_ID
+
+    def clear(directory: Path) -> None:
+        for name in QUEUE_FILES:
+            target = directory / name
+            try:
+                if target.is_file():
+                    target.unlink()
+                    removed["files"] += 1
+            except OSError:
+                continue
+        # Rolled event streams: `events.jsonl.1`, `.2` ...
+        try:
+            for extra in directory.glob("events.jsonl.*"):
+                try:
+                    if extra.is_file():
+                        extra.unlink()
+                        removed["files"] += 1
+                except OSError:
+                    continue
+        except OSError:
+            pass
+        for name in QUEUE_DIRS:
+            target = directory / name
+            try:
+                if target.is_dir():
+                    shutil.rmtree(target, ignore_errors=True)
+                    removed["dirs"] += 1
+            except OSError:
+                continue
+
+    # Per session.
+    session_root = session_dll_dir(root)
+    if session_root.is_dir():
+        for entry in session_root.iterdir():
+            if entry.is_dir():
+                clear(entry)
+    # The pre-migration location, which every session used to share. Left behind, its `events.jsonl` is still
+    # read as a legacy stream -- and replayed into the stores on start.
+    own = base / "owndata"
+    if own.is_dir():
+        clear(own)
+    return removed
+
+
 def reset_session_dll_dir(root: Path | str = ROOT_NAME) -> None:
     """Empty the DLL scratch directory, called once at QSICK startup.
 
