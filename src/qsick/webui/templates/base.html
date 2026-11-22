@@ -55,15 +55,8 @@
   </nav>
 
   <div class="right">
-    {# 被踢和普通"未登录"必须长得不一样：前者需要用户处理（重新登录/检查安全），
-       后者只是还没登录。以前两者都渲染成"未登录"，掉线原因无处可寻。 #}
-    <span class="pill {{ 'is-kicked' if info.kicked and not info.logged_in else '' }}"
-          title="{{ (info.kick_reason or '被 QQ 强制下线') if info.kicked and not info.logged_in else 'OneBot 账号状态' }}">
-      <span class="dot {{ 'ok' if info.logged_in else ('err' if info.kicked else 'off') }}"></span>
-      {% if info.logged_in %}<strong>{{ info.nickname or info.uin }}</strong><code class="faint">{{ info.uin }}</code>
-      {% elif info.kicked %}<strong>已被踢下线</strong>{% if info.kick_reason %}<code class="faint">{{ info.kick_reason }}</code>{% endif %}
-      {% else %}<strong>未登录</strong>{% endif %}
-    </span>
+    {# 账号状态控件已移除：它重复了页脚和账户管理页已有的信息，而右上角本该只放操作。
+       被踢下线的原因仍可见——账户管理页每行都有，页脚也保留账号。 #}
     {% if info.webui_auth %}
       <form method="post" action="/logout" style="margin:0">
         <button class="iconbtn" type="submit" title="退出登录" aria-label="退出登录">
@@ -83,6 +76,10 @@
        比排在其后有用得多。未登录时不显示 uin，只留一句状态，避免空白让人以为界面坏了。 #}
     {% if info.logged_in and info.uin %}
     <span class="foot-account">账号 <code>{{ info.uin }}</code>{% if info.nickname %} · {{ info.nickname }}{% endif %}</span>
+    {% elif info.kicked %}
+    {# "被踢"和"未登录"必须能分辨：前者要处理（重新登录/查安全策略），后者只是还没登录。
+       顶栏那个状态控件删掉后，这里是唯一常驻的位置，原因也要跟着过来。 #}
+    <span class="foot-account is-kicked">已被踢下线{% if info.kick_reason %} · {{ info.kick_reason }}{% endif %}</span>
     {% else %}
     <span class="foot-account faint">未登录</span>
     {% endif %}

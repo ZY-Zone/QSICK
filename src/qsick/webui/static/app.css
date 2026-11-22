@@ -88,6 +88,9 @@ code, pre, .mono { font-family: var(--mono); }
 /* 被踢：红色圆点 + 红色描边，和"未登录"（灰）区分开。 */
 .dot.err { background: var(--err); }
 .pill.is-kicked { border-color: #fecaca; background: #fff1f2; color: #b42318; }
+/* 被踢状态在页脚也要看得出来：顶栏那个状态控件删掉后，这里是唯一常驻的位置，
+   而红色正是需要处理与只是还没登录的区别。 */
+.foot-account.is-kicked { color: #b42318; font-weight: 600; }
 
 .iconbtn {
   display: grid; place-items: center; width: 32px; height: 32px;

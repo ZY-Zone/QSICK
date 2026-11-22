@@ -144,8 +144,12 @@ def test_a_normal_login_does_not_look_kicked():
     assert transport._login.kick_reason == ""
 
 
-def test_the_header_shows_the_kick_rather_than_a_bare_logged_out():
-    """顶栏必须把"被踢"和"未登录"区分开，并给出原因。"""
+def test_the_footer_shows_the_kick_rather_than_a_bare_logged_out():
+    """页脚必须把"被踢"和"未登录"区分开，并给出原因。
+
+    顶栏那个账号状态控件已经按操作者的要求删掉（它重复了页脚和账户管理页），所以被踢状态现在由页脚承载。
+    这个区分本身必须留着：被踢需要处理（重新登录/检查安全策略），未登录只是还没登录。
+    """
     from jinja2 import Environment, FileSystemLoader, select_autoescape
 
     env = Environment(loader=FileSystemLoader(str(ROOT / "src" / "qsick" / "webui" / "templates")),
@@ -159,8 +163,11 @@ def test_the_header_shows_the_kick_rather_than_a_bare_logged_out():
                                        kick_reason="登录被安全策略强制下线"), page="")
     assert "已被踢下线" in kicked
     assert "登录被安全策略强制下线" in kicked
-    assert "is-kicked" in kicked and "dot err" in kicked
+    assert "is-kicked" in kicked
 
     plain = template.render(info=dict(base_info, kicked=False, kick_reason=""), page="")
     assert "未登录" in plain and "已被踢下线" not in plain
     assert "is-kicked" not in plain
+
+    # The old top-bar pill is gone; nothing may put it back.
+    assert 'class="pill' not in kicked and 'class="pill' not in plain
