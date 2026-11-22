@@ -1130,6 +1130,7 @@ class Runtime:
                 self.instances.refresh_accounts()
                 log.info("account reported by its session", account=account)
                 await self.sync_account_network(reason="session state link")
+        self.publish_account_ports()
         await self.sync_account_network(reason="session state")
 
     def _known_accounts(self) -> set[str]:
@@ -1140,6 +1141,39 @@ class Runtime:
             if account and account != "0" and not link.state.closing:
                 found.add(account)
         return found
+
+    def publish_account_ports(self) -> None:
+        """Tell the transport which session port serves which account.
+
+        Two sources, both already in memory: the session list (port per `tmp_id`) and each session's state link
+        (account per `tmp_id`). Neither costs a request, which is the point -- the transport used to resolve this
+        by asking the session itself, and a session that is busy serving a send answers "not running".
+        """
+        publish = getattr(self.transport, "set_account_ports", None)
+        if publish is None:
+            return
+        ports: dict[str, int] = {}
+        for item in self._session_list:
+            tmp_id = str(item.get("tmp_id") or "")
+            port = int(item.get("nowport") or 0)
+            if not tmp_id or port <= 0:
+                continue
+            link = self._links.get(tmp_id)
+            state = getattr(link, "state", None)
+            uin = str(getattr(state, "uin", "") or "").strip()
+            # Only a session that says it is logged in and serving. A stopped one keeps its last uin, and
+            # publishing that would point actions at a port nothing is listening on.
+            if not uin or uin == "0":
+                continue
+            if not (getattr(state, "connected", False) and getattr(state, "logged_in", False)):
+                continue
+            if getattr(state, "closing", False):
+                continue
+            ports[uin] = port
+        try:
+            publish(ports)
+        except Exception as exc:  # noqa: BLE001 - a bad table must not stop anything else
+            log.debug("could not publish the account->port table", error=str(exc))
 
     async def sync_session_links(self) -> None:
         """Match the set of links to the set of sessions on disk.
@@ -1170,6 +1204,7 @@ class Runtime:
         for tmp_id in list(self._links):
             if tmp_id not in wanted:
                 await self._links.pop(tmp_id).stop()
+        self.publish_account_ports()
 
         for tmp_id, (port, token) in wanted.items():
             link = self._links.get(tmp_id)

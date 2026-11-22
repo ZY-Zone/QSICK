@@ -43,6 +43,8 @@ class HeadlessTransport(Transport):
         self._host_root = Path(host_root).resolve() if host_root else None
         # 账号 → (port, monotonic 时间)。见 `_pipe_session_port`。
         self._pipe_ports: dict[str, tuple[int | None, float]] = {}
+        #: account -> session port, published by the runtime from its own state. Consulted before any probe.
+        self._account_ports: dict[str, int] = {}
 
     @property
     def login(self) -> LoginState:
@@ -206,7 +208,20 @@ class HeadlessTransport(Transport):
                 return name
         raise ValueError(f"unknown instance {wanted!r}")
 
-    def _pipe_session_port(self, account: str) -> int | None:
+    def set_account_ports(self, mapping: dict[str, int]) -> None:
+        """Publish which session port serves which account.
+
+        The runtime owns this knowledge: the session list it polls every three seconds and each session's own
+        state link both report the account. Handing it over means resolving an action's destination is a dict
+        lookup instead of a request to the session -- which matters because the DLL serves one connection at a
+        time, so a probe during a send finds the session "not running".
+        """
+        clean = {str(uin): int(port) for uin, port in (mapping or {}).items()
+                 if str(uin).strip() and int(port or 0) > 0}
+        if clean != self._account_ports:
+            self._account_ports = clean
+
+    def _pipe_session_port(self, account: str, *, recheck: bool = False) -> int | None:
         """Find the HTTP port of the pipe session that owns `account`.
 
         A pipe instance is one `Pipe/` client launched several times; each launch is a **session** with its own
@@ -226,6 +241,16 @@ class HeadlessTransport(Transport):
         wanted = str(account or "").strip()
 
         now = time.monotonic()
+        if wanted and not recheck:
+            # The runtime already knows which session serves which account -- its three-second poll and the
+            # sessions' own state links both carry it. Answering from that table is the whole point of having it:
+            # asking the session means putting a request on the very endpoint that a send may currently be
+            # occupying, because the DLL serves one connection at a time. Measured: during a 17.9 s image upload,
+            # twelve consecutive `login.info` probes all answered "not running".
+            known = self._account_ports.get(wanted)
+            if known:
+                self._pipe_ports[wanted] = (known, now)
+                return known
         cached = self._pipe_ports.get(wanted)
         # Kept for two minutes on purpose. Answering costs one full `login.info` round trip through the session's
         # task queue -- measured at 2.3 s, and that queue is serial -- so a short TTL made every action pay it
@@ -326,7 +351,11 @@ class HeadlessTransport(Transport):
             # that window is addressed at a port nothing listens on any more, which surfaces as connection
             # refused rather than as anything that names the cause. Drop the cached answer and resolve again.
             account = str(body.get("account") or "")
-            if not isinstance(exc, urllib.error.HTTPError) and self._pipe_ports.pop(account, None):
+            stale = self._pipe_ports.pop(account, None)
+            # Drop the published answer too: it is what produced the stale port, so keeping it would make the
+            # retry repeat the same mistake. With it gone the retry falls through to a real probe.
+            published = self._account_ports.pop(account, None) is not None
+            if not isinstance(exc, urllib.error.HTTPError) and (stale or published):
                 return self._send_once(body, timeout)
             raise
 
