@@ -122,3 +122,27 @@ class TestPerAccountStillHolds:
                             "expired_time": now + 3600})
         await instance.refresh(ACCOUNT)
         assert instance.cached("group", "999") is None, "别的账号不该沾到这份 token"
+
+
+class TestForgetting:
+    async def test_forget_makes_the_next_get_fetch_again(self):
+        now = int(time.time())
+        instance = manager({"private_rkey": "&rkey=P", "group_rkey": "&rkey=G",
+                            "expired_time": now + 3600})
+        await instance.refresh(ACCOUNT)
+        assert instance.cached("group", ACCOUNT) == "G"
+
+        instance.forget(ACCOUNT)
+        assert instance.cached("group", ACCOUNT) is None, "被拒绝过的 token 不能继续留在缓存里"
+
+        fetched = await instance.get("group", ACCOUNT)
+        assert fetched == "G"
+
+    async def test_forget_only_touches_the_account_named(self):
+        now = int(time.time())
+        instance = manager({"private_rkey": "&rkey=P", "group_rkey": "&rkey=G",
+                            "expired_time": now + 3600})
+        await instance.refresh(ACCOUNT)
+        await instance.refresh("999")
+        instance.forget(ACCOUNT)
+        assert instance.cached("group", "999") == "G"

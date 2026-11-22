@@ -30,6 +30,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .. import log as logmod
 
 log = logmod.get_logger("WebUI")
+from .. import downloads
+from ..headless import REPO_ROOT as _QSICK_ROOT
 from ..headless import HeadlessManager
 from .. import network_profiles as netprofiles
 from ..market import MarketClient, MarketError, download_archive, install_archive
@@ -1052,7 +1054,9 @@ def create_app(runtime: "Runtime") -> FastAPI:
         return moment.strftime("%Y-%m-%d %H:%M:%S")
 
     #: Element types whose content can be fetched on demand. `face` is QQ's sticker element.
-    _MEDIA_ELEMENT_TYPES = ("image", "file", "video", "face", "mface", "record")
+    # `face` is deliberately absent: it is QQ's built-in emoji, with no media behind it, so a button for it
+    # could only answer "nothing to download". `mface` is an animated sticker and does carry a file id.
+    _MEDIA_ELEMENT_TYPES = ("image", "file", "video", "mface", "record")
 
     async def _message_page(request: Request, q: str, page: int, limit: int, account: str = "") -> dict[str, Any]:
         """The cache, straight from the store the cache writes to.
@@ -1106,52 +1110,19 @@ def create_app(runtime: "Runtime") -> FastAPI:
         attachments: dict[Any, list[dict[str, Any]]] = {}
         for item in items:
             links = []
-            for the_element in getattr(item, "elements", []) or []:
+            for index, the_element in enumerate(getattr(item, "elements", []) or []):
                 kind = str(getattr(the_element, "type", "") or "")
                 if kind not in _MEDIA_ELEMENT_TYPES:
                     continue
                 data = getattr(the_element, "data", {}) or {}
                 name = str(data.get("file_name") or data.get("name") or "")
-                href = ""
-                stored = data.get("url")
-                if isinstance(stored, str) and stored.startswith(("http://", "https://")) and "rkey=" in stored:
-                    href = stored
-                elif kind in ("image", "mface"):
-                    try:
-                        href = await runtime.media.url_for(
-                            the_element,
-                            scope="group" if item.is_group else "private",
-                            account=str(getattr(item, "account", "") or ""),
-                        ) or ""
-                    except Exception:  # noqa: BLE001 - a missing link hides the button, it does not fail the page
-                        href = ""
-                elif kind == "file" and item.is_group:
-                    # A group file is not reachable by rkey: OIDB 0x6d6_2 answers with a plain HTTPS address, which
-                    # was measured serving the bytes. The id is the element's `file_id`, or its `file` field when
-                    # the event came through the OneBot normalisation -- both carry QQ's fileUuid. An older decimal
-                    # id is refused by the server as a bad file id, and then no button is shown.
-                    file_id = str(data.get("file_id") or data.get("file") or "")
-                    if file_id:
-                        try:
-                            answer = await runtime.invoke("get_group_file_url", {
-                                "group_id": int(item.chat_id),
-                                "file_id": file_id,
-                                # The name the message showed, so a download keeps it.
-                                "file_name": name,
-                                "account": str(getattr(item, "account", "") or ""),
-                            })
-                            payload = answer.get("data") if isinstance(answer, dict) else None
-                            if isinstance(payload, dict):
-                                candidate = str(payload.get("url") or "")
-                                if candidate.startswith(("http://", "https://")):
-                                    href = candidate
-                        except Exception:  # noqa: BLE001 - same rule as above
-                            href = ""
-                if not href:
-                    # Nothing mintable: no button is honest, a button that answers 502 is not.
+                # The route does the fetching, so nothing has to be resolved while the page renders. A record whose
+                # token cannot be had at this moment therefore still gets a button, and the click reports the real
+                # reason instead of the link having quietly disappeared.
+                if kind == "file" and not item.is_group:
                     continue
                 links.append({
-                    "href": href,
+                    "href": f"/messages/media/{item.message_id}/{index}",
                     "label": f"下载{'图片' if kind == 'image' else '文件' if kind == 'file' else kind}",
                     "title": name or kind,
                 })
@@ -2041,6 +2012,7 @@ def create_app(runtime: "Runtime") -> FastAPI:
             return RedirectResponse(stored_url)
 
         kind = str(getattr(element, "type", "") or "").lower()
+        remote = ""
 
         # A group file is not reachable by rkey: its content comes from OIDB 0x6d6_2, which `get_group_file_url`
         # wraps. Without this branch a file element fell through to "nothing to download".
@@ -2063,22 +2035,96 @@ def create_app(runtime: "Runtime") -> FastAPI:
             if isinstance(payload, dict):
                 url = payload.get("url") or payload.get("download_url")
             if isinstance(url, str) and url.startswith(("http://", "https://")):
-                return RedirectResponse(url)
-            message = (answer.get("message") if isinstance(answer, dict) else "") or "no URL returned"
-            return PlainTextResponse(f"the group file URL was refused: {message}", status_code=502)
+                remote = url
+            else:
+                message = (answer.get("message") if isinstance(answer, dict) else "") or "no URL returned"
+                if "does not match any active session" in message:
+                    # The record belongs to an account that is not logged in, so no session can ask for its file.
+                    return PlainTextResponse(
+                        f"download failed: this message was received by account "
+                        f"{str(getattr(target, 'account', '') or '')}, which is not running. "
+                        f"Start that session and try again.", status_code=409)
+                return PlainTextResponse(f"the group file URL was refused: {message}", status_code=502)
 
-        if kind == "image" or kind == "mface":
-            scope = "group" if target.is_group else "private"
-            try:
-                built = await runtime.media.url_for(element, scope=scope,
-                                                    account=str(getattr(target, "account", "") or ""))
-            except Exception as exc:  # noqa: BLE001
-                return PlainTextResponse(f"could not build the URL: {exc}", status_code=502)
-            if built:
-                return RedirectResponse(built)
-        if stored_usable:
-            return RedirectResponse(stored_url)
-        return PlainTextResponse("this element has nothing to download", status_code=404)
+        elif kind == "image" or kind == "mface":
+            # Two shapes arrive with an image, and they are not interchangeable:
+            #
+            #   /gchatpic_new/{uin}/{group}-{...}-{md5}/...   self-contained, fetched with no token at all
+            #   /download?appid=..&fileid=..&spec=0            carries no token, must be given an rkey
+            #
+            # Measured: the first answers 200 and the bytes; the second answers `invalid rkey` until one is
+            # appended. Preferring the first removes the token from the path entirely -- and with it the whole class
+            # of failures where the token belonged to an account that could not see the message.
+            raw_url = str(data.get("url") or "")
+            if raw_url.startswith("/gchatpic_new/"):
+                remote = "https://gchat.qpic.cn" + raw_url
+            else:
+                scope = "group" if target.is_group else "private"
+                try:
+                    remote = await runtime.media.url_for(element, scope=scope,
+                                                        account=str(getattr(target, "account", "") or ""))
+                except Exception as exc:  # noqa: BLE001
+                    return PlainTextResponse(f"could not build the URL: {exc}", status_code=502)
+                if not remote:
+                    remote = stored_url if stored_usable else ""
+        else:
+            remote = stored_url if stored_usable else ""
+
+        if not remote:
+            return PlainTextResponse("this element has nothing to download", status_code=404)
+
+        # Fetch it here and hand over the local file. The remote host refuses the browser's Referer, and this is
+        # where that header stops being the browser's to send.
+        directory = downloads.export_dir(_QSICK_ROOT)
+        name = downloads.name_for(wanted, index, str(data.get("file_name") or data.get("name") or ""), remote)
+        account = str(getattr(target, "account", "") or "")
+
+        # One retry at most, and only when a genuinely different token came back.
+        #
+        # The provider serves a cached rkey: four requests in a row returned the same value, so retrying the same
+        # moment cannot help and only looks like flakiness. What does help is a token from an account that can see
+        # this message -- and whether one exists is not ours to decide.
+        saved = await downloads.save_remote(remote, directory, name)
+        if not saved.get("ok") and kind in ("image", "mface"):
+            refusal = str(saved.get("error") or "")
+            if "invalid rkey" in refusal or "invalid url" in refusal or "empty body" in refusal:
+                try:
+                    runtime.rkey.forget(account)
+                    rebuilt = await runtime.media.url_for(
+                        element, scope="group" if target.is_group else "private", account=account)
+                except Exception:  # noqa: BLE001 - the first error is the one worth reporting
+                    rebuilt = ""
+                # A different token is worth one more request; the same one would answer the same way.
+                if rebuilt and rebuilt != remote:
+                    saved = await downloads.save_remote(rebuilt, directory, name)
+
+        if not saved.get("ok"):
+            detail = str(saved.get("error") or "")
+            if "invalid fileid" in detail:
+                return PlainTextResponse(
+                    "download failed: the remote host says this file id is not ours "
+                    "(the rkey belongs to an account that cannot see this message). "
+                    f"Upstream said: {detail}", status_code=502)
+            return PlainTextResponse(f"download failed: {detail}", status_code=502)
+
+        logmod.get_logger("WebUI.Messages").debug(
+            "downloaded for the cache page", message_id=wanted, name=name, size=saved.get("size"))
+        return RedirectResponse(f"/downloads/{quote(name)}")
+
+    @app.get("/downloads/{name:path}")
+    async def downloads_file(name: str, request: Request) -> Any:
+        """Serve one file from the download directory, and nothing outside it."""
+        denied = guard(request)
+        if denied:
+            return denied
+        directory = downloads.export_dir(_QSICK_ROOT)
+        target = downloads.resolve_under(directory, name)
+        if target is None:
+            return PlainTextResponse("no such download", status_code=404)
+        if not target.is_file():
+            return PlainTextResponse("no such download", status_code=404)
+        # `filename` sets Content-Disposition, so the browser saves it under the name the element carried.
+        return FileResponse(target, filename=target.name)
 
     @app.get("/messages", response_class=HTMLResponse)
     async def messages_page(request: Request, q: str = "", page: int = 1, account: str = "") -> HTMLResponse:

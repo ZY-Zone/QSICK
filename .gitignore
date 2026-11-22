@@ -222,3 +222,6 @@ tools/export_actions.py
 tools/login_qrcode.py
 tools/regression_actions.py
 tools/update_action_wire_status.py
+
+# Files the WebUI downloaded for the message cache page.
+downloads/

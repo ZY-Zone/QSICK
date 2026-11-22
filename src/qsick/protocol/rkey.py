@@ -86,6 +86,16 @@ class RKeyManager:
                 self._static[scope] = value.strip()
         self._last_error = ""
 
+    def forget(self, account: str = "") -> None:
+        """Drop this account's cached tokens, so the next `get` fetches instead of handing back a stale one.
+
+        A token can be cached and still be refused: the provider occasionally answers with one the media host
+        rejects, and the cache cannot tell that apart from a good token until somebody uses it. The caller that was
+        just refused is the only one that knows, so it is the one that asks for the refresh.
+        """
+        self._cache.pop(str(account or ""), None)
+        self._last_error = ""
+
     def cached(self, scope: str, account: str = "") -> str | None:
         entry = self._cache.get(str(account or ""), {}).get(scope)
         if entry and not entry.expired(skew=self._skew):
