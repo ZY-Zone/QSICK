@@ -59,14 +59,14 @@ class TestIngress:
         response = client.post("/message", json=payload())
         assert response.status_code == 200
         assert response.json()["ok"] is True
-        stored = runtime.store.recent(limit=5)
+        stored = runtime.cache_store.recent(limit=5)
         assert [item.message_id for item in stored] == [7710930000000000001]
 
     def test_a_repeat_updates_instead_of_duplicating(self, runtime):
         client = TestClient(create_app(runtime))
         client.post("/message", json=payload())
         client.post("/message", json=payload(elements=[{"type": "text", "data": {"text": "edited"}}]))
-        stored = runtime.store.recent(limit=10)
+        stored = runtime.cache_store.recent(limit=10)
         assert len(stored) == 1, "同一条消息的副本必须覆盖，而不是新增一行"
         assert "edited" in stored[0].text
 
@@ -97,109 +97,49 @@ class TestIngress:
 
 
 class TestFanOutCopy:
-    async def test_the_copy_is_skipped_when_the_ingress_is_off(self, runtime, monkeypatch):
-        # It must not even be attempted: an unreachable port per event would be a timeout per event.
-        sent: list[str] = []
-
-        class _Client:
-            def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
-                pass
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):  # noqa: ANN002
-                return False
-
-            async def post(self, url, **kwargs):  # noqa: ANN003
-                sent.append(url)
-
-        import httpx
-
-        monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    async def test_the_copy_is_skipped_when_disabled(self, runtime):
+        # Nothing is attempted when the cache is switched off, so a disabled cache cannot fill up.
         runtime.config.message_cache.enabled = False
         await runtime._feed_cache({"post_type": "message", "message_type": "group",
                                    "self_id": ACCOUNT, "user_id": 1, "group_id": GROUP,
-                                   "message_id": 1, "message": []})
-        assert sent == []
+                                   "message_id": 777, "message": []})
+        assert runtime.cache_store.recent(limit=5) == []
 
-    async def test_a_message_is_copied_when_the_ingress_is_on(self, runtime, monkeypatch):
-        sent: list[dict] = []
-
-        class _Client:
-            def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
-                pass
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):  # noqa: ANN002
-                return False
-
-            async def post(self, url, **kwargs):  # noqa: ANN003
-                sent.append({"url": url, "json": kwargs.get("json")})
-                return None
-
-        import httpx
-
-        monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    async def test_a_message_is_recorded(self, runtime):
         runtime.config.message_cache.enabled = True
-        runtime.config.message_cache.port = 7531
-        runtime._cache_started = True
         await runtime._feed_cache({"post_type": "message", "message_type": "group",
                                    "self_id": ACCOUNT, "user_id": 2208948865, "group_id": GROUP,
-                                   "message_id": 42, "message": [{"type": "text", "data": {"text": "hi"}}],
+                                   "message_id": 42, "message_seq": 1, "time": 1795340000,
+                                   "message": [{"type": "text", "data": {"text": "hi"}}],
                                    "sender": {"uin": 2208948865, "nickname": "A"}})
-        assert len(sent) == 1
-        assert sent[0]["url"].endswith(":7531/message"), sent[0]["url"]
-        assert sent[0]["json"]["message_id"] == 42
-        assert sent[0]["json"]["chat"] == {"type": "group", "id": GROUP}
+        stored = runtime.cache_store.recent(limit=5)
+        assert [item.message_id for item in stored] == [42], "转发的事件必须自己落到缓存库里"
+        assert stored[0].account == ACCOUNT
+        assert stored[0].is_group
 
-    async def test_a_dead_ingress_does_not_raise(self, runtime, monkeypatch):
-        class _Boom:
-            def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
-                pass
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):  # noqa: ANN002
-                return False
-
-            async def post(self, url, **kwargs):  # noqa: ANN003
-                raise OSError("connection refused")
-
-        import httpx
-
-        monkeypatch.setattr(httpx, "AsyncClient", _Boom)
+    async def test_a_repeat_does_not_duplicate(self, runtime):
         runtime.config.message_cache.enabled = True
-        runtime._cache_started = True
-        # The whole point: a cache that is down must not take the event down with it.
-        await runtime._feed_cache({"post_type": "message", "message_type": "group",
-                                   "self_id": ACCOUNT, "user_id": 1, "group_id": GROUP,
-                                   "message_id": 1, "message": []})
+        event = {"post_type": "message", "message_type": "group",
+                 "self_id": ACCOUNT, "user_id": 2208948865, "group_id": GROUP,
+                 "message_id": 43, "message": [{"type": "text", "data": {"text": "one"}}],
+                 "sender": {"uin": 2208948865}}
+        await runtime._feed_cache(event)
+        event["message"] = [{"type": "text", "data": {"text": "two"}}]
+        await runtime._feed_cache(event)
+        stored = runtime.cache_store.recent(limit=10)
+        assert len(stored) == 1
+        assert "two" in stored[0].text
 
-    async def test_non_message_events_are_not_copied(self, runtime, monkeypatch):
-        sent: list[str] = []
-
-        class _Client:
-            def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
-                pass
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):  # noqa: ANN002
-                return False
-
-            async def post(self, url, **kwargs):  # noqa: ANN003
-                sent.append(url)
-
-        import httpx
-
-        monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    async def test_non_message_events_are_not_recorded(self, runtime):
         runtime.config.message_cache.enabled = True
         for event in ({"post_type": "meta_event"}, {"post_type": "notice"},
-                      {"post_type": "request"}, {"post_type": "message_sent_other"}):
+                      {"post_type": "request"}):
             await runtime._feed_cache(event)
-        assert sent == []
+        assert runtime.cache_store.recent(limit=5) == []
+
+    async def test_a_message_without_an_id_is_ignored(self, runtime):
+        runtime.config.message_cache.enabled = True
+        await runtime._feed_cache({"post_type": "message", "message_type": "group",
+                                   "self_id": ACCOUNT, "user_id": 1, "group_id": GROUP,
+                                   "message_id": 0, "message": []})
+        assert runtime.cache_store.recent(limit=5) == []

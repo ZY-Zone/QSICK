@@ -163,7 +163,9 @@ async def test_messages_search_and_json(runtime: Runtime):
         sender_name="tester",
         elements=normalize_all([{"type": "text", "data": {"text": "needle in cache"}}]),
     )
-    runtime.store.put(message)
+    # The page reads the cache store: the cache records forwarded messages itself and does not depend on
+    # the per-account instance stores.
+    runtime.cache_store.put(message)
     async with client(runtime) as web:
         page = await web.get("/messages", params={"q": "needle"})
         assert page.status_code == 200 and "needle in cache" in page.text

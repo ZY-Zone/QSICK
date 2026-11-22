@@ -237,6 +237,10 @@ class Runtime:
         # ``runtime.store``，两边逐渐分叉——读到的永远是空的。共享同一个对象
         # 之后，"主实例的库"就只是 C0 那个库的别名，不存在第二份真相。
         self.store: MessageStore = self.instances.instance(netprofiles.DEFAULT_INSTANCE).store
+        # The message cache's own database. Separate from the per-account stores on purpose: the cache is
+        # fed by forwarding and is meant to be readable whether or not any session is running, so its
+        # records must not live somewhere that only exists once an instance context does.
+        self.cache_store: MessageStore = create_store(self.config)
         self.registry: ActionRegistry = action_mod.build_registry()
         self.hub = EventHub()
         self.plugins = PluginHost(
@@ -1712,10 +1716,7 @@ class Runtime:
 
         Never raises and never blocks the fan-out: a cache that is down is a missing copy, not a lost event.
         """
-        cache_config = self.config.message_cache
-        if not cache_config.enabled or not self._cache_started:
-            return
-        if int(cache_config.port or 0) <= 0:
+        if not self.config.message_cache.enabled:
             return
         kind = str(event.get("post_type") or "")
         if kind not in ("message", "message_sent"):
@@ -1736,11 +1737,10 @@ class Runtime:
             })
             if not message.message_id:
                 return
-            import httpx
-
-            url = f"http://{cache_config.host or '127.0.0.1'}:{int(cache_config.port)}/message"
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                await client.post(url, json=message.to_dict())
+            # Written straight into the cache's own store. It used to be POSTed to the port, which made the
+            # record depend on a listener: no listener, no record. The port remains as an ingress for producers
+            # outside this process; QSICK's own events do not need to go through it.
+            await asyncio.to_thread(self.cache_store.put, message)
         except Exception as exc:  # noqa: BLE001 - the copy is best effort by definition
             log.debug("message cache copy failed", error=str(exc))
 

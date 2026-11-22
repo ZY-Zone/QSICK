@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 import math
+from datetime import datetime, timedelta, timezone
 import os
 import re
 import secrets
@@ -1037,21 +1038,98 @@ def create_app(runtime: "Runtime") -> FastAPI:
         applied = await runtime.apply_network()
         return JSONResponse({"ok": True, "applied": applied, "webui_port_restart_required": True})
 
-    def _message_page(request: Request, q: str, page: int, limit: int) -> dict[str, Any]:
+    def _fmt_time(value: Any) -> str:
+        """Epoch seconds as a UTC+8 wall clock.
+
+        Raw epoch was shown before, which is unreadable at a glance and ambiguous about which zone it is in. The
+        operator is in UTC+8, and the messages arrive from QQ with epoch seconds, so the conversion belongs here
+        rather than in the reader's head.
+        """
+        try:
+            moment = datetime.fromtimestamp(int(value), tz=timezone(timedelta(hours=8)))
+        except (TypeError, ValueError, OSError, OverflowError):
+            return str(value or "")
+        return moment.strftime("%Y-%m-%d %H:%M:%S")
+
+    #: Element types whose content can be fetched on demand. `face` is QQ's sticker element.
+    _MEDIA_ELEMENT_TYPES = ("image", "file", "video", "face", "mface", "record")
+
+    def _message_page(request: Request, q: str, page: int, limit: int, account: str = "") -> dict[str, Any]:
+        """The cache, straight from the store the cache writes to.
+
+        It used to read `runtime.store` -- the default instance's database -- and later every instance store. Both
+        tie the view to instance state: with no session running there are no instance contexts, so the page showed
+        a fallback store holding leftover mock rows. The cache records forwarded messages itself now, so this reads
+        that one database and cannot be affected by whether anything is logged in.
+        """
         page = max(1, page)
-        total = runtime.store.count_matching(q)
+        wanted = str(account or "").strip()
+        items_all = []
+        try:
+            # Unfiltered: the search runs below over the whole record, because the operator asked for one box
+            # that matches any of its fields rather than five separate filters.
+            items_all = list(runtime.cache_store.search("", 0, 100_000))
+        except Exception:  # noqa: BLE001 - an unreadable cache must not blank the page
+            items_all = []
+
+        if wanted:
+            items_all = [item for item in items_all if str(getattr(item, "account", "") or "") == wanted]
+
+        needle = q.strip().lower()
+        if needle:
+            def haystack(item: Any) -> str:
+                sender = str(getattr(item, "sender_name", "") or getattr(item, "sender_uin", "") or "")
+                parts = [
+                    str(item.message_id),
+                    str(getattr(item, "account", "") or ""),
+                    str(getattr(item, "chat_id", "") or ""),
+                    "群" if getattr(item, "is_group", False) else "私",
+                    str(getattr(item, "sender_uin", "") or ""),
+                    sender,
+                    item.text,
+                ]
+                return " ".join(parts).lower()
+
+            items_all = [item for item in items_all if needle in haystack(item)]
+
+        ordered = sorted(items_all, key=lambda item: (item.time, item.message_id), reverse=True)
+        total = len(ordered)
         pages = max(1, math.ceil(total / limit))
-        items = runtime.store.search(q, (page - 1) * limit, limit)
+        page = min(page, pages)
+        items = ordered[(page - 1) * limit: (page - 1) * limit + limit]
+
+        # Which records can be downloaded, and under what name. Only the index is baked in: the URL itself is
+        # built by the route when it is clicked, so an expired token is not baked into the page.
+        attachments: dict[Any, list[dict[str, Any]]] = {}
+        for item in items:
+            links = []
+            for index, element in enumerate(getattr(item, "elements", []) or []):
+                kind = str(getattr(element, "type", "") or "")
+                if kind not in _MEDIA_ELEMENT_TYPES:
+                    continue
+                data = getattr(element, "data", {}) or {}
+                name = str(data.get("file_name") or data.get("name") or "")
+                links.append({
+                    "href": f"/messages/media/{item.message_id}/{index}",
+                    "label": f"下载{'图片' if kind == 'image' else '文件' if kind == 'file' else kind}",
+                    "title": name or kind,
+                })
+            if links:
+                attachments[item.message_id] = links
         return {
             "page": "messages",
             "info": runtime.info(),
             "messages": items,
             "q": q,
+            "account": wanted,
+            "accounts": sorted({str(getattr(item, "account", "") or "") for item in ordered} - {""}),
             "page_no": page,
             "pages": pages,
             "total": total,
             "limit": limit,
             "preview": _preview,
+            "fmt_time": _fmt_time,
+            "attachments": attachments,
         }
 
     def _headless() -> HeadlessManager:
@@ -1873,12 +1951,65 @@ def create_app(runtime: "Runtime") -> FastAPI:
         result = await runtime.invoke("send_group_msg", params)
         return JSONResponse(result)
 
-    @app.get("/messages", response_class=HTMLResponse)
-    async def messages_page(request: Request, q: str = "", page: int = 1) -> HTMLResponse:
+    @app.get("/messages/media/{message_id}/{index}")
+    async def message_media(message_id: str, index: int, request: Request) -> Any:
+        """Serve one element's content, assembling the URL now rather than at store time.
+
+        Order of preference: a local copy QSICK already staged, then a URL stored with the element, then a fresh
+        URL built from `file_id` and an rkey fetched at this moment. The last one is what makes an older record
+        viewable: the token in it would have expired.
+        """
         denied = guard(request)
         if denied:
             return denied
-        return templates.TemplateResponse(request, "messages.html", _message_page(request, q, page, 30))
+        try:
+            wanted = int(message_id)
+        except (TypeError, ValueError):
+            return PlainTextResponse("bad message id", status_code=400)
+
+        target = None
+        try:
+            target = runtime.cache_store.get(wanted)
+        except Exception:  # noqa: BLE001 - a missing record is a 404, not a 500
+            target = None
+        if target is None:
+            return PlainTextResponse("no such message", status_code=404)
+        elements = list(getattr(target, "elements", []) or [])
+        if index < 0 or index >= len(elements):
+            return PlainTextResponse("no such element", status_code=404)
+        element = elements[index]
+        data = getattr(element, "data", {}) or {}
+
+        local = data.get("path") or data.get("local_path")
+        if local:
+            try:
+                path = Path(str(local))
+                if path.is_file():
+                    return FileResponse(path)
+            except OSError:
+                pass
+
+        stored_url = data.get("url")
+        if isinstance(stored_url, str) and stored_url.startswith(("http://", "https://")):
+            return RedirectResponse(stored_url)
+
+        if str(getattr(element, "type", "") or "").lower() in ("image", "mface"):
+            scope = "group" if target.is_group else "private"
+            try:
+                built = await runtime.media.url_for(element, scope=scope,
+                                                    account=str(getattr(target, "account", "") or ""))
+            except Exception as exc:  # noqa: BLE001
+                return PlainTextResponse(f"could not build the URL: {exc}", status_code=502)
+            if built:
+                return RedirectResponse(built)
+        return PlainTextResponse("this element has nothing to download", status_code=404)
+
+    @app.get("/messages", response_class=HTMLResponse)
+    async def messages_page(request: Request, q: str = "", page: int = 1, account: str = "") -> HTMLResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return templates.TemplateResponse(request, "messages.html", _message_page(request, q, page, 30, account))
 
     @app.get("/api/messages")
     async def messages_api(request: Request, q: str = "", page: int = 1) -> JSONResponse:
@@ -1887,14 +2018,15 @@ def create_app(runtime: "Runtime") -> FastAPI:
             return denied
         limit = 50
         page = max(1, page)
-        total = runtime.store.count_matching(q)
-        items = runtime.store.search(q, (page - 1) * limit, limit)
+        # Same store as the page, and the same merged-field search: two views of one cache must not disagree
+        # about what it contains.
+        model = _message_page(request, q, page, limit)
         return JSONResponse(
             {
-                "total": total,
-                "page": page,
+                "total": model["total"],
+                "page": model["page_no"],
                 "limit": limit,
-                "messages": [message.to_dict() for message in items],
+                "messages": [m.to_dict() for m in model["messages"]],
             }
         )
 

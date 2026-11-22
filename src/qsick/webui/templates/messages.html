@@ -4,10 +4,10 @@
 <div class="page-head">
   <div>
     <h1>消息缓存</h1>
-    <p>共 {{ total }} 条；未识别元素以 unknown 段保留，引用型消息保留 id。</p>
+    <p>共 {{ total }} 条；未识别元素以 unknown 段保留，引用型消息保留 id。搜索按整条记录匹配——内容、消息 id、发送者、账号任一段命中即列出。</p>
   </div>
   <form class="toolbar" method="get" action="/messages">
-    <input name="q" value="{{ q }}" placeholder="搜索文本或会话号…" style="width:240px" />
+    <input name="q" value="{{ q }}" placeholder="搜索内容 / 消息id / 发送者 / 账号…" style="width:240px" />
     <button type="submit">搜索</button>
     {% if q %}<a class="btn ghost sm" href="/messages">重置</a>{% endif %}
   </form>
@@ -16,15 +16,16 @@
 <section class="card">
   {% if messages %}
     <table class="table">
-      <thead><tr><th>ID</th><th>会话</th><th>发送者</th><th>内容</th><th class="right">时间</th></tr></thead>
+      <thead><tr><th>ID</th><th>账号</th><th>会话</th><th>发送者</th><th>内容</th><th class="right">时间</th></tr></thead>
       <tbody>
-      {% for m in messages|reverse %}
+      {% for m in messages %}
         <tr>
           <td class="num">{{ m.message_id }}</td>
+          <td class="nowrap"><code class="faint">{{ m.account or "—" }}</code></td>
           <td class="nowrap"><span class="chatpill">{{ "群" if m.is_group else "私" }} {{ m.chat_id }}</span></td>
           <td class="nowrap">{{ m.sender_name or m.sender_uin }}</td>
-          <td class="preview" title="{{ m.text }}">{{ m.text }}</td>
-          <td class="right faint nowrap">{{ m.time }}</td>
+          <td class="preview" title="{{ m.text }}">{{ m.text }}{% for a in attachments.get(m.message_id, []) %} <a class="btn ghost sm" href="{{ a.href }}" title="{{ a.title }}" download>{{ a.label }}</a>{% endfor %}</td>
+          <td class="right faint nowrap">{{ fmt_time(m.time) }}</td>
         </tr>
       {% endfor %}
       </tbody>
