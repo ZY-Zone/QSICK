@@ -22,6 +22,33 @@ if TYPE_CHECKING:  # pragma: no cover
 log = logmod.get_logger("OneBot.Reverse")
 
 
+def is_self_sent_to_others(payload: dict[str, Any]) -> bool:
+    """True when this event is a message the account itself sent to somebody else.
+
+    Those are the ones `report_self_message` governs. A private chat with the account itself is excluded: writing
+    to your own account is an ordinary conversation, and hiding it would make a working login look broken.
+
+    Both shapes count. Our own outgoing message normally arrives as `message_sent`; a message we sent can also
+    come back as a `message` event whose `user_id` is the account itself.
+    """
+    kind = str(payload.get("post_type") or "")
+    if kind not in ("message", "message_sent"):
+        return False
+    self_id = str(payload.get("self_id") or "").strip()
+    if not self_id:
+        return False
+    private = str(payload.get("message_type") or "") == "private"
+    target = str(payload.get("target_id") or "").strip()
+    same_account = str(payload.get("user_id") or "").strip() == self_id
+    if kind == "message_sent":
+        # `target_id` is the peer of a private message. Treat a shape we do not recognise as self-sent, so an
+        # unexpected payload cannot slip past a profile that switched reporting off.
+        return not (private and target and target == self_id)
+    if not same_account:
+        return False
+    return not private
+
+
 class ReverseWebSocketClient:
     def __init__(self, runtime: "Runtime", targets: list[Any], reconnect: float = 5.0) -> None:
         """`targets` is `(url, account)` pairs; a bare string means "any account".
@@ -33,15 +60,17 @@ class ReverseWebSocketClient:
         account is not in.
         """
         self.runtime = runtime
-        self.targets: list[tuple[str, str]] = []
+        self.targets: list[tuple[str, str, bool]] = []
         for item in targets:
             if isinstance(item, (tuple, list)) and len(item) >= 2:
-                url, account = str(item[0] or "").strip(), str(item[1] or "").strip()
+                url = str(item[0] or "").strip()
+                account = str(item[1] or "").strip()
+                report_self = bool(item[2]) if len(item) >= 3 else True
             else:
-                url, account = str(item or "").strip(), ""
+                url, account, report_self = str(item or "").strip(), "", True
             if url:
-                self.targets.append((url, account))
-        self.urls = [url for url, _ in self.targets]
+                self.targets.append((url, account, report_self))
+        self.urls = [url for url, _, _ in self.targets]
         self.reconnect = max(1.0, reconnect)
         self._task: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
@@ -51,6 +80,8 @@ class ReverseWebSocketClient:
         # and its actions ran as the other account.
         self._sockets: dict[tuple[str, str], Any] = {}
         self._queues: dict[tuple[str, str], asyncio.Queue[str]] = {}
+        #: Per connection: does this profile want the account's own outgoing messages?
+        self._report_self: dict[tuple[str, str], bool] = {}
         self.connected_url = ""
 
     def alive(self) -> bool:
@@ -77,6 +108,7 @@ class ReverseWebSocketClient:
             self._task = None
         self._queues.clear()
         self._sockets.clear()
+        self._report_self.clear()
         self.connected_url = ""
 
     async def broadcast(self, payload: dict[str, Any]) -> None:
@@ -92,8 +124,13 @@ class ReverseWebSocketClient:
         # Y's events: the consumer keys its bot by `X-Self-ID`, so such an event is either discarded or, worse,
         # acted on as if X had received it.
         wanted = str(payload.get("self_id") or "").strip()
+        # One decision per connection: two profiles may disagree about self-messages, so a single filtered copy
+        # for everyone would make the option unable to differ between them.
+        self_sent = is_self_sent_to_others(payload)
         for (url, owner), queue in list(self._queues.items()):
             if wanted and owner and owner != wanted:
+                continue
+            if self_sent and not self._report_self.get((url, owner), True):
                 continue
             try:
                 queue.put_nowait(text)
@@ -105,7 +142,7 @@ class ReverseWebSocketClient:
                     log.debug("reverse ws event dropped: queue full")
 
     async def _run_all(self) -> None:
-        await asyncio.gather(*(self._run_one(url, account) for url, account in self.targets))
+        await asyncio.gather(*(self._run_one(url, account) for url, account, _ in self.targets))
 
     async def _run_one(self, url: str, account: str = "") -> None:
         # 固定间隔重连会在对端持续不可达时变成"每 N 秒敲一次"的稳定节拍。对
@@ -183,6 +220,7 @@ class ReverseWebSocketClient:
             queue: asyncio.Queue[str] = asyncio.Queue(maxsize=512)
             self._queues[(url, account)] = queue
             self._sockets[(url, account)] = socket
+            self._report_self[(url, account)] = self._report_for(url, account)
             log.info("reverse ws connected", url=url, self_id=connected_self_id, account=account)
             await self._send(
                 socket,
@@ -305,6 +343,17 @@ class ReverseWebSocketClient:
                          action=payload.get("action"), echo=payload.get("echo"), error=str(exc))
             else:
                 log.debug("reverse ws send failed", error=str(exc))
+
+    def _report_for(self, url: str, account: str) -> bool:
+        """Does this profile want the account's own outgoing messages?
+
+        Read from `targets` rather than a second dict built at construction, so the answer cannot drift from the
+        connection that is actually being opened.
+        """
+        for target_url, target_account, report in self.targets:
+            if target_url == url and target_account == account:
+                return report
+        return True
 
     def _headers(self, self_id: int | None = None) -> dict[str, str]:
         token = self.runtime.config.onebot.access_token

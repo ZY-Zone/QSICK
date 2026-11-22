@@ -758,12 +758,17 @@ class Runtime:
             log.warn("onebot listener did not start", host=self.config.onebot.host, port=self.config.onebot.port)
         return started
 
-    def _reverse_targets(self) -> list[tuple[str, str]]:
-        """`(url, account)` for every reverse connection that should exist right now.
+    def _reverse_targets(self) -> list[tuple[str, str, bool]]:
+        """`(url, account, report_self_message)` for every reverse connection that should exist now.
 
         A reverse connection belongs to one account: its handshake names that account, and only that account's
         events travel over it. The profile store is the source, because ownership is written there; the flat
         `reverse_ws_urls` list is kept as a fallback for a configuration that predates the store.
+
+        `report_self_message` travels with the target because the decision is per profile: it used to be stored
+        and never read, so the switch did nothing, and one filtered stream for everybody could not let two
+        profiles disagree -- which is exactly what the option is for. The legacy fallback has no per-profile
+        option, so it keeps reporting everything.
 
         This is not cosmetic. With a flat URL list every connection received every account's events, so a
         consumer holding bots for two accounts discarded the ones whose `self_id` it did not expect
@@ -771,7 +776,7 @@ class Runtime:
         """
         from . import network_profiles as netprofiles
 
-        targets: list[tuple[str, str]] = []
+        targets: list[tuple[str, str, bool]] = []
         try:
             for account in self._active_accounts():
                 for profile in netprofiles.load_for(self.config, account):
@@ -779,12 +784,13 @@ class Runtime:
                         continue
                     url = str(profile.get("url") or "").strip()
                     if url.startswith(("ws://", "wss://")):
-                        targets.append((url, account))
+                        targets.append((url, account, bool(profile.get("report_self_message"))))
         except Exception as exc:  # noqa: BLE001 - a broken store must not stop the runtime starting
             log.warn("could not read reverse ws targets from the profile store", error=str(exc))
         if targets:
             return targets
-        return [(str(url).strip(), "") for url in self.config.onebot.reverse_ws_urls if str(url).strip()]
+        return [(str(url).strip(), "", True)
+                for url in self.config.onebot.reverse_ws_urls if str(url).strip()]
 
     async def reload_reverse(self) -> bool:
         """Drop the current Reverse WS task and reconnect with the current URLs."""

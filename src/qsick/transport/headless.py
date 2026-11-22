@@ -227,7 +227,11 @@ class HeadlessTransport(Transport):
 
         now = time.monotonic()
         cached = self._pipe_ports.get(wanted)
-        if cached and now - cached[1] < 5.0 and cached[0]:
+        # Kept for two minutes on purpose. Answering costs one full `login.info` round trip through the session's
+        # task queue -- measured at 2.3 s, and that queue is serial -- so a short TTL made every action pay it
+        # again. A stale answer is handled where it can actually be noticed: a refused connection drops the entry
+        # and resolves once more.
+        if cached and now - cached[1] < 120.0 and cached[0]:
             return cached[0]
 
         try:
@@ -263,13 +267,19 @@ class HeadlessTransport(Transport):
             resolved, fallback = match(3.0)
 
         if resolved is None and not wanted:
-            # No account named: an only-live-session is the right answer. With several running, refusing is
-            # better than guessing which account the caller meant.
+            # No account named. An only-live-session is the right answer -- it is unambiguous. With several
+            # running there is nothing to choose by, and answering anyway is how an action came to be executed by
+            # an account it was not addressed to. Refusing is the honest answer; the caller reports it.
             live = [int(s.get("nowport") or 0) for s in sessions
                     if headless_mod.probe_session_login(int(s.get("nowport") or 0)).get("running")]
-            resolved = live[0] if len(live) == 1 else fallback
+            resolved = live[0] if len(live) == 1 else None
 
-        self._pipe_ports[wanted] = (resolved, now)
+        # Never cache a guess, and never cache a negative: only a port matched to the account (or the single live
+        # one) is worth remembering, and a miss must not become sticky.
+        if resolved:
+            self._pipe_ports[wanted] = (resolved, now)
+        else:
+            self._pipe_ports.pop(wanted, None)
         return resolved
 
     def _rpc_target(self, account: str) -> tuple[int, str]:
