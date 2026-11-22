@@ -147,7 +147,7 @@
       try {
         response = await fetch(url, options);
       } catch (error) {
-        throw new Error("无法连接 QSICK（端口 5754），请确认程序仍在运行");
+        throw new Error("无法连接 QSICK（端口 {{ config.webui.port }}），请确认程序仍在运行");
       }
       const body = await response.json();
       if (!response.ok || body.ok === false) throw new Error(body.error || response.statusText);

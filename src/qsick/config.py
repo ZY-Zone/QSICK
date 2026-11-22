@@ -9,6 +9,14 @@ from pathlib import Path
 from typing import Any
 
 
+#: The port the WebUI listens on unless configured otherwise.
+#:
+#: Defined once and imported everywhere else. It used to be a literal in seven places, including two call sites
+#: that start a headless instance -- so an instance could be told to report events to 5754 while the WebUI was
+#: listening on some other port, and every event it produced was lost.
+DEFAULT_WEBUI_PORT = 5754
+
+
 class ConfigError(RuntimeError):
     pass
 
@@ -45,7 +53,7 @@ class OneBotConfig:
 @dataclass(slots=True)
 class WebUIConfig:
     host: str = "127.0.0.1"
-    port: int = 5754
+    port: int = DEFAULT_WEBUI_PORT
     access_token: str = ""
     log_buffer: int = 2000
     # GUI chat layer; off by default because it exposes account actions.

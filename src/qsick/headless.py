@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import log as logmod
+from .config import DEFAULT_WEBUI_PORT
 from .job_guard import JobGuard
 
 log = logmod.get_logger("Headless")
@@ -1727,7 +1728,7 @@ class HeadlessManager:
         """
         return PIPE_INSTANCE_ID
 
-    def start_session(self, port: int = 0, core_port: int = 5754,
+    def start_session(self, port: int = 0, core_port: int = DEFAULT_WEBUI_PORT,
                       tmp_id: str = "") -> dict[str, Any]:
         """Launch one session from the shared client.
 
@@ -2128,7 +2129,7 @@ class HeadlessManager:
         meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         return self._get(instance_id).to_dict()
 
-    def recover_kicked(self, instance_id: str, core_port: int = 5754,
+    def recover_kicked(self, instance_id: str, core_port: int = DEFAULT_WEBUI_PORT,
                        *, respect_cooldown: bool = False) -> dict[str, Any]:
         """Restart an instance QQ kicked, then try the cached login.
 
@@ -2184,7 +2185,7 @@ class HeadlessManager:
             result["error"] = "没有可复用的登录记录，需要手动登录"
         return result
 
-    def watch_kicked(self, core_port: int = 5754) -> list[dict[str, Any]]:
+    def watch_kicked(self, core_port: int = DEFAULT_WEBUI_PORT) -> list[dict[str, Any]]:
         """Recover kicked instances that opted into 自动重新登陆.
 
         判断依据是**客户端状态**（``phase == "kicked"``，含被 stop() 保留到
@@ -2225,7 +2226,7 @@ class HeadlessManager:
             results.append({"id": path.name, **outcome})
         return results
 
-    def start(self, instance_id: str, core_port: int = 5754, auto_login: bool = True) -> dict[str, Any]:
+    def start(self, instance_id: str, core_port: int = DEFAULT_WEBUI_PORT, auto_login: bool = True) -> dict[str, Any]:
         instance = self._get(instance_id)
         current = instance.to_dict()
         old_config: dict[str, Any] = {}
@@ -2600,7 +2601,7 @@ class HeadlessManager:
         log.info("pipe 实例已启动", instance=instance.id, pid=process.pid)
         return instance.to_dict()
 
-    def quick_login(self, instance_id: str, core_port: int = 5754) -> dict[str, Any]:
+    def quick_login(self, instance_id: str, core_port: int = DEFAULT_WEBUI_PORT) -> dict[str, Any]:
         instance = self._get(instance_id)
         key = str(instance.path.resolve())
         with _LOGIN_LOCKS_GUARD:

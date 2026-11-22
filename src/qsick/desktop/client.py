@@ -9,6 +9,7 @@ import json
 import urllib.error
 import urllib.request
 from typing import Any
+from ..config import DEFAULT_WEBUI_PORT
 
 
 class DesktopApiError(RuntimeError):
@@ -19,7 +20,7 @@ class DesktopApi:
     def __init__(
         self,
         onebot_base: str = "http://127.0.0.1:3000",
-        webui_base: str = "http://127.0.0.1:5754",
+        webui_base: str = f"http://127.0.0.1:{DEFAULT_WEBUI_PORT}",
         token: str = "",
         webui_token: str = "",
         timeout: float = 8.0,

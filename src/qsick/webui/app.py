@@ -1319,8 +1319,10 @@ def create_app(runtime: "Runtime") -> FastAPI:
         try:
             # The port comes from the hot-reloaded override map or the next free one.
             port = headless_mod.read_port_override().get(manager.pipe_instance_id(), 0)
+            # The configured port, not the literal. A session told to report to a port the WebUI does not
+            # listen on connects and then delivers nothing.
             result = await asyncio.to_thread(
-                manager.start_session, port, 5754)
+                manager.start_session, port, runtime.config.webui.port)
             # A brand-new session has never been polled; make sure it is, whatever the previous run left in
             # the "given up" set for an id that happens to collide.
             if isinstance(result, dict) and result.get("id"):
@@ -1470,7 +1472,8 @@ def create_app(runtime: "Runtime") -> FastAPI:
         try:
             # `tmp_id` is passed so the launch reuses this session's directory. Without it a fresh id is
             # generated, which is how pressing 启动 used to add a second row for the same process.
-            result = await asyncio.to_thread(_headless().start_session, port, 5754, tmp_id)
+            result = await asyncio.to_thread(
+                _headless().start_session, port, runtime.config.webui.port, tmp_id)
         except Exception as exc:  # noqa: BLE001
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
         headless_mod.write_session_ports(tmp_id, nowport=int(port or 0))

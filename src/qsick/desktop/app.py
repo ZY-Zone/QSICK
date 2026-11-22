@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+
+from ..config import DEFAULT_WEBUI_PORT
 import sys
 import time
 import tkinter as tk
@@ -20,7 +22,7 @@ SKY = "#0ea5e9"
 
 def main(argv: list[str] | None = None) -> int:
     onebot = os.environ.get("QSICK_ONEBOT", "http://127.0.0.1:3000")
-    webui = os.environ.get("QSICK_WEBUI", "http://127.0.0.1:5754")
+    webui = os.environ.get("QSICK_WEBUI") or f"http://127.0.0.1:{DEFAULT_WEBUI_PORT}"
     token = os.environ.get("QSICK_ACCESS_TOKEN", "")
     webui_token = os.environ.get("QSICK_WEBUI_TOKEN", "")
     api = DesktopApi(onebot, webui, token, webui_token)
