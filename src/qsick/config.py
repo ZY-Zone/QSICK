@@ -168,6 +168,8 @@ class RuntimeConfig:
     # 慢一点总比给出一条用不了的连接好，而消费者重连一次要几十秒。
     network_activation_delay: float = 15.0
     message_cache: MessageCacheConfig = field(default_factory=MessageCacheConfig)
+    # 取 rkey 的 HTTP 来源。留空则走 OIDB 请求——本客户端上那条路会被服务端以 errorCode=253 拒绝。
+    rkey_url: str = "http://ss.xingzhige.com/music_card/rkey"
     rotation: RotationConfig = field(default_factory=RotationConfig)
     # Forward "noise" events (typing, input status) to OneBot clients.
     forward_noise: bool = False

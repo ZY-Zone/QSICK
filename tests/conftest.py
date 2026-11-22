@@ -195,6 +195,9 @@ def config(tmp_path: Path) -> RuntimeConfig:
     cfg.plugins.dirs = [str(ROOT / "plugins")]
     cfg.forward_noise = False
     cfg.log.level = "TRACE"
+    # No provider: the tests exercise the transport path, which the mock answers deterministically.
+    # Leaving the default in place sent every refresh to the network instead.
+    cfg.rkey_url = ""
     return cfg
 
 

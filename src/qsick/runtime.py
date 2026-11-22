@@ -247,7 +247,7 @@ class Runtime:
         self._logins: dict[str, LoginState] = {}
         self._primary_instance: str = ""
         self.login: LoginState = LoginState()
-        self.rkey = RKeyManager(self.transport)
+        self.rkey = RKeyManager(self.transport, provider_url=self.config.rkey_url)
         self.media = MediaResolver(self.transport, self.rkey)
         self.mapper = EventMapper(self.config, self.store, self.media, self_id=0)
         # mapper.login 决定心跳里的 online 字段。实例化时还一无所知，
