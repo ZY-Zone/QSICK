@@ -81,6 +81,19 @@ class TransportConfig:
 
 
 @dataclass(slots=True)
+class MessageCacheConfig:
+    """Ingress for the message cache.
+
+    A listener of its own rather than a route on the WebUI: this is a data feed, and a producer should not need the
+    operator's session token or the chat feature that shares that app. Loopback only, like every other port here.
+    """
+
+    enabled: bool = True
+    host: str = "127.0.0.1"
+    port: int = 7531
+
+
+@dataclass(slots=True)
 class PluginConfig:
     dirs: list[str] = field(default_factory=lambda: ["plugins"])
     enabled: bool = True
@@ -154,6 +167,7 @@ class RuntimeConfig:
     # 在这个窗口里绑监听，等于给消费者一条每个动作都失败或超时的连接。默认 15 秒——
     # 慢一点总比给出一条用不了的连接好，而消费者重连一次要几十秒。
     network_activation_delay: float = 15.0
+    message_cache: MessageCacheConfig = field(default_factory=MessageCacheConfig)
     rotation: RotationConfig = field(default_factory=RotationConfig)
     # Forward "noise" events (typing, input status) to OneBot clients.
     forward_noise: bool = False
@@ -181,6 +195,7 @@ _NESTED: dict[str, type] = {
     "log": LogConfig,
     "rotation": RotationConfig,
     "storage": StorageConfig,
+    "message_cache": MessageCacheConfig,
 }
 
 

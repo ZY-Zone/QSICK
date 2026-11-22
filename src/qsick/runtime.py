@@ -257,6 +257,9 @@ class Runtime:
         self._servers: list[uvicorn.Server] = []
         self._server_tasks: dict[uvicorn.Server, asyncio.Task[None]] = {}
         self._onebot_server: uvicorn.Server | None = None
+        #: True only once this process is actually serving the cache ingress. The copy is what feeds
+        #: *our* cache; posting to a port nobody here owns would be somebody else's process.
+        self._cache_started = False
         self.last_network_apply: dict[str, Any] | None = None
         # Which accounts the network listeners are currently serving.
         #
@@ -707,6 +710,20 @@ class Runtime:
         # The WebUI always starts: it is how the operator sees state and configures everything else, so
         # gating it on a login would leave no way in.
         #
+        # The message-cache ingress is unconditional: it is a data feed, not a bot, and it has nothing to answer
+        # that depends on an account. Failing to bind it must not stop the rest of the runtime.
+        cache_config = self.config.message_cache
+        if cache_config.enabled and int(cache_config.port or 0) > 0:
+            try:
+                from .cache_server import create_app as create_cache_app
+
+                self._spawn_server(create_cache_app(self), str(cache_config.host or "127.0.0.1"),
+                                   int(cache_config.port), "cache")
+                self._cache_started = True
+                log.info("message cache listening", host=cache_config.host, port=int(cache_config.port))
+            except Exception as exc:  # noqa: BLE001 - a bad port must not take the runtime down
+                log.warn("could not start the message cache listener", error=str(exc))
+
         # The OneBot listener is deliberately NOT started here. It follows the logged-in accounts (see
         # `sync_account_network`), because a listener with no account behind it answers nothing and looks
         # like a working integration until the first action fails.
@@ -1671,9 +1688,53 @@ class Runtime:
                 log.debug("deferred media path attached", message_id=message_id, element_id=element_id)
 
     async def _publish(self, event: dict[str, Any]) -> None:
-        """Fan one event out to forward clients and reverse endpoints alike."""
+        """Fan one event out to forward clients and reverse endpoints alike.
+
+        A message also goes to the cache ingress as a copy. That is deliberate duplication: the pipe path already
+        wrote it straight to a store, but the ingress is what makes the cache fed from one place, so a message that
+        arrives by some other route is stored the same way. `put` upserts on `message_id`, so the copy cannot
+        become a second row.
+        """
         await self.hub.broadcast(event)
         await self.reverse.broadcast(event)
+        await self._feed_cache(event)
+
+    async def _feed_cache(self, event: dict[str, Any]) -> None:
+        """Send the cache ingress a copy of this message, if it is one and the listener is on.
+
+        Never raises and never blocks the fan-out: a cache that is down is a missing copy, not a lost event.
+        """
+        cache_config = self.config.message_cache
+        if not cache_config.enabled or not self._cache_started:
+            return
+        if int(cache_config.port or 0) <= 0:
+            return
+        kind = str(event.get("post_type") or "")
+        if kind not in ("message", "message_sent"):
+            return
+        try:
+            from .protocol.message import Message
+
+            chat_id = event.get("group_id") if event.get("message_type") == "group" else event.get("target_id")
+            message = Message.from_payload({
+                "message_id": event.get("message_id"),
+                "seq": event.get("message_seq", 0),
+                "time": event.get("time", 0),
+                "chat": {"type": event.get("message_type"), "id": chat_id},
+                # The event's own `message` segments are the normalized element shape already.
+                "elements": event.get("message"),
+                "sender": event.get("sender") or {"uin": event.get("user_id", 0)},
+                "account": event.get("self_id"),
+            })
+            if not message.message_id:
+                return
+            import httpx
+
+            url = f"http://{cache_config.host or '127.0.0.1'}:{int(cache_config.port)}/message"
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                await client.post(url, json=message.to_dict())
+        except Exception as exc:  # noqa: BLE001 - the copy is best effort by definition
+            log.debug("message cache copy failed", error=str(exc))
 
     async def _heartbeat(self) -> None:
         try:
