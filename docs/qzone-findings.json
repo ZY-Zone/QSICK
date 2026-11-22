@@ -108,7 +108,7 @@
     "where": "src/qsick/protocol/qzone.py (client) + src/qsick/onebot/actions/qzone/ (31 adapters)",
     "credential_op": "qzone.credentials (injected script) -> {uin, pskey, g_tk, available}; the only part that must come from inside QQ",
     "verified_live": {
-      "get_qzone_profile": "ok, 0.7s, real profile from the old CGI",
+      "get_qzone_profile": "ok for both accounts: own space (nickname 茜特菈莉, no name) and 1927676487 (nickname 。, name 皮卡丘的空间). The selector is `uin`; `vuin` is ignored and silently answers for the logged-in account instead.",
       "get_qzone_feeds": "ok, 10 feeds, author/time/content/counts/images all populated",
       "get_qzone_msg_list": "ok, own 3 posts",
       "get_qzone_msg_detail": "ok via feed_ref",
@@ -127,7 +127,26 @@
       "ugc_right 64/128 on set_qzone_msg_right: refused by the server (-10083), see verified_live",
       "the 12 public-qzone actions: implemented on the same gateway, unverifiable while the account is outside the whitelist",
       "get_qzone_share_ark: needs the Ark API, not implemented"
-    ]
+    ],
+    "alignment_with_napcat": {
+      "napcat_actions": 28,
+      "all_present_in_qsick": true,
+      "qsick_extras": [
+        "get_qzone_feed_detail (alias of get_qzone_msg_detail)",
+        "get_qzone_home_feeds (per-uin list)",
+        "get_qzone_share_ark (planned: needs the Ark API; NapCat has no such action)"
+      ],
+      "param_names_follow_napcat": [
+        "tid",
+        "feed_ref",
+        "target_uin",
+        "ugc_right",
+        "target_uins",
+        "content",
+        "pos",
+        "num"
+      ]
+    }
   },
   "shapes_that_were_guessed_wrong_first": {
     "note": "Every one of these produced a silently empty field rather than an error, so they are pinned in tests/test_qzone_client.py.",

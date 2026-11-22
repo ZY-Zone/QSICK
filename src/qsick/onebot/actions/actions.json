@@ -2069,7 +2069,15 @@
       "summary": "空间资料（老 CGI）",
       "status": "implemented",
       "read_only": true,
-      "params": [],
+      "params": [
+        {
+          "name": "target_uin",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "空间所属 QQ 号；不传为自己"
+        }
+      ],
       "op": "get_qzone_profile"
     },
     {
@@ -2192,12 +2200,13 @@
       "module": "qzone/get_qzone_share_ark",
       "class": "GetQzoneShareArkAction",
       "category": "qzone",
-      "summary": "",
-      "status": "implemented",
+      "summary": "生成空间分享卡片（NapCat 无此动作，需要 Ark API，未实现）",
+      "status": "planned",
       "read_only": false,
       "params": [],
       "op": "get_qzone_share_ark",
-      "wire": "pending"
+      "wire": "pending",
+      "hint": "planned: 需要 QQ 的 Ark API 生成分享卡片，本仓库尚未接入；NapCat 4.18.42 也没有这个动作，不在对齐范围内"
     },
     {
       "name": "get_recent_contact",

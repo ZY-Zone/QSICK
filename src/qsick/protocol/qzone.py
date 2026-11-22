@@ -514,9 +514,15 @@ class QzoneClient:
             raise QzoneError("the server accepted the comment but returned no object for it", route="add_comment")
         return {"comment_id": str(result.get("id") or ""), "comment": result, "raw": data}
 
-    async def profile(self) -> dict[str, Any]:
+    async def profile(self, uin: str = "") -> dict[str, Any]:
+        """Space profile. `uin` reads someone else's; empty reads this account's.
+
+        The parameter is `uin`, not `vuin` -- measured: `vuin` is ignored and the answer describes the logged-in
+        account regardless, which looked like "reading another user's space works" until the reply was compared
+        against the requested id.
+        """
         credentials = await self.credentials()
-        data = await self.cgi("profile", {"vuin": credentials.uin, "fupdate": 1})
+        data = await self.cgi("profile", {"uin": uin or credentials.uin, "fupdate": 1})
         return data if isinstance(data, dict) else {"raw": data}
 
     async def shenfen(self) -> dict[str, Any]:
