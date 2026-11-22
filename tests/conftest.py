@@ -120,6 +120,19 @@ def no_throttle_by_default():
 
 
 @pytest.fixture(autouse=True)
+def network_activation_is_immediate(monkeypatch):
+    """A logged-in account is normally served only after a short settling delay.
+
+    Waiting it out in every test would add five seconds to each one and make the assertions racy, so the delay is
+    zeroed here. The delay itself is covered by `tests/test_network_activation_delay.py`, which sets its own
+    value.
+    """
+    from qsick import runtime as runtime_module
+
+    monkeypatch.setattr(runtime_module, "NETWORK_ACTIVATION_DELAY", 0.0)
+
+
+@pytest.fixture(autouse=True)
 def isolated_pipe_event_root(tmp_path: Path, monkeypatch):
     """Keep the pipe-event poller away from the developer's real `headlessClient/`.
 

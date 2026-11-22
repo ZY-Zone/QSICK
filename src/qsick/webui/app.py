@@ -913,7 +913,11 @@ def create_app(runtime: "Runtime") -> FastAPI:
         # Hot reload still happens immediately -- but through the account gate, so a profile for an account
         # that is not logged in saves without opening a listener for it. `force` is what makes this a reload:
         # without it a save that does not change the logged-in account set would be a no-op.
-        applied = await runtime.sync_account_network(force=True, reason="settings saved")
+        #
+        # `settle=False`: the login delay exists so a session can finish coming up before a listener binds to it.
+        # Here the operator has clicked save on an account that is already serving, so delaying the effect would
+        # only look like the save did nothing.
+        applied = await runtime.sync_account_network(force=True, reason="settings saved", settle=False)
         return JSONResponse({"ok": True, "profiles": profiles, "warnings": warnings,
                              "applied": applied})
 

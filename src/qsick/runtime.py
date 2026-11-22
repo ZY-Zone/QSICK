@@ -44,6 +44,13 @@ SEND_ACTIONS = {
 #: How often the session state is re-read, in seconds.
 _ACCOUNT_POLL_SECONDS = 3
 
+#: How long an account must have been logged in before its network config is activated, in seconds.
+#:
+#: A session reports itself logged in before its client can answer: the login arrives, then the listener
+#: attaches, then the message services come up. Binding a listener in that window gives the consumer a connection
+#: that fails every action with "Data Not Existed" or times out, and it reconnects looking for a working one.
+NETWORK_ACTIVATION_DELAY = 5.0
+
 #: Retries after a missed poll, as seconds to wait before each extra attempt.
 #:
 #: One attempt per second for the following two seconds -- not two in a row. A session that misses the
@@ -239,6 +246,10 @@ class Runtime:
         # on once: recomputing alone cannot tell "already serving this account" from "just started to".
         self._network_accounts: set[str] = set()
         self._network_lock = asyncio.Lock()
+        #: When each account was first seen logged in, and the one timer that activates the config once it has
+        #: had `NETWORK_ACTIVATION_DELAY` seconds to settle.
+        self._login_seen_at: dict[str, float] = {}
+        self._network_timer: asyncio.Task[None] | None = None
         self.last_account_network: dict[str, Any] | None = None
         # Per-session poll state, keyed by tmp_id, plus the last session list read.
         #
@@ -889,18 +900,63 @@ class Runtime:
             merged[key] = dict(profile)
         return list(merged.values())
 
-    async def sync_account_network(self, *, force: bool = False, reason: str = "") -> dict[str, Any]:
+    def _settle_accounts(self, accounts: list[str]) -> tuple[list[str], float | None]:
+        """Split `accounts` into the ones old enough to serve, and how long until the rest are.
+
+        A session reports itself logged in well before its client is usable: the login frame arrives, then the
+        listener attaches, then the message services come up. Activating a network config on the first of those
+        means binding listeners for an account that cannot answer yet -- and every consumer action during that
+        window fails with "Data Not Existed" or times out. Five seconds is enough for a normal login to settle
+        and short enough that nobody waits for it.
+
+        An account only counts as young the first time it is seen: the registry is dropped when the account goes
+        away, so a re-login waits again while a later sync does not.
+        """
+        now = time.monotonic()
+        for account in list(self._login_seen_at):
+            if account not in accounts:
+                self._login_seen_at.pop(account, None)
+        mature: list[str] = []
+        wait: float | None = None
+        for account in accounts:
+            seen = self._login_seen_at.setdefault(account, now)
+            remaining = NETWORK_ACTIVATION_DELAY - (now - seen)
+            if remaining <= 0:
+                mature.append(account)
+            elif wait is None or remaining < wait:
+                wait = remaining
+        return mature, wait
+
+    def _schedule_network_activation(self, delay: float) -> None:
+        """Run one `sync_account_network` after `delay`, unless one is already scheduled.
+
+        Not debounced by resetting: `sync_account_network` reads live state, so a single pending run covers every
+        transition that happened before it fires. Resetting would let a busy login postpone activation forever.
+        """
+        if self._network_timer is not None and not self._network_timer.done():
+            return
+
+        async def run() -> None:
+            await asyncio.sleep(max(0.0, delay))
+            await self.sync_account_network(reason="login settled")
+
+        self._network_timer = asyncio.create_task(run(), name="qsick-net-activate")
+
+    async def sync_account_network(self, *, force: bool = False, reason: str = "",
+                                   settle: bool = True) -> dict[str, Any]:
         """Bring the network listeners in line with which accounts are logged in.
 
         Called on every login transition (and by the network settings page after a save). The rule it
         implements:
 
-        * an account that just logged in has its profiles read and activated
+        * an account that just logged in has its profiles read and activated -- but only after it has been
+          logged in for `NETWORK_ACTIVATION_DELAY` seconds, see `_settle_accounts`
         * an account that is not logged in contributes nothing, so nothing is listening for it
         * when the last logged-in account that had profiles goes away, the listener is closed
 
         `force` re-applies even when the account set looks unchanged, which is what the settings page needs
-        after editing a profile.
+        after editing a profile. `settle=False` skips the activation delay, which that same page wants: the
+        operator clicked save, so waiting five seconds to honour it would just look broken.
 
         Everything runs under one lock: two accounts logging in at the same instant would otherwise each
         start a listener, and `restart_onebot` stops the previous one -- so the second start would tear down
@@ -908,6 +964,13 @@ class Runtime:
         """
         async with self._network_lock:
             accounts = self._active_accounts()
+            if settle:
+                accounts, wait = self._settle_accounts(accounts)
+                if wait is not None:
+                    # Scheduled before the early return below: on the first call after a login the settled set
+                    # still equals the previous one, so returning here would otherwise leave nothing to do the
+                    # activation later.
+                    self._schedule_network_activation(wait)
             if not force and accounts == sorted(self._network_accounts):
                 return {
                     "accounts": accounts,
@@ -1188,6 +1251,16 @@ class Runtime:
             except Exception:  # noqa: BLE001 - shutdown must not raise
                 pass
         await self.reverse.stop()
+        # A pending activation timer would fire into a shutting-down runtime. Awaited, not just cancelled: the
+        # cancellation is only delivered at the next loop iteration, so returning immediately would leave a task
+        # that still runs once more before it dies.
+        if self._network_timer is not None:
+            self._network_timer.cancel()
+            try:
+                await self._network_timer
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+            self._network_timer = None
         for server in self._servers:
             server.should_exit = True
         self._server_tasks.clear()
