@@ -47,7 +47,6 @@ class OneBotConfig:
     # 出站节流：给敏感动作（群/成员列表）与消息发送设最小间隔并加抖动。
     # 关掉它不会让功能变强，只会让请求密度变回"脚本式"——那正是风控最敏感的
     # 特征。测试里关掉是为了不必真的等 30 秒。
-    throttle: bool = True
 
 
 @dataclass(slots=True)
@@ -149,6 +148,12 @@ class RuntimeConfig:
     pipe_auto_start: bool = False
     # 空串表示"还没选过"，此时开关即使打开也不会拉起任何东西——比猜一个 session 安全。
     pipe_auto_start_session: str = ""
+    # 账号登录后等这么久再激活它的网络配置（秒）。
+    #
+    # 会话上报"已登录"时客户端还答不了事情：登录帧先到，监听随后挂上，消息服务最后才起来。
+    # 在这个窗口里绑监听，等于给消费者一条每个动作都失败或超时的连接。默认 15 秒——
+    # 慢一点总比给出一条用不了的连接好，而消费者重连一次要几十秒。
+    network_activation_delay: float = 15.0
     rotation: RotationConfig = field(default_factory=RotationConfig)
     # Forward "noise" events (typing, input status) to OneBot clients.
     forward_noise: bool = False

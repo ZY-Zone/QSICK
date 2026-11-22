@@ -43,7 +43,7 @@ def build(tmp_path: Path) -> Runtime:
 
 @pytest.fixture()
 def short_delay(monkeypatch):
-    monkeypatch.setattr(runtime_module, "NETWORK_ACTIVATION_DELAY", 0.2)
+    monkeypatch.setattr(runtime_module, "network_activation_delay", lambda config: 0.2)
 
 
 class TestActivationWaits:

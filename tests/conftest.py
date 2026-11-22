@@ -100,36 +100,16 @@ def quiet_logs():
 
 
 @pytest.fixture(autouse=True)
-def no_throttle_by_default():
-    """测试进程里默认关闭出站节流。
-
-    节流按真实时间等待（敏感动作最长 30 秒），开着会让整套测试从一分钟变成
-    几分钟。这里做成 autouse 而不是只改 ``config`` fixture：有些测试自己构造
-    ``RuntimeConfig``，绕过了 fixture。
-
-    节流逻辑本身由 ``tests/test_throttle.py`` 用假时钟验证，不依赖这里。
-    """
-    from qsick import throttle as throttle_module
-
-    original = throttle_module.THROTTLE.enabled
-    throttle_module.THROTTLE.enabled = False
-    throttle_module.THROTTLE.reset()
-    yield
-    throttle_module.THROTTLE.enabled = original
-    throttle_module.THROTTLE.reset()
-
-
-@pytest.fixture(autouse=True)
 def network_activation_is_immediate(monkeypatch):
-    """A logged-in account is normally served only after a short settling delay.
+    """A logged-in account is normally served only after a settling delay.
 
-    Waiting it out in every test would add five seconds to each one and make the assertions racy, so the delay is
-    zeroed here. The delay itself is covered by `tests/test_network_activation_delay.py`, which sets its own
-    value.
+    Waiting it out in every test would add fifteen seconds to each one and make the assertions racy, so the
+    configured value is zeroed here. The delay itself is covered by `tests/test_network_activation_delay.py`,
+    which sets its own value.
     """
     from qsick import runtime as runtime_module
 
-    monkeypatch.setattr(runtime_module, "NETWORK_ACTIVATION_DELAY", 0.0)
+    monkeypatch.setattr(runtime_module, "network_activation_delay", lambda config: 0.0)
 
 
 @pytest.fixture(autouse=True)
@@ -215,9 +195,6 @@ def config(tmp_path: Path) -> RuntimeConfig:
     cfg.plugins.dirs = [str(ROOT / "plugins")]
     cfg.forward_noise = False
     cfg.log.level = "TRACE"
-    # 节流在测试里默认关掉：它按真实时间等待（最长 30 秒），开着会让整个套件
-    # 变成分钟级。节流本身有单独的测试，用假时钟验证。
-    cfg.onebot.throttle = False
     return cfg
 
 

@@ -49,7 +49,25 @@ _ACCOUNT_POLL_SECONDS = 3
 #: A session reports itself logged in before its client can answer: the login arrives, then the listener
 #: attaches, then the message services come up. Binding a listener in that window gives the consumer a connection
 #: that fails every action with "Data Not Existed" or times out, and it reconnects looking for a working one.
-NETWORK_ACTIVATION_DELAY = 5.0
+#:
+#: Configurable as `network_activation_delay`; this is only the fallback for a config that does not set it.
+NETWORK_ACTIVATION_DELAY = 15.0
+
+
+def network_activation_delay(config: Any) -> float:
+    """The configured settling delay, sanitised.
+
+    Read through one function so a bad value in `qsick.json` (a string, a negative number, a typo) cannot stop the
+    runtime from starting: anything unusable falls back to the default, and a negative delay means "no delay"
+    rather than an exception.
+    """
+    try:
+        value = float(getattr(config, "network_activation_delay", NETWORK_ACTIVATION_DELAY))
+    except (TypeError, ValueError):
+        return NETWORK_ACTIVATION_DELAY
+    if value != value or value in (float("inf"), float("-inf")):  # NaN / infinities
+        return NETWORK_ACTIVATION_DELAY
+    return max(0.0, value)
 
 #: Retries after a missed poll, as seconds to wait before each extra attempt.
 #:
@@ -920,7 +938,7 @@ class Runtime:
         wait: float | None = None
         for account in accounts:
             seen = self._login_seen_at.setdefault(account, now)
-            remaining = NETWORK_ACTIVATION_DELAY - (now - seen)
+            remaining = network_activation_delay(self.config) - (now - seen)
             if remaining <= 0:
                 mature.append(account)
             elif wait is None or remaining < wait:
@@ -1652,34 +1670,17 @@ class Runtime:
                 return fail("selected account does not match any active session", CONFLICT)
         lock = self._send_lock(action, payload)
         started = time.perf_counter()
-        # Read-only lookups: answer repeats from cache, so the throttle below only ever spaces out genuine
-        # outbound requests.
+        # Read-only lookups: answer repeats from cache.
         #
-        # The throttle used to be the only protection, and it worked by making the *caller* wait. That kept
-        # the request rate down but made every consumer command take tens of seconds: measured
-        # `get_group_member_list` at 24-46 s per call while the same request, once the client had the list
-        # cached, took 0.2 s. A bot consumer asks for members on every message, so "slow actions" was this
-        # and nothing else.
-        #
-        # Caching keeps the outbound rate exactly where the throttle wanted it and makes repeats instant --
-        # the same trade the reference implementation makes (a ~60 s member-list cache, chosen because
-        # high-frequency 0xfe7 calls are what gets accounts flagged).
+        # This replaces an outbound throttle that spaced the same actions at a 10 s minimum by making the caller
+        # sleep, which turned every consumer command into tens of seconds. Caching keeps the outbound rate down
+        # *and* makes a repeat instant instead of merely later.
         cache_key = self._action_cache_key(action, payload)
         if cache_key is not None:
             cached = self.cache.get(cache_key)
             if cached is not None:
                 self._record_action(action, started, ok=True)
                 return cached
-        # 出站节流：敏感动作（群/成员列表）与消息发送都按节奏放行。上层代码
-        # 反复调用同一个接口是最典型的脚本特征，而服务端统计到的密度是真实的
-        # ——本地再怎么隐藏也改变不了这一点。
-        if getattr(self.config.onebot, "throttle", True):
-            from .throttle import THROTTLE
-
-            try:
-                await THROTTLE.gate(action)
-            except asyncio.CancelledError:
-                raise
         try:
             if lock is None:
                 result = await self.registry.dispatch(action, payload, self.context())
