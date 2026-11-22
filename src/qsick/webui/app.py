@@ -1125,9 +1125,28 @@ def create_app(runtime: "Runtime") -> FastAPI:
                         ) or ""
                     except Exception:  # noqa: BLE001 - a missing link hides the button, it does not fail the page
                         href = ""
+                elif kind == "file" and item.is_group:
+                    # A group file is not reachable by rkey: OIDB 0x6d6_2 answers with a plain HTTPS address, which
+                    # was measured serving the bytes. The id is the element's `file_id`, or its `file` field when
+                    # the event came through the OneBot normalisation -- both carry QQ's fileUuid. An older decimal
+                    # id is refused by the server as a bad file id, and then no button is shown.
+                    file_id = str(data.get("file_id") or data.get("file") or "")
+                    if file_id:
+                        try:
+                            answer = await runtime.invoke("get_group_file_url", {
+                                "group_id": int(item.chat_id),
+                                "file_id": file_id,
+                                "account": str(getattr(item, "account", "") or ""),
+                            })
+                            payload = answer.get("data") if isinstance(answer, dict) else None
+                            if isinstance(payload, dict):
+                                candidate = str(payload.get("url") or "")
+                                if candidate.startswith(("http://", "https://")):
+                                    href = candidate
+                        except Exception:  # noqa: BLE001 - same rule as above
+                            href = ""
                 if not href:
-                    # A file element lands here: no element_id in the event, so `media.download` cannot be asked.
-                    # No button is honest; a button that answers 502 is not.
+                    # Nothing mintable: no button is honest, a button that answers 502 is not.
                     continue
                 links.append({
                     "href": href,
