@@ -42,12 +42,15 @@ class ReverseWebSocketClient:
             if url:
                 self.targets.append((url, account))
         self.urls = [url for url, _ in self.targets]
-        self._owner = {url: account for url, account in self.targets}
         self.reconnect = max(1.0, reconnect)
         self._task: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
-        self._sockets: dict[str, Any] = {}
-        self._queues: dict[str, asyncio.Queue[str]] = {}
+        # Keyed by (url, account), not by URL. One consumer URL serving several bots is the ordinary
+        # multi-account setup, and a URL-keyed dict silently kept only one session per URL: the second
+        # `_session` overwrote the first one's queue and socket, so one account's events had nowhere to go
+        # and its actions ran as the other account.
+        self._sockets: dict[tuple[str, str], Any] = {}
+        self._queues: dict[tuple[str, str], asyncio.Queue[str]] = {}
         self.connected_url = ""
 
     def alive(self) -> bool:
@@ -89,8 +92,7 @@ class ReverseWebSocketClient:
         # Y's events: the consumer keys its bot by `X-Self-ID`, so such an event is either discarded or, worse,
         # acted on as if X had received it.
         wanted = str(payload.get("self_id") or "").strip()
-        for url, queue in list(self._queues.items()):
-            owner = self._owner.get(url, "")
+        for (url, owner), queue in list(self._queues.items()):
             if wanted and owner and owner != wanted:
                 continue
             try:
@@ -179,8 +181,8 @@ class ReverseWebSocketClient:
         async with connector as socket:
             self.connected_url = url
             queue: asyncio.Queue[str] = asyncio.Queue(maxsize=512)
-            self._queues[url] = queue
-            self._sockets[url] = socket
+            self._queues[(url, account)] = queue
+            self._sockets[(url, account)] = socket
             log.info("reverse ws connected", url=url, self_id=connected_self_id, account=account)
             await self._send(
                 socket,
@@ -226,8 +228,8 @@ class ReverseWebSocketClient:
                         await task
                     except asyncio.CancelledError:
                         pass
-                self._queues.pop(url, None)
-                self._sockets.pop(url, None)
+                self._queues.pop((url, account), None)
+                self._sockets.pop((url, account), None)
 
     async def _reconnect_when_identity_known(self, socket: Any, connected_self_id: int) -> None:
         """Last-resort correction: close the socket once the account is known, so the next handshake names it.

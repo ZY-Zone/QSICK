@@ -66,11 +66,25 @@ class PlannedAction(Action):
 # --------------------------------------------------------------------- helpers
 
 
-async def call(ctx: ActionContext, op: str, params: dict[str, Any], what: str) -> dict[str, Any]:
+#: How long to wait for a message that carries media, in seconds.
+#:
+#: A text send answers in well under a second, but a picture has to be staged, hashed and uploaded inside QQ
+#: before the receipt comes back. The native sender budgets 15 s plus a 60 s media grace for exactly that, so a
+#: fixed 20 s here cut it off mid-upload: the consumer got a failed send and the reply never appeared, which
+#: reads as "the bot ignored me". Comfortably above the sender's own ceiling, so its error wins when there is
+#: a real one.
+MEDIA_SEND_TIMEOUT = 90.0
+
+#: Segment types that make a send slow enough to need `MEDIA_SEND_TIMEOUT`.
+SLOW_SEND_TYPES = frozenset({"image", "record", "video", "file", "node", "forward", "multi_forward"})
+
+
+async def call(ctx: ActionContext, op: str, params: dict[str, Any], what: str,
+               *, timeout: float | None = None) -> dict[str, Any]:
     from ...transport.base import TransportError
 
     try:
-        result = await ctx.call(op, params)
+        result = await ctx.call(op, params, timeout=timeout)
     except TransportError as exc:
         raise ActionError(f"{what}: {exc}", models.UPSTREAM) from exc
     if not result.ok:
@@ -157,7 +171,11 @@ def cq_to_segment(cq_type: str, params: dict[str, Any]) -> dict[str, Any]:
 
 async def send_message(ctx: ActionContext, chat: dict[str, Any], message: Any, auto_escape: bool) -> dict[str, Any]:
     payload = {"chat": chat, "elements": message_to_elements(message, auto_escape)}
-    data = await call(ctx, "message.send", payload, "send message")
+    # Media gets the longer budget; a plain text send keeps the short one so a wedged session is still reported
+    # quickly instead of being waited on for a minute and a half.
+    slow = any(str(element.get("type") or "") in SLOW_SEND_TYPES for element in payload["elements"])
+    data = await call(ctx, "message.send", payload, "send message",
+                      timeout=MEDIA_SEND_TIMEOUT if slow else None)
     message_id = data.get("message_id", 0)
     return {"message_id": message_id, "message_id_str": str(message_id)}
 

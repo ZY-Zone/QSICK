@@ -41,7 +41,7 @@ def test_new_standard_segments_round_trip():
 
 
 async def test_forward_action_requires_a_conversation_and_reports_empty_forwards():
-    async def fake_call(op, params):
+    async def fake_call(op, params, *, timeout=None):
         assert op == "forward.get"
         return ok({"message": []})
 
@@ -55,7 +55,7 @@ async def test_forward_action_requires_a_conversation_and_reports_empty_forwards
 async def test_forward_action_returns_standard_node_array():
     nodes = [{"type": "node", "data": {"user_id": 9, "nickname": "bob", "time": 5, "content": [{"type": "text", "data": {"text": "hi"}}]}}]
 
-    async def fake_call(op, params):
+    async def fake_call(op, params, *, timeout=None):
         return ok({"message": nodes})
 
     result = await forward_handle(SimpleNamespace(call=fake_call, store=None), id="resid_abcdefgh", chat_type="group", chat_id=1)
@@ -64,7 +64,7 @@ async def test_forward_action_returns_standard_node_array():
 
 
 async def test_get_image_prefers_downloaded_path_and_refuses_transcode_silently():
-    async def download(op, params):
+    async def download(op, params, *, timeout=None):
         assert op == "media.download"
         assert params["message_id"] == "7" and params["element_id"] == "e"
         return ok({"file_path": "/tmp/a.png", "file_size": 3})
@@ -83,7 +83,7 @@ async def test_get_image_prefers_downloaded_path_and_refuses_transcode_silently(
 
 
 async def test_get_image_without_element_falls_back_to_url_and_says_so():
-    async def media(op, params):
+    async def media(op, params, *, timeout=None):
         assert op == "media.url"
         return ok({"url": "https://example.invalid/x", "expires_in": 60})
 

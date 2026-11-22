@@ -238,20 +238,29 @@ class HeadlessTransport(Transport):
         if not sessions:
             return None
 
-        resolved: int | None = None
-        fallback: int | None = None
-        for session in sessions:
-            port = int(session.get("nowport") or 0)
-            if port <= 0:
-                continue
-            probe = headless_mod.probe_session_login(port)
-            if not probe.get("running"):
-                continue
-            if fallback is None:
-                fallback = port
-            if wanted and probe.get("logged_in") and str(probe.get("uin") or "") == wanted:
-                resolved = port
-                break
+        def match(timeout: float) -> tuple[int | None, int | None]:
+            found: int | None = None
+            first_live: int | None = None
+            for session in sessions:
+                port = int(session.get("nowport") or 0)
+                if port <= 0:
+                    continue
+                probe = headless_mod.probe_session_login(port, timeout=timeout)
+                if not probe.get("running"):
+                    continue
+                if first_live is None:
+                    first_live = port
+                if wanted and probe.get("logged_in") and str(probe.get("uin") or "") == wanted:
+                    return port, first_live
+            return found, first_live
+
+        resolved, fallback = match(1.5)
+        if resolved is None and wanted:
+            # A session that is still attaching answers nothing, and one busy uploading can miss a 1.5 s probe.
+            # Asking once more before concluding "not here" is the difference between a slow action and a failed
+            # one: the caller has already proved the account exists, since it is live enough to have sent us
+            # something.
+            resolved, fallback = match(3.0)
 
         if resolved is None and not wanted:
             # No account named: an only-live-session is the right answer. With several running, refusing is
@@ -272,6 +281,11 @@ class HeadlessTransport(Transport):
         pipe_port = self._pipe_session_port(account)
         if pipe_port:
             return pipe_port, ""
+        if account.isdigit():
+            # A QQ number is never an instance name, so falling through would report "unknown instance" -- which
+            # names the wrong problem entirely: the account is fine, its session is not answering. Saying that
+            # is what makes the failure actionable.
+            raise RuntimeError(f"no running pipe session is serving account {account}")
         instance = self._instance_for_account(account)
         data = self._host_config(instance)
         if not data:
@@ -281,6 +295,18 @@ class HeadlessTransport(Transport):
         return int(data.get("port") or self._port), str(data.get("bridgeToken") or "")
 
     def _send_sync(self, body: dict[str, Any], timeout: float) -> dict[str, Any]:
+        try:
+            return self._send_once(body, timeout)
+        except urllib.error.URLError as exc:
+            # The port is cached for five seconds to keep a burst of actions cheap. A session that restarted in
+            # that window is addressed at a port nothing listens on any more, which surfaces as connection
+            # refused rather than as anything that names the cause. Drop the cached answer and resolve again.
+            account = str(body.get("account") or "")
+            if not isinstance(exc, urllib.error.HTTPError) and self._pipe_ports.pop(account, None):
+                return self._send_once(body, timeout)
+            raise
+
+    def _send_once(self, body: dict[str, Any], timeout: float) -> dict[str, Any]:
         port, token = self._rpc_target(str(body.get("account") or ""))
         headers = {"Content-Type": "application/json"}
         if token:

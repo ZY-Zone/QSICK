@@ -112,7 +112,7 @@ class TestAnswerRouting:
                                         [("ws://a/onebot", "111"), ("ws://b/onebot", "222")])
         queue_a: asyncio.Queue[str] = asyncio.Queue()
         queue_b: asyncio.Queue[str] = asyncio.Queue()
-        client._queues = {"ws://a/onebot": queue_a, "ws://b/onebot": queue_b}
+        client._queues = {("ws://a/onebot", "111"): queue_a, ("ws://b/onebot", "222"): queue_b}
 
         await client.broadcast({"self_id": 111, "post_type": "message"})
         assert queue_a.qsize() == 1, "属主应当收到自己的事件"
@@ -123,9 +123,39 @@ class TestAnswerRouting:
         # `reverse_ws_urls` entry keep working.
         client = ReverseWebSocketClient(build(tmp_path, with_profile=False), ["ws://a/onebot"])
         queue: asyncio.Queue[str] = asyncio.Queue()
-        client._queues = {"ws://a/onebot": queue}
+        client._queues = {("ws://a/onebot", ""): queue}
         await client.broadcast({"self_id": 111, "post_type": "message"})
         assert queue.qsize() == 1
+
+    async def test_two_accounts_may_share_one_consumer_url(self, tmp_path: Path):
+        """The ordinary multi-bot setup: one consumer, one connection per account.
+
+        Keying the connection state by URL collapsed this. The second session overwrote the first one's queue
+        and socket, so one account's events had nowhere to go and the surviving connection was treated as the
+        other account -- which is exactly "my message went to the wrong bot".
+        """
+        client = ReverseWebSocketClient(
+            build(tmp_path, with_profile=False),
+            [("ws://consumer/onebot", "111"), ("ws://consumer/onebot", "222")])
+        queue_111: asyncio.Queue[str] = asyncio.Queue()
+        queue_222: asyncio.Queue[str] = asyncio.Queue()
+        client._queues = {("ws://consumer/onebot", "111"): queue_111,
+                          ("ws://consumer/onebot", "222"): queue_222}
+
+        await client.broadcast({"self_id": 111, "post_type": "message"})
+        await client.broadcast({"self_id": 222, "post_type": "message"})
+
+        assert queue_111.qsize() == 1, "同一 URL 下第一个号的事件不该丢"
+        assert queue_222.qsize() == 1, "同一 URL 下第二个号的事件不该丢"
+
+    async def test_each_connection_keeps_its_own_identity(self, tmp_path: Path):
+        # `X-Self-ID` is what the consumer registers the bot under, so it has to be this connection's account --
+        # not whatever the runtime's primary account happens to be.
+        client = ReverseWebSocketClient(
+            build(tmp_path, with_profile=False),
+            [("ws://consumer/onebot", "111"), ("ws://consumer/onebot", "222")])
+        assert client._headers(111)["X-Self-ID"] == "111"
+        assert client._headers(222)["X-Self-ID"] == "222"
 
 
 class TestLostAnswerIsVisible:
