@@ -38,7 +38,12 @@ class RKeyEntry:
 
 
 class RKeyManager:
-    """Caches one token per scope and refreshes lazily."""
+    """Caches one token per (account, scope) and refreshes lazily.
+
+    The account is part of the key, not a detail of the request: a token belongs to whoever asked for it, so a
+    cache shared between accounts hands out tokens that the server rejects -- or worse, that work against a
+    different account's media.
+    """
 
     def __init__(
         self,
@@ -49,7 +54,8 @@ class RKeyManager:
     ) -> None:
         self._transport = transport
         self._skew = skew
-        self._cache: dict[str, RKeyEntry] = {}
+        #: account -> scope -> entry. Keyed by account because a token is issued to one.
+        self._cache: dict[str, dict[str, RKeyEntry]] = {}
         self._static = dict(static or {})
         for scope, env in (("private", "QSICK_RKEY_PRIVATE"), ("group", "QSICK_RKEY_GROUP")):
             value = os.environ.get(env)
@@ -57,27 +63,31 @@ class RKeyManager:
                 self._static[scope] = value.strip()
         self._last_error = ""
 
-    def cached(self, scope: str) -> str | None:
-        entry = self._cache.get(scope)
+    def cached(self, scope: str, account: str = "") -> str | None:
+        entry = self._cache.get(str(account or ""), {}).get(scope)
         if entry and not entry.expired(skew=self._skew):
             return entry.rkey
         return None
 
-    async def get(self, scope: str) -> str | None:
+    async def get(self, scope: str, account: str = "") -> str | None:
         scope = scope if scope in ("private", "group") else "group"
-        cached = self.cached(scope)
+        cached = self.cached(scope, account)
         if cached:
             return cached
-        await self.refresh()
-        cached = self.cached(scope)
+        await self.refresh(account)
+        cached = self.cached(scope, account)
         if cached:
             return cached
         # Static fallback is intentionally last: it is stale by definition.
         return self._static.get(scope)
 
-    async def refresh(self) -> dict[str, str]:
+    async def refresh(self, account: str = "") -> dict[str, str]:
+        # The account travels with the request. Without it the transport cannot tell which session must answer,
+        # and with more than one running it refuses rather than guessing -- correctly, because a guessed token is
+        # another account's.
+        params: dict[str, str] = {"account": str(account)} if account else {}
         try:
-            result = await self._transport.send("rkey", {})
+            result = await self._transport.send("rkey", params)
         except TransportError as exc:
             self._log_failure(f"transport: {exc}")
             return {}
@@ -102,10 +112,10 @@ class RKeyManager:
             scope = SCOPE_BY_TYPE.get(entry.type)
             if not scope or not entry.rkey:
                 continue
-            self._cache[scope] = entry
+            self._cache.setdefault(str(account or ""), {})[scope] = entry
             fetched[scope] = entry.rkey
         if fetched:
-            log.debug("rkey refreshed", scopes=",".join(sorted(fetched)))
+            log.debug("rkey refreshed", scopes=",".join(sorted(fetched)), account=str(account or ""))
         return fetched
 
     def _log_failure(self, reason: str) -> None:
@@ -113,8 +123,12 @@ class RKeyManager:
             self._last_error = reason
             log.warn("rkey refresh failed; falling back to static/empty", reason=reason)
 
-    def snapshot(self) -> dict[str, dict[str, object]]:
+    def snapshot(self) -> dict[str, dict[str, dict[str, object]]]:
+        """What is cached, per account. Kept nested so two accounts cannot be confused in a status view."""
         return {
-            scope: {"ttl": entry.ttl, "create_time": entry.create_time, "expired": entry.expired()}
-            for scope, entry in self._cache.items()
+            account: {
+                scope: {"ttl": entry.ttl, "create_time": entry.create_time, "expired": entry.expired()}
+                for scope, entry in scopes.items()
+            }
+            for account, scopes in self._cache.items()
         }

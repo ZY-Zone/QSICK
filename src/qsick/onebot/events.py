@@ -98,7 +98,9 @@ class EventMapper:
         if not message.account:
             message.account = str(self.self_id)
         scope = "group" if message.is_group else "private"
-        await E.resolve_media(message.elements, lambda el: self.media.url_for(el, scope=scope))
+        # The message's own account, because a media URL is only valid for the account that received it.
+        await E.resolve_media(message.elements,
+                              lambda el: self.media.url_for(el, scope=scope, account=str(message.account)))
         # 写库挪到线程池：store.put 是同步 SQLite 事务，直接在事件循环里跑会
         # 阻塞随后要处理的每一条消息与动作（发送和接收都会排队等它提交）。
         await asyncio.to_thread(self.store.put, message)

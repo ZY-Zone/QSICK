@@ -28,14 +28,14 @@ class MediaResolver:
         self._transport = transport
         self._rkey = rkey
 
-    async def url_for(self, element: Element, *, scope: str = "group") -> str | None:
+    async def url_for(self, element: Element, *, scope: str = "group", account: str = "") -> str | None:
         # 1. payload-side builder
         payload_url = await self._payload_url(element, scope)
         if payload_url:
             return payload_url
         # 2. image URL from rkey
         if element.type == "image":
-            return await self._image_url(element, scope)
+            return await self._image_url(element, scope, account)
         return None
 
     async def _payload_url(self, element: Element, scope: str) -> str | None:
@@ -58,12 +58,12 @@ class MediaResolver:
         url = result.data.get("url") if isinstance(result.data, dict) else None
         return str(url) if url else None
 
-    async def _image_url(self, element: Element, scope: str) -> str | None:
+    async def _image_url(self, element: Element, scope: str, account: str = "") -> str | None:
         file_id = element.data.get("file_id") or element.data.get("file")
         if not file_id:
             return None
         appid = str(element.data.get("appid") or (APPID_GROUP if scope == "group" else APPID_PRIVATE))
-        rkey = await self._rkey.get("group" if scope == "group" else "private")
+        rkey = await self._rkey.get("group" if scope == "group" else "private", account)
         if not rkey:
             log.debug("image has no rkey yet; leaving file_id", file_id=str(file_id)[:16])
             return None

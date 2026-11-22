@@ -22,10 +22,11 @@ from qsick.protocol import elements as E
 
 
 async def _handle(ctx: Any, **_: Any) -> list[dict[str, Any]]:
-    fetched = await ctx.rkey.refresh()
+    account = str(getattr(ctx, 'account', '') or '')
+    fetched = await ctx.rkey.refresh(account)
     entries = []
     for scope in ("private", "group"):
-        token = ctx.rkey.cached(scope)
+        token = ctx.rkey.cached(scope, account)
         if token:
             entries.append({"type": 10 if scope == "private" else 20, "rkey": token, "ttl": 0, "create_time": 0})
     if not entries and fetched:
