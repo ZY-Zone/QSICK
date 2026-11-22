@@ -1130,7 +1130,7 @@ class Runtime:
                 self.instances.refresh_accounts()
                 log.info("account reported by its session", account=account)
                 await self.sync_account_network(reason="session state link")
-        self.publish_account_ports()
+        self.publish_account_sessions()
         await self.sync_account_network(reason="session state")
 
     def _known_accounts(self) -> set[str]:
@@ -1142,17 +1142,17 @@ class Runtime:
                 found.add(account)
         return found
 
-    def publish_account_ports(self) -> None:
-        """Tell the transport which session port serves which account.
+    def publish_account_sessions(self) -> None:
+        """Tell the transport which session serves which account, as `uin -> tmp_id`.
 
-        Two sources, both already in memory: the session list (port per `tmp_id`) and each session's state link
-        (account per `tmp_id`). Neither costs a request, which is the point -- the transport used to resolve this
-        by asking the session itself, and a session that is busy serving a send answers "not running".
+        The pairing comes from each session's own state link, which reports the account it is logged in as. It
+        costs no request, which is the point: resolving this by asking the session meant putting a request on the
+        endpoint a send may already be occupying, and a busy session answers "not running".
         """
-        publish = getattr(self.transport, "set_account_ports", None)
+        publish = getattr(self.transport, "set_account_sessions", None)
         if publish is None:
             return
-        ports: dict[str, int] = {}
+        ports: dict[str, str] = {}
         for item in self._session_list:
             tmp_id = str(item.get("tmp_id") or "")
             port = int(item.get("nowport") or 0)
@@ -1161,17 +1161,19 @@ class Runtime:
             link = self._links.get(tmp_id)
             state = getattr(link, "state", None)
             uin = str(getattr(state, "uin", "") or "").strip()
-            # Only a session that says it is logged in and serving. A stopped one keeps its last uin, and
-            # publishing that would point actions at a port nothing is listening on.
+            # The same condition this class already uses to treat a session as logged in (`_apply_link_state`):
+            # it has an account, and it is not closing. Requiring `connected`/`logged_in` here as well made the
+            # table stricter than the code that registers the account -- a session would count as logged in for
+            # the UI and be missing from routing, and a send with that account then failed with "no running pipe
+            # session is serving account X" while the session was demonstrably serving.
             if not uin or uin == "0":
-                continue
-            if not (getattr(state, "connected", False) and getattr(state, "logged_in", False)):
                 continue
             if getattr(state, "closing", False):
                 continue
-            ports[uin] = port
+            ports[uin] = tmp_id
         try:
             publish(ports)
+            log.debug("account -> session table", table=ports)
         except Exception as exc:  # noqa: BLE001 - a bad table must not stop anything else
             log.debug("could not publish the account->port table", error=str(exc))
 
@@ -1204,7 +1206,7 @@ class Runtime:
         for tmp_id in list(self._links):
             if tmp_id not in wanted:
                 await self._links.pop(tmp_id).stop()
-        self.publish_account_ports()
+        self.publish_account_sessions()
 
         for tmp_id, (port, token) in wanted.items():
             link = self._links.get(tmp_id)

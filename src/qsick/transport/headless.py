@@ -43,8 +43,10 @@ class HeadlessTransport(Transport):
         self._host_root = Path(host_root).resolve() if host_root else None
         # 账号 → (port, monotonic 时间)。见 `_pipe_session_port`。
         self._pipe_ports: dict[str, tuple[int | None, float]] = {}
-        #: account -> session port, published by the runtime from its own state. Consulted before any probe.
-        self._account_ports: dict[str, int] = {}
+        #: account -> session tmp_id, published by the runtime from its own state. The port is then read from
+        #: that session's `dll/<tmp_id>/qsick_pipe.json`, so a session that binds a new port is followed without
+        #: waiting for the next poll.
+        self._account_sessions: dict[str, str] = {}
 
     @property
     def login(self) -> LoginState:
@@ -208,18 +210,34 @@ class HeadlessTransport(Transport):
                 return name
         raise ValueError(f"unknown instance {wanted!r}")
 
-    def set_account_ports(self, mapping: dict[str, int]) -> None:
-        """Publish which session port serves which account.
+    def set_account_sessions(self, mapping: dict[str, str]) -> None:
+        """Publish which session serves which account, as `uin -> tmp_id`.
 
-        The runtime owns this knowledge: the session list it polls every three seconds and each session's own
-        state link both report the account. Handing it over means resolving an action's destination is a dict
-        lookup instead of a request to the session -- which matters because the DLL serves one connection at a
-        time, so a probe during a send finds the session "not running".
+        The runtime owns this: each session's state link reports the account it is logged in as, and the session
+        list carries every `tmp_id`. Handing the pairing over means an action's destination is resolved by a dict
+        lookup plus a file read instead of a request to the session -- which matters because the DLL serves one
+        connection at a time, so probing during a send finds the session "not running".
         """
-        clean = {str(uin): int(port) for uin, port in (mapping or {}).items()
-                 if str(uin).strip() and int(port or 0) > 0}
-        if clean != self._account_ports:
-            self._account_ports = clean
+        clean = {str(uin).strip(): str(tmp).strip() for uin, tmp in (mapping or {}).items()
+                 if str(uin).strip() and str(tmp).strip()}
+        if clean != self._account_sessions:
+            self._account_sessions = clean
+
+    def _session_nowport(self, tmp_id: str) -> int:
+        """The port the named session actually bound, from its own `qsick_pipe.json`.
+
+        `nowport`, never `port`: the latter is what the operator asked for and only changes when they edit it,
+        while a running process keeps listening on the number it bound.
+        """
+        from .. import headless as headless_mod
+
+        try:
+            config = headless_mod.read_session_config(str(tmp_id), self._host_root)
+            _asked, bound = headless_mod.session_ports(config or {})
+        except Exception as exc:  # noqa: BLE001 - an unreadable config means "cannot resolve", not a crash
+            log.debug("could not read the session config", session=str(tmp_id), error=str(exc))
+            return 0
+        return int(bound or 0)
 
     def _pipe_session_port(self, account: str, *, recheck: bool = False) -> int | None:
         """Find the HTTP port of the pipe session that owns `account`.
@@ -242,15 +260,22 @@ class HeadlessTransport(Transport):
 
         now = time.monotonic()
         if wanted and not recheck:
-            # The runtime already knows which session serves which account -- its three-second poll and the
-            # sessions' own state links both carry it. Answering from that table is the whole point of having it:
-            # asking the session means putting a request on the very endpoint that a send may currently be
-            # occupying, because the DLL serves one connection at a time. Measured: during a 17.9 s image upload,
-            # twelve consecutive `login.info` probes all answered "not running".
-            known = self._account_ports.get(wanted)
-            if known:
-                self._pipe_ports[wanted] = (known, now)
-                return known
+            # Account -> session -> bound port, and no request to the session at all.
+            #
+            # The runtime publishes which `tmp_id` serves which account (it knows from the state links); the port
+            # then comes from that session's own `dll/<tmp_id>/qsick_pipe.json`, which is authoritative and free
+            # to read. Resolving by asking the session instead was measured to fail exactly when it mattered:
+            # during a 17.9 s upload, twelve consecutive `login.info` probes all answered "not running", because
+            # the DLL served one connection at a time.
+            tmp_id = self._account_sessions.get(wanted)
+            if tmp_id:
+                port = self._session_nowport(tmp_id)
+                if port > 0:
+                    log.debug("action target resolved", account=wanted, session=tmp_id, port=port)
+                    self._pipe_ports[wanted] = (port, now)
+                    return port
+            log.warn("account is not in the session table", account=wanted,
+                     known=sorted(self._account_sessions))
         cached = self._pipe_ports.get(wanted)
         # Kept for two minutes on purpose. Answering costs one full `login.info` round trip through the session's
         # task queue -- measured at 2.3 s, and that queue is serial -- so a short TTL made every action pay it
@@ -354,7 +379,7 @@ class HeadlessTransport(Transport):
             stale = self._pipe_ports.pop(account, None)
             # Drop the published answer too: it is what produced the stale port, so keeping it would make the
             # retry repeat the same mistake. With it gone the retry falls through to a real probe.
-            published = self._account_ports.pop(account, None) is not None
+            published = self._account_sessions.pop(account, None) is not None
             if not isinstance(exc, urllib.error.HTTPError) and (stale or published):
                 return self._send_once(body, timeout)
             raise
