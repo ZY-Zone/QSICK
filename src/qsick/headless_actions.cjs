@@ -342,6 +342,9 @@ const REQUIREMENTS = Object.freeze({
   'recent.list': ['RecentContact', 'getRecentContactListSnapShot'],
   'message.reactions': ['Msg', 'getMsgEmojiLikesList'],
   'system.ocr': ['NodeMisc', 'wantWinScreenOCR'],
+  // Qzone credentials: a p_skey for qzone.qq.com plus the g_tk derived from it. The HTTP itself is done in
+  // Python -- this op exists only because the ticket lives behind a kernel service inside the session.
+  'qzone.credentials': ['TipOff', 'getPskey'],
   'system.rkey': ['Msg', 'sendSsoCmdReqByContend'],
   'system.oidb_probe': ['Msg', 'sendSsoCmdReqByContend'],
   'emoji.favorites': ['Msg', 'fetchFavEmojiList'],
@@ -1030,6 +1033,46 @@ function createActionDispatcher(options = {}) {
       const results = [];
       for (const name of names) results.push({ name, ...(await oidb.probeCommand(() => svc, name, payload)) });
       return { results };
+    }
+    if (op === 'qzone.credentials') {
+      // The ticket, and the derived g_tk, for the HTTP client in Python.
+      //
+      // Only `qzone.qq.com` matters: it is the one domain that answers (44 chars), and every measured Qzone call
+      // works with it. The others are asked for and reported so the answer shows what was available rather than
+      // implying the list was refused.
+      const svc = service(s, 'TipOff', REQUIREMENTS[op].slice(1));
+      const domains = ['qzone.qq.com', 'qun.qq.com', 'h5.qzone.qq.com', 'user.qzone.qq.com'];
+      const answer = await svc.getPskey(domains, true);
+      const map = answer && answer.domainPskeyMap;
+      const keys = {};
+      for (const domain of domains) {
+        let value = '';
+        try {
+          value = map ? (typeof map.get === 'function' ? map.get(domain) : map[domain]) : '';
+        } catch (error) { value = ''; }
+        keys[domain] = value ? String(value) : '';
+      }
+      const pskey = keys['qzone.qq.com'];
+      if (!pskey) {
+        fail('UPSTREAM', 'getPskey returned no key for qzone.qq.com, so Qzone cannot be called from this session',
+             { domains: Object.fromEntries(Object.entries(keys).map(([k, v]) => [k, v ? v.length : 0])) });
+      }
+      // hash33, the same accumulation Qzone's own pages use for g_tk.
+      let hash = 5381;
+      for (let index = 0; index < pskey.length; index += 1) {
+        hash += (hash << 5) + pskey.charCodeAt(index);
+      }
+      const gtk = hash & 0x7fffffff;
+      const boot = global.__qsickLoginBoot || {};
+      const uin = String(boot.uin || '');
+      return {
+        uin: uin || String(account || ''),
+        pskey,
+        g_tk: gtk,
+        // Lengths, not values: enough to see which domains the client will hand over without copying tickets
+        // around in logs.
+        available: Object.fromEntries(Object.entries(keys).map(([name, value]) => [name, value ? value.length : 0])),
+      };
     }
     if (op === 'system.rkey') {
       const svc = service(s, 'Msg', REQUIREMENTS[op].slice(1));

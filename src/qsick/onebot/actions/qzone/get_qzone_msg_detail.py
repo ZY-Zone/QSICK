@@ -1,13 +1,11 @@
-"""OneBot adapter for `get_qzone_msg_detail`.
-
-Core side: parameter validation + retcode mapping.
-Payload side: implement the `get_qzone_msg_detail` op (see docs/payload-ops.md).
-"""
-
+"""单条说说（`get_qzone_msg_detail`）。"""
 from __future__ import annotations
 
-from qsick.onebot.actions.base import PayloadAction
+from typing import Any
+
+from ._common import QzoneAction, client, resolve_ref
 
 
-class GetQzoneMsgDetailAction(PayloadAction):
-    op = "get_qzone_msg_detail"
+class GetQzoneMsgDetailAction(QzoneAction):
+    async def handle(self, ctx: Any, **params: Any) -> Any:
+        return await client(ctx).feed_detail(await resolve_ref(ctx, params))

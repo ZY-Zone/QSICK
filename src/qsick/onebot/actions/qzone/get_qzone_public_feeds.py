@@ -1,13 +1,11 @@
-"""OneBot adapter for `get_qzone_public_feeds`.
-
-Core side: parameter validation + retcode mapping.
-Payload side: implement the `get_qzone_public_feeds` op (see docs/payload-ops.md).
-"""
-
+"""空友爱看推荐流（`get_qzone_public_feeds`）。"""
 from __future__ import annotations
 
-from qsick.onebot.actions.base import PayloadAction
+from typing import Any
+
+from ._common import QzoneAction, client
 
 
-class GetQzonePublicFeedsAction(PayloadAction):
-    op = "get_qzone_public_feeds"
+class GetQzonePublicFeedsAction(QzoneAction):
+    async def handle(self, ctx: Any, count: int = 10, **_ignored: Any) -> Any:
+        return await client(ctx).public_feeds(count=int(count or 10) or 10)

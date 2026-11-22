@@ -17,10 +17,23 @@
       "user.qzone.qq.com": 0
     },
     "header_is_the_difference": {
-      "no_x_oidb": {"status": 200, "retcode": 4001, "body": "{\"retcode\":4001,\"msg\":\"not authorized!\",\"message\":\"not authorized!\",\"data\":{}}"},
-      "with_x_oidb": {"status": 200, "retcode": 0},
-      "with_x_oidb_and_x_web_qua": {"status": 200, "retcode": 0},
-      "with_numeric_service_type": {"status": 200, "retcode": 0}
+      "no_x_oidb": {
+        "status": 200,
+        "retcode": 4001,
+        "body": "{\"retcode\":4001,\"msg\":\"not authorized!\",\"message\":\"not authorized!\",\"data\":{}}"
+      },
+      "with_x_oidb": {
+        "status": 200,
+        "retcode": 0
+      },
+      "with_x_oidb_and_x_web_qua": {
+        "status": 200,
+        "retcode": 0
+      },
+      "with_numeric_service_type": {
+        "status": 200,
+        "retcode": 0
+      }
     },
     "trpc_reads": {
       "EntranceCtrl_BatchEntranceWhitelist_0x9741_0": {
@@ -89,5 +102,49 @@
     "change": "the qzone.* handler no longer claims the endpoint refuses; it says the transport is verified and the builders are not written yet. It was also unreachable before -- the shared group_id check ran first -- and is now exempt by prefix.",
     "verify": "POST /action {op:'qzone.feeds'} answers 'Qzone is reachable from this client ... but no request builders are implemented yet'."
   },
-  "how_to_recheck": "uv run python tools/probe_qzone_auth.py — queues six cases through the live pipe session: the no-x-oidb control, three trpc reads, one write-family reachability call against a synthetic id, and one old CGI read."
+  "how_to_recheck": "uv run python tools/probe_qzone_auth.py — queues six cases through the live pipe session: the no-x-oidb control, three trpc reads, one write-family reachability call against a synthetic id, and one old CGI read.",
+  "implemented": {
+    "date": "2026-11-23",
+    "where": "src/qsick/protocol/qzone.py (client) + src/qsick/onebot/actions/qzone/ (31 adapters)",
+    "credential_op": "qzone.credentials (injected script) -> {uin, pskey, g_tk, available}; the only part that must come from inside QQ",
+    "verified_live": {
+      "get_qzone_profile": "ok, 0.7s, real profile from the old CGI",
+      "get_qzone_feeds": "ok, 10 feeds, author/time/content/counts/images all populated",
+      "get_qzone_msg_list": "ok, own 3 posts",
+      "get_qzone_msg_detail": "ok via feed_ref",
+      "get_qzone_comment_list": "ok",
+      "comment_qzone": "ok, comment id returned and visible on re-read",
+      "like_qzone": "ok, count 0->1 on re-read",
+      "unlike_qzone": "ok, count 1->0 on re-read",
+      "send_qzone_msg": "ok, text-only returns tid; with an image the picture lands in cell_media and is readable back",
+      "delete_qzone_msg": "ok, the post disappears from the listing",
+      "get_qzone_public_capabilities": "ok, all public_qzone_* flags false",
+      "get_qzone_public_feeds": "ok but total 0 (account not whitelisted)"
+    },
+    "unverified": [
+      "set_qzone_profile / set_qzone_ban / set_qzone_msg_right: implemented, not exercised -- they change account state",
+      "the 12 public-qzone actions: implemented on the same gateway, unverifiable while the account is outside the whitelist",
+      "get_qzone_share_ark: needs the Ark API, not implemented"
+    ]
+  },
+  "shapes_that_were_guessed_wrong_first": {
+    "note": "Every one of these produced a silently empty field rather than an error, so they are pinned in tests/test_qzone_client.py.",
+    "author": "cell_user_info.user.uin / .nick  (not cell_user_info.uin)",
+    "content": "cell_summary.summary[].content, a list of rich segments to join (not a string)",
+    "time": "cell_common.time  (there is no abstime)",
+    "like_count": "cell_like.num  (not like_num)",
+    "feed_id": "two levels down, cell_common.union_id.feed_id",
+    "app_id": "cell_common.app_id  (not appid)",
+    "image_url": "media_items[].image.default_url.url  (image.url does not exist)",
+    "comment": "id / user.nick / content as a list of segments",
+    "write_handle": "writes and detail take feed_ref {union_id, cell_feed_transfer, like_key}, never a bare tid -- GetFeedDetail answers retcode 10023 for one"
+  },
+  "transports_confirmed": {
+    "trpc_root": "https://h5.qzone.qq.com/http2rpc/gotrpc/v1/",
+    "cgi_read_root": "https://h5.qzone.qq.com/proxy/domain/  (profile etc.)",
+    "cgi_write_root": "https://user.qzone.qq.com/proxy/domain/  (publish/delete/set_*); the publish CGI answers 403 on the h5 root",
+    "upload_root": "https://up.qzone.qq.com/cgi-bin/upload/cgi_upload_image  (answers in jsonhtml, not jsonp)",
+    "upload_without_skey": "works -- the session exposes no skey getter, and the upload took p_skey alone",
+    "publish_tid": "at the top level of the answer; `data` is null"
+  }
 }

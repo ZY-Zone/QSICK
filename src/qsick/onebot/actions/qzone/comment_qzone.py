@@ -1,13 +1,16 @@
-"""OneBot adapter for `comment_qzone`.
-
-Core side: parameter validation + retcode mapping.
-Payload side: implement the `comment_qzone` op (see docs/payload-ops.md).
-"""
-
+"""评论（`comment_qzone`）。"""
 from __future__ import annotations
 
-from qsick.onebot.actions.base import PayloadAction
+from typing import Any
+
+from ... import models
+from ...registry import ActionError
+from ._common import QzoneAction, client, resolve_ref
 
 
-class CommentQzoneAction(PayloadAction):
-    op = "comment_qzone"
+class CommentQzoneAction(QzoneAction):
+    async def handle(self, ctx: Any, content: str = "", **params: Any) -> Any:
+        text = str(content or "").strip()
+        if not text:
+            raise ActionError("qzone: content cannot be empty", models.BAD_REQUEST)
+        return await client(ctx).add_comment(await resolve_ref(ctx, params), text)

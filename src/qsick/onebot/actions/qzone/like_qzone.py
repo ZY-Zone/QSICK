@@ -1,13 +1,11 @@
-"""OneBot adapter for `like_qzone`.
-
-Core side: parameter validation + retcode mapping.
-Payload side: implement the `like_qzone` op (see docs/payload-ops.md).
-"""
-
+"""点赞（`like_qzone`）。"""
 from __future__ import annotations
 
-from qsick.onebot.actions.base import PayloadAction
+from typing import Any
+
+from ._common import QzoneAction, client, resolve_ref
 
 
-class LikeQzoneAction(PayloadAction):
-    op = "like_qzone"
+class LikeQzoneAction(QzoneAction):
+    async def handle(self, ctx: Any, **params: Any) -> Any:
+        return await client(ctx).like(await resolve_ref(ctx, params))

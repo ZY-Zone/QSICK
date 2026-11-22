@@ -256,24 +256,80 @@
       "module": "qzone/comment_qzone",
       "class": "CommentQzoneAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "评论说说",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "comment_qzone",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用 {tid, uin, appid}"
+        },
+        {
+          "name": "target_uin",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说所属 QQ 号"
+        },
+        {
+          "name": "appid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说的 appid，列表里带回来的"
+        },
+        {
+          "name": "content",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": "评论内容"
+        }
+      ],
+      "op": "comment_qzone"
     },
     {
       "name": "comment_qzone_public_feed",
       "module": "qzone/comment_qzone_public_feed",
       "class": "CommentQzonePublicFeedAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空友爱看发评论",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "comment_qzone_public_feed",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用"
+        },
+        {
+          "name": "content",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "op": "comment_qzone_public_feed"
     },
     {
       "name": "complete_group_todo",
@@ -490,36 +546,106 @@
       "module": "qzone/delete_qzone_msg",
       "class": "DeleteQzoneMsgAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "删除说说",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "delete_qzone_msg",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用 {tid, uin, appid}"
+        },
+        {
+          "name": "target_uin",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说所属 QQ 号"
+        },
+        {
+          "name": "appid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说的 appid，列表里带回来的"
+        }
+      ],
+      "op": "delete_qzone_msg"
     },
     {
       "name": "delete_qzone_public_comment",
       "module": "qzone/delete_qzone_public_comment",
       "class": "DeleteQzonePublicCommentAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空友爱看删评论",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "delete_qzone_public_comment",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用"
+        },
+        {
+          "name": "comment_id",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "op": "delete_qzone_public_comment"
     },
     {
       "name": "delete_qzone_public_reply",
       "module": "qzone/delete_qzone_public_reply",
       "class": "DeleteQzonePublicReplyAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空友爱看删回复",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "delete_qzone_public_reply",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用"
+        },
+        {
+          "name": "comment_id",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "op": "delete_qzone_public_reply"
     },
     {
       "name": "do_group_album_comment",
@@ -713,12 +839,33 @@
       "module": "qzone/forward_qzone_public_feed",
       "class": "ForwardQzonePublicFeedAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空友爱看转发",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "forward_qzone_public_feed",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用"
+        },
+        {
+          "name": "content",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "op": "forward_qzone_public_feed"
     },
     {
       "name": "friend_poke",
@@ -1643,159 +1790,402 @@
     },
     {
       "name": "get_qzone_comment_list",
-      "module": "extended/get_qzone_comment_list",
+      "module": "qzone/get_qzone_comment_list",
       "class": "GetQzoneCommentListAction",
-      "category": "extended",
-      "summary": "",
+      "category": "qzone",
+      "summary": "说说评论列表",
       "status": "implemented",
-      "read_only": false,
-      "params": [],
-      "op": "get_qzone_comment_list",
-      "wire": "pending"
+      "read_only": true,
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "target_uin",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说所属 QQ 号"
+        },
+        {
+          "name": "appid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说的 appid，列表里带回来的"
+        },
+        {
+          "name": "num",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": "条数，默认 20"
+        }
+      ],
+      "op": "get_qzone_comment_list"
     },
     {
       "name": "get_qzone_comment_replies",
-      "module": "extended/get_qzone_comment_replies",
+      "module": "qzone/get_qzone_comment_replies",
       "class": "GetQzoneCommentRepliesAction",
-      "category": "extended",
-      "summary": "",
+      "category": "qzone",
+      "summary": "评论的回复列表",
       "status": "implemented",
-      "read_only": false,
-      "params": [],
-      "op": "get_qzone_comment_replies",
-      "wire": "pending"
+      "read_only": true,
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "target_uin",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说所属 QQ 号"
+        },
+        {
+          "name": "appid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说的 appid，列表里带回来的"
+        },
+        {
+          "name": "comment_id",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": "父评论 id"
+        },
+        {
+          "name": "num",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "op": "get_qzone_comment_replies"
     },
     {
       "name": "get_qzone_feed_detail",
       "module": "qzone/get_qzone_feed_detail",
       "class": "GetQzoneFeedDetailAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "说说详情（同 get_qzone_msg_detail）",
       "status": "implemented",
-      "read_only": false,
-      "params": [],
-      "op": "get_qzone_feed_detail",
-      "wire": "pending"
+      "read_only": true,
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用 {tid, uin, appid}"
+        },
+        {
+          "name": "target_uin",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说所属 QQ 号"
+        },
+        {
+          "name": "appid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说的 appid，列表里带回来的"
+        }
+      ],
+      "op": "get_qzone_feed_detail"
     },
     {
       "name": "get_qzone_feeds",
       "module": "qzone/get_qzone_feeds",
       "class": "GetQzoneFeedsAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "获取好友动态",
       "status": "implemented",
-      "read_only": false,
-      "params": [],
-      "op": "get_qzone_feeds",
-      "wire": "pending"
+      "read_only": true,
+      "params": [
+        {
+          "name": "count",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": "每页条数，默认 10"
+        },
+        {
+          "name": "page_num",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": "页码，从 0 开始"
+        }
+      ],
+      "op": "get_qzone_feeds"
     },
     {
       "name": "get_qzone_home_feeds",
       "module": "qzone/get_qzone_home_feeds",
       "class": "GetQzoneHomeFeedsAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "按 QQ 号取说说列表",
       "status": "implemented",
-      "read_only": false,
-      "params": [],
-      "op": "get_qzone_home_feeds",
-      "wire": "pending"
+      "read_only": true,
+      "params": [
+        {
+          "name": "target_uin",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "空间所属 QQ 号"
+        },
+        {
+          "name": "count",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "page_num",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "op": "get_qzone_home_feeds"
     },
     {
       "name": "get_qzone_msg_detail",
       "module": "qzone/get_qzone_msg_detail",
       "class": "GetQzoneMsgDetailAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "说说详情",
       "status": "implemented",
-      "read_only": false,
-      "params": [],
-      "op": "get_qzone_msg_detail",
-      "wire": "pending"
+      "read_only": true,
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用 {tid, uin, appid}"
+        },
+        {
+          "name": "target_uin",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说所属 QQ 号"
+        },
+        {
+          "name": "appid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说的 appid，列表里带回来的"
+        }
+      ],
+      "op": "get_qzone_msg_detail"
     },
     {
       "name": "get_qzone_msg_list",
       "module": "qzone/get_qzone_msg_list",
       "class": "GetQzoneMsgListAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "说说列表",
       "status": "implemented",
-      "read_only": false,
-      "params": [],
-      "op": "get_qzone_msg_list",
-      "wire": "pending"
+      "read_only": true,
+      "params": [
+        {
+          "name": "target_uin",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "空间所属 QQ 号，不传为自己"
+        },
+        {
+          "name": "pos",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "num",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "op": "get_qzone_msg_list"
     },
     {
       "name": "get_qzone_profile",
       "module": "qzone/get_qzone_profile",
       "class": "GetQzoneProfileAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空间资料（老 CGI）",
       "status": "implemented",
-      "read_only": false,
+      "read_only": true,
       "params": [],
-      "op": "get_qzone_profile",
-      "wire": "pending"
+      "op": "get_qzone_profile"
     },
     {
       "name": "get_qzone_public_capabilities",
       "module": "qzone/get_qzone_public_capabilities",
       "class": "GetQzonePublicCapabilitiesAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空友爱看能力探测",
       "status": "implemented",
-      "read_only": false,
+      "read_only": true,
       "params": [],
-      "op": "get_qzone_public_capabilities",
-      "wire": "pending"
+      "op": "get_qzone_public_capabilities"
     },
     {
       "name": "get_qzone_public_comments",
       "module": "qzone/get_qzone_public_comments",
       "class": "GetQzonePublicCommentsAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空友爱看评论列表",
       "status": "implemented",
-      "read_only": false,
-      "params": [],
-      "op": "get_qzone_public_comments",
-      "wire": "pending"
+      "read_only": true,
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用"
+        }
+      ],
+      "op": "get_qzone_public_comments"
     },
     {
       "name": "get_qzone_public_feed_detail",
       "module": "qzone/get_qzone_public_feed_detail",
       "class": "GetQzonePublicFeedDetailAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空友爱看说说详情",
       "status": "implemented",
-      "read_only": false,
-      "params": [],
-      "op": "get_qzone_public_feed_detail",
-      "wire": "pending"
+      "read_only": true,
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用"
+        }
+      ],
+      "op": "get_qzone_public_feed_detail"
     },
     {
       "name": "get_qzone_public_feeds",
       "module": "qzone/get_qzone_public_feeds",
       "class": "GetQzonePublicFeedsAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空友爱看推荐流",
       "status": "implemented",
-      "read_only": false,
-      "params": [],
-      "op": "get_qzone_public_feeds",
-      "wire": "pending"
+      "read_only": true,
+      "params": [
+        {
+          "name": "count",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "op": "get_qzone_public_feeds"
     },
     {
       "name": "get_qzone_public_replies",
       "module": "qzone/get_qzone_public_replies",
       "class": "GetQzonePublicRepliesAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空友爱看回复列表",
       "status": "implemented",
-      "read_only": false,
-      "params": [],
-      "op": "get_qzone_public_replies",
-      "wire": "pending"
+      "read_only": true,
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用"
+        },
+        {
+          "name": "comment_id",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "op": "get_qzone_public_replies"
     },
     {
       "name": "get_qzone_share_ark",
@@ -1991,12 +2381,47 @@
       "module": "qzone/like_qzone",
       "class": "LikeQzoneAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "点赞说说",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "like_qzone",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用 {tid, uin, appid}"
+        },
+        {
+          "name": "target_uin",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说所属 QQ 号"
+        },
+        {
+          "name": "appid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说的 appid，列表里带回来的"
+        },
+        {
+          "name": "abstime",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": "说说发表时间，默认 0"
+        }
+      ],
+      "op": "like_qzone"
     },
     {
       "name": "list_filesets",
@@ -2256,12 +2681,40 @@
       "module": "qzone/reply_qzone_public_feed",
       "class": "ReplyQzonePublicFeedAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空友爱看回复评论",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "reply_qzone_public_feed",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用"
+        },
+        {
+          "name": "content",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "comment",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "父评论对象"
+        }
+      ],
+      "op": "reply_qzone_public_feed"
     },
     {
       "name": "request_decrypt_key",
@@ -2612,12 +3065,40 @@
       "module": "qzone/send_qzone_msg",
       "class": "SendQzoneMsgAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "发说说（可带图）",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "send_qzone_msg",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "content",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": "正文，最多 2000 字"
+        },
+        {
+          "name": "images",
+          "kind": "list",
+          "required": false,
+          "default": null,
+          "desc": "本地路径或 http(s) 地址"
+        },
+        {
+          "name": "ugc_right",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": "1 所有人 / 4 好友 / 16 部分好友 / 64 仅自己 / 128 部分不可见"
+        },
+        {
+          "name": "target_uins",
+          "kind": "list",
+          "required": false,
+          "default": null,
+          "desc": "ugc_right 为 16/128 时必填"
+        }
+      ],
+      "op": "send_qzone_msg"
     },
     {
       "name": "send_tuwen_ark",
@@ -3347,84 +3828,231 @@
       "module": "qzone/set_qzone_ban",
       "class": "SetQzoneBanAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空间黑名单",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "set_qzone_ban",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "target_uin",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "banned",
+          "kind": "bool",
+          "required": false,
+          "default": null,
+          "desc": "true 拉黑 / false 解除"
+        }
+      ],
+      "op": "set_qzone_ban"
     },
     {
       "name": "set_qzone_msg_right",
       "module": "qzone/set_qzone_msg_right",
       "class": "SetQzoneMsgRightAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "修改说说可见范围",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "set_qzone_msg_right",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用 {tid, uin, appid}"
+        },
+        {
+          "name": "target_uin",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说所属 QQ 号"
+        },
+        {
+          "name": "appid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说的 appid，列表里带回来的"
+        },
+        {
+          "name": "ugc_right",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "target_uins",
+          "kind": "list",
+          "required": false,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "op": "set_qzone_msg_right"
     },
     {
       "name": "set_qzone_profile",
       "module": "qzone/set_qzone_profile",
       "class": "SetQzoneProfileAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "修改空间资料",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "set_qzone_profile",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "name",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "空间名称"
+        },
+        {
+          "name": "description",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "空间说明"
+        }
+      ],
+      "op": "set_qzone_profile"
     },
     {
       "name": "set_qzone_public_comment_like",
       "module": "qzone/set_qzone_public_comment_like",
       "class": "SetQzonePublicCommentLikeAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空友爱看评论点赞",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "set_qzone_public_comment_like",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用"
+        },
+        {
+          "name": "comment_id",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "op": "set_qzone_public_comment_like"
     },
     {
       "name": "set_qzone_public_follow",
       "module": "qzone/set_qzone_public_follow",
       "class": "SetQzonePublicFollowAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空友爱看关注/取关",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "set_qzone_public_follow",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "target_uin",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "follow",
+          "kind": "bool",
+          "required": false,
+          "default": null,
+          "desc": "true 关注 false 取关"
+        }
+      ],
+      "op": "set_qzone_public_follow"
     },
     {
       "name": "set_qzone_public_like",
       "module": "qzone/set_qzone_public_like",
       "class": "SetQzonePublicLikeAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空友爱看点赞/取消",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "set_qzone_public_like",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用"
+        },
+        {
+          "name": "enabled",
+          "kind": "bool",
+          "required": false,
+          "default": null,
+          "desc": "true 点赞 false 取消"
+        }
+      ],
+      "op": "set_qzone_public_like"
     },
     {
       "name": "set_qzone_public_upvote",
       "module": "qzone/set_qzone_public_upvote",
       "class": "SetQzonePublicUpvoteAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "空友爱看顶/踩",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "set_qzone_public_upvote",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用"
+        },
+        {
+          "name": "up",
+          "kind": "bool",
+          "required": false,
+          "default": null,
+          "desc": "true 顶 false 踩"
+        }
+      ],
+      "op": "set_qzone_public_upvote"
     },
     {
       "name": "set_restart",
@@ -3502,12 +4130,47 @@
       "module": "qzone/unlike_qzone",
       "class": "UnlikeQzoneAction",
       "category": "qzone",
-      "summary": "",
+      "summary": "取消点赞",
       "status": "implemented",
       "read_only": false,
-      "params": [],
-      "op": "unlike_qzone",
-      "wire": "pending"
+      "params": [
+        {
+          "name": "tid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说 id；与 feed_ref 二选一"
+        },
+        {
+          "name": "feed_ref",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "列表返回的 feed 引用 {tid, uin, appid}"
+        },
+        {
+          "name": "target_uin",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说所属 QQ 号"
+        },
+        {
+          "name": "appid",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "说说的 appid，列表里带回来的"
+        },
+        {
+          "name": "abstime",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "op": "unlike_qzone"
     },
     {
       "name": "upload_file_stream",

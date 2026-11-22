@@ -1,13 +1,11 @@
-"""OneBot adapter for `set_qzone_profile`.
-
-Core side: parameter validation + retcode mapping.
-Payload side: implement the `set_qzone_profile` op (see docs/payload-ops.md).
-"""
-
+"""改空间资料（`set_qzone_profile`）。"""
 from __future__ import annotations
 
-from qsick.onebot.actions.base import PayloadAction
+from typing import Any
+
+from ._common import QzoneAction, client
 
 
-class SetQzoneProfileAction(PayloadAction):
-    op = "set_qzone_profile"
+class SetQzoneProfileAction(QzoneAction):
+    async def handle(self, ctx: Any, name: str = "", description: str = "", **_ignored: Any) -> Any:
+        return await client(ctx).set_profile(name=str(name or ""), description=str(description or ""))
