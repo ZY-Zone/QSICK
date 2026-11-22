@@ -23,7 +23,7 @@ from qsick.protocol import elements as E
 
 async def _handle(
     ctx: Any, group_id: int, file_id: str = "", busid: int = 0,
-    url_type: int | None = None, **_: Any
+    url_type: int | None = None, file_name: str = "", **_: Any
 ) -> dict[str, Any]:
     """Ask OIDB for the download URL of one group file.
 
@@ -38,6 +38,9 @@ async def _handle(
     params: dict[str, Any] = {"group_id": group_id, "file_id": file_id}
     if url_type is not None:
         params["url_type"] = url_type
+    if file_name:
+        # Ends up as `?fname=`, which is the name the file is saved under.
+        params["file_name"] = file_name
     data = await call(ctx, "group.file.download", params, "file url")
     url = ""
     if isinstance(data, dict):

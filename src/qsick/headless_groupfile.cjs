@@ -216,12 +216,17 @@ function decodeProto(buffer) {
 // path, and the two are joined here. Building it from the plain fields rather than trusting a
 // ready-made url field is deliberate -- Lagrance's own code does this join, so that is the shape the
 // server is known to support.
-function buildDownloadUrl(response) {
+//
+// `?fname=` is the name the file is saved under, so it belongs to the caller: the name in the message is more
+// useful than whatever the server stored. It falls back to the response's `saveFileName` when nobody says.
+function buildDownloadUrl(response, fileName) {
   if (!response.downloadUrl || response.downloadUrl.length === 0) return '';
   const host = response.downloadDnsHttps || response.downloadDns;
   if (!host) return '';
   const hex = Buffer.from(response.downloadUrl).toString('hex').toUpperCase();
-  return `https://${host}/ftn_handler/${hex}/?fname=`;
+  // Encoded: a name containing `&`, `#` or a space would otherwise cut the query short.
+  const name = typeof fileName === 'string' && fileName ? fileName : (response.saveFileName || '');
+  return `https://${host}/ftn_handler/${hex}/?fname=${encodeURIComponent(name)}`;
 }
 
 // Requests a download URL for one group file.
@@ -381,7 +386,7 @@ async function getGroupFileDownloadUrl(getMsgService, groupCode, fileId, options
     throw error;
   }
   return {
-    url: buildDownloadUrl(response),
+    url: buildDownloadUrl(response, options.fileName),
     file_name: response.saveFileName,
     md5: response.md5.length ? response.md5.toString('hex') : '',
     sha1: response.sha.length ? response.sha.toString('hex') : '',

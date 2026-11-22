@@ -1816,6 +1816,9 @@ function createActionDispatcher(options = {}) {
             urlType: p.url_type === undefined ? undefined : Number(p.url_type),
             preview: p.preview === true || p.preview === 'true',
             src: p.src === undefined ? undefined : Number(p.src),
+            // The name the download is saved under. Passed by the caller so the file keeps the name the message
+            // showed, rather than whatever the server picked at upload time.
+            fileName: typeof p.file_name === 'string' ? p.file_name : undefined,
             timeoutMs: p.timeout_ms === undefined ? 10000 : Number(p.timeout_ms),
             // The hook setup needs fs/os/process.dlopen. This file's own require is used when it is
             // loaded as a module; the injected copy supplies one through loadModule's module object.

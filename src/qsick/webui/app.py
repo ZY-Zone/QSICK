@@ -1136,6 +1136,8 @@ def create_app(runtime: "Runtime") -> FastAPI:
                             answer = await runtime.invoke("get_group_file_url", {
                                 "group_id": int(item.chat_id),
                                 "file_id": file_id,
+                                # The name the message showed, so a download keeps it.
+                                "file_name": name,
                                 "account": str(getattr(item, "account", "") or ""),
                             })
                             payload = answer.get("data") if isinstance(answer, dict) else None
