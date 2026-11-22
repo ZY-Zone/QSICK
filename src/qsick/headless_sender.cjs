@@ -4,6 +4,9 @@ const { ActionError } = require('./headless_actions.cjs');
 const { createMediaPreparer } = require('./headless_media.cjs');
 function createMessageSender({ getSession, getIdentity, codec, resolveUid, messageRefs, onSent, timeoutMs = 15000 }) {
   const pending = new Map();
+  //: Correlation ticket -> {message_id} for sends already answered this episode, so a later FAILED record for the
+  //: same ticket can be reported. Bounded: this is diagnostic, not state.
+  const settled = new Map();
   const timers = new Set();
   // Media (picture/file) needs file access, md5 and rich-media staging, so the
   // host injects these preparers into the otherwise pure codec.
@@ -20,7 +23,19 @@ function createMessageSender({ getSession, getIdentity, codec, resolveUid, messa
       if (!raw || typeof raw !== 'object') continue;
       const ticket = String(raw.guildId || '');
       const job = pending.get(ticket);
-      if (!job || Number(raw.chatType) !== job.peer.chatType || String(raw.peerUid) !== job.peer.peerUid) continue;
+      if (!job) {
+        // A record for a send we already answered. QQ can revise a record in place: the first write may say
+        // SUCCESS and a later one FAILED (the usual shape when an upload is rejected after the record exists).
+        // That cannot retract the answer we already gave, so record it loudly -- otherwise "the send returned ok
+        // but the peer never got it" has no trace anywhere, which is exactly how it was reported.
+        if (ticket && (raw.sendStatus === 0 || raw.sendStatus === '0') && settled.has(ticket)) {
+          const known = settled.get(ticket);
+          console.error('[qsick] message ' + known.message_id + ' was confirmed sent, then QQ reported it FAILED'
+            + ' (peer ' + String(raw.peerUid || '') + '); the consumer already saw success');
+        }
+        continue;
+      }
+      if (Number(raw.chatType) !== job.peer.chatType || String(raw.peerUid) !== job.peer.peerUid) continue;
       if (String(raw.senderUin || job.uin) !== job.uin) continue;
       if (raw.sendStatus === 0 || raw.sendStatus === '0') {
         job.reject(new ActionError('SERVICE_ERROR', 'QQ reported that message sending failed')); continue;
@@ -29,6 +44,10 @@ function createMessageSender({ getSession, getIdentity, codec, resolveUid, messa
       try {
         const mid = decimal(raw.msgId, 'returned message ID');
         if (onSent) onSent(raw);
+        // Remember the confirmation briefly, keyed by the correlation ticket, so a later FAILED for the same
+        // record is attributable instead of silently ignored.
+        settled.set(ticket, { message_id: mid });
+        while (settled.size > 200) settled.delete(settled.keys().next().value);
         job.resolve({ message_id: mid, message_id_str: mid });
       } catch (error) { job.reject(error); }
     }
@@ -111,6 +130,7 @@ function createMessageSender({ getSession, getIdentity, codec, resolveUid, messa
   function close() {
     for (const job of pending.values()) job.reject(new ActionError('NOT_READY', 'QQ session closed during send'));
     pending.clear();
+    settled.clear();
     // Long media deadlines would otherwise keep the host process alive.
     for (const handle of timers) clearTimeout(handle);
     timers.clear();

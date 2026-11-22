@@ -50,6 +50,14 @@ class ReverseWebSocketClient:
         self._queues: dict[str, asyncio.Queue[str]] = {}
         self.connected_url = ""
 
+    def alive(self) -> bool:
+        """True while the reconnect loop is still running.
+
+        Used to decide whether an unchanged target set needs a rebuild at all. A stopped client has no task and
+        answers False, so it is still replaced -- this only preserves a client that is doing its job.
+        """
+        return self._task is not None and not self._task.done()
+
     def start(self) -> None:
         if not self.urls or self._task is not None:
             return
@@ -193,10 +201,23 @@ class ReverseWebSocketClient:
             identity = None if account else asyncio.create_task(
                 self._reconnect_when_identity_known(socket, connected_self_id),
                 name=f"qsick-reverse-identity-{url}")
+            # One task per frame, not one at a time.
+            #
+            # `await self._on_message(...)` inside the read loop made every action wait for the previous one to
+            # finish. A consumer issues its lookups back to back on connect, so one slow action held the rest in
+            # the socket buffer until the consumer gave up and closed -- measured in the consumer as "请求超时"
+            # for actions that had not even started. Actions are independent; nothing here needs the ordering.
+            handlers: set[asyncio.Task[None]] = set()
             try:
                 async for raw in socket:
-                    await self._on_message(socket, raw, account)
+                    task = asyncio.create_task(
+                        self._on_message(socket, raw, account),
+                        name=f"qsick-reverse-action-{url}")
+                    handlers.add(task)
+                    task.add_done_callback(handlers.discard)
             finally:
+                for task in list(handlers):
+                    task.cancel()
                 for task in (sender, identity):
                     if task is None:
                         continue
@@ -274,7 +295,14 @@ class ReverseWebSocketClient:
         try:
             await socket.send(json.dumps(payload, ensure_ascii=False))
         except Exception as exc:  # noqa: BLE001
-            log.debug("reverse ws send failed", error=str(exc))
+            # WARN, not debug, when an *answer* is lost. The consumer waits its full timeout for this frame, so
+            # losing it silently is what turns one dropped connection into a minute of apparent hangs. Action
+            # replies carry `echo`; events never do.
+            if payload.get("echo") is not None:
+                log.warn("reverse ws answer lost: the connection closed before it could be sent",
+                         action=payload.get("action"), echo=payload.get("echo"), error=str(exc))
+            else:
+                log.debug("reverse ws send failed", error=str(exc))
 
     def _headers(self, self_id: int | None = None) -> dict[str, str]:
         token = self.runtime.config.onebot.access_token

@@ -759,8 +759,18 @@ class Runtime:
 
     async def reload_reverse(self) -> bool:
         """Drop the current Reverse WS task and reconnect with the current URLs."""
-        await self.reverse.stop()
         targets = self._reverse_targets()
+        # Keep a working connection when the target set is unchanged.
+        #
+        # This runs on every login transition, and rebuilding unconditionally dropped the consumer's socket
+        # mid-request. Its pending-request table is per-connection, so the answers already in flight arrived on
+        # the replacement connection where nothing was waiting for them -- the consumer logged them as
+        # "未知消息" and then timed out re-asking. Reconnecting is only justified when the set of connections
+        # actually changes.
+        current = getattr(self.reverse, "targets", None)
+        if current is not None and sorted(current) == sorted(targets) and self.reverse.alive():
+            return bool(targets)
+        await self.reverse.stop()
         self.reverse = ReverseWebSocketClient(
             self,
             targets,
