@@ -1989,11 +1989,44 @@ def create_app(runtime: "Runtime") -> FastAPI:
             except OSError:
                 pass
 
+        # An image goes through the rkey builder first: the URL stored with an element carries no token, and the
+        # server answers `invalid rkey` for it. The stored value is the fallback, used only when no token can be had.
         stored_url = data.get("url")
-        if isinstance(stored_url, str) and stored_url.startswith(("http://", "https://")):
+        if isinstance(stored_url, str) and stored_url.startswith("/"):
+            stored_url = "https://gchat.qpic.cn" + stored_url
+        stored_usable = isinstance(stored_url, str) and stored_url.startswith(("http://", "https://"))
+        if stored_usable and str(getattr(element, "type", "") or "").lower() not in ("image", "mface"):
+            # Non-image kinds have no builder of their own; the stored URL is all there is.
             return RedirectResponse(stored_url)
 
-        if str(getattr(element, "type", "") or "").lower() in ("image", "mface"):
+        kind = str(getattr(element, "type", "") or "").lower()
+
+        # A group file is not reachable by rkey: its content comes from OIDB 0x6d6_2, which `get_group_file_url`
+        # wraps. Without this branch a file element fell through to "nothing to download".
+        if kind == "file":
+            file_id = str(data.get("file") or data.get("file_id") or "")
+            if not file_id:
+                return PlainTextResponse("the file element carries no file id", status_code=404)
+            if not target.is_group:
+                return PlainTextResponse("private file transfer is not supported here", status_code=501)
+            try:
+                answer = await runtime.invoke("get_group_file_url", {
+                    "group_id": int(target.chat_id),
+                    "file_id": file_id,
+                    "account": str(getattr(target, "account", "") or ""),
+                })
+            except Exception as exc:  # noqa: BLE001
+                return PlainTextResponse(f"could not ask for the file URL: {exc}", status_code=502)
+            payload = answer.get("data") if isinstance(answer, dict) else None
+            url = None
+            if isinstance(payload, dict):
+                url = payload.get("url") or payload.get("download_url")
+            if isinstance(url, str) and url.startswith(("http://", "https://")):
+                return RedirectResponse(url)
+            message = (answer.get("message") if isinstance(answer, dict) else "") or "no URL returned"
+            return PlainTextResponse(f"the group file URL was refused: {message}", status_code=502)
+
+        if kind == "image" or kind == "mface":
             scope = "group" if target.is_group else "private"
             try:
                 built = await runtime.media.url_for(element, scope=scope,
@@ -2002,6 +2035,8 @@ def create_app(runtime: "Runtime") -> FastAPI:
                 return PlainTextResponse(f"could not build the URL: {exc}", status_code=502)
             if built:
                 return RedirectResponse(built)
+        if stored_usable:
+            return RedirectResponse(stored_url)
         return PlainTextResponse("this element has nothing to download", status_code=404)
 
     @app.get("/messages", response_class=HTMLResponse)
