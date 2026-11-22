@@ -308,16 +308,17 @@ const REQUIREMENTS = Object.freeze({
   'group.essence.remove': ['Group', 'removeGroupEssence'],
   'group.essence.list': ['Group', 'fetchGroupEssenceListV2'],
   'group.essence.latest': ['Group', 'getGroupLatestEssenceList'],
-  // Qzone. Reachable in principle -- a p_skey for qzone.qq.com is obtainable -- but the RPC endpoint
-  // refuses every request with retcode 4001 before it looks at credentials.
+  // Qzone. Reachable, and the earlier note here said it was not.
   //
-  // Measured, and recorded in docs/qzone-findings.json: requests with a valid p_skey, with only a
-  // uin, and with no cookie at all all return the identical 4001. If credentials were the problem,
-  // removing them would change the answer. Three g_tk algorithms also produced the same value, so
-  // that is ruled out separately.
+  // The old reading was "the RPC endpoint refuses every request with retcode 4001 before it looks at
+  // credentials", based on identical 4001 with a valid p_skey, with only a uin, and with no cookie. The
+  // control was sound but measured the wrong thing: those requests carried no `x-oidb` header, and the
+  // gateway is addressed by it. Without it there is no command to authorize, so 4001 answered "which
+  // command is this?".
   //
-  // Registered rather than absent so callers get that measured reason, and so a build that lifts the
-  // restriction starts working without a code change.
+  // Re-measured with the header: retcode 0, and both GetFriendFeeds (0x97e5/0) and GetShuoshuoList
+  // (0x9a97/1) return real data. So these ops stay registered and unimplemented, not blocked -- see
+  // the qzone.* handler below and docs/qzone-findings.json.
   'qzone.capabilities': ['__http__', 'qzone'],
   'qzone.feeds': ['__http__', 'qzone'],
   'qzone.detail': ['__http__', 'qzone'],
@@ -978,7 +979,10 @@ function createActionDispatcher(options = {}) {
       // failed with the group_id message while `{group_id, count}` worked.
       'message.history',
     ]);
-    const groupId = NO_GROUP_ID_OPS.has(op) ? '' : id(p.group_id, 'group_id');
+    // qzone.* is exempt by prefix: those ops are HTTP calls keyed by the account, not by a group. Without the
+    // exemption the handler below was unreachable -- measured, qzone.feeds answered "group_id must be a positive
+    // canonical decimal ID" and the reason the op exists for was never printed.
+    const groupId = (NO_GROUP_ID_OPS.has(op) || op.startsWith('qzone.')) ? '' : id(p.group_id, 'group_id');
     if (op === 'group.share_link') {
       const needShortUrl = bool(p, 'need_short_url', true);
       const srcId = integer(p.src_id === undefined ? 73 : p.src_id, 'src_id', 0, 2147483647);
@@ -1986,20 +1990,28 @@ function createActionDispatcher(options = {}) {
       };
     }
     if (op.startsWith('qzone.')) {
-      // Qzone is registered so the reason is specific rather than "unknown op".
+      // Registered so the answer is specific rather than "unknown op".
       //
-      // The transport works -- p_skey for qzone.qq.com is obtainable and the request reaches
-      // h5.qzone.qq.com over HTTPS -- but the endpoint answers 4001 "not authorized!" to every
-      // request, including one with no Cookie header at all. That last part is what makes it a
-      // settled question: if credentials were being checked, omitting them would answer differently.
+      // The transport is *known good*, and it was once believed not to be. The note here used to say the endpoint
+      // answered `retcode 4001 not authorized` before checking credentials, which would have made Qzone unreachable
+      // from this client. That reading came from a probe that omitted the `x-oidb` header: the gateway
+      // `/http2rpc/gotrpc/v1/{service}/{method}` is addressed *by* that header, so without it there was no command to
+      // authorize, and 4001 answered "which command is this?" rather than "are you allowed?".
       //
-      // See docs/qzone-findings.json for the full measurement set. Re-run
-      // tools/probe_qzone_auth.py to recheck; if the empty-cookie case ever differs from the
-      // credentialed one, the route table from NapCat becomes worth implementing.
+      // Measured since -- same session, same pskey, only that header differing:
+      //
+      //     no x-oidb                          -> retcode 4001
+      //     x-oidb                             -> retcode 0
+      //     FeedsReader/GetFriendFeeds  0x97e5/0 -> retcode 0, feed list
+      //     FeedsReader/GetShuoshuoList 0x9a97/1 -> retcode 0, own posts
+      //
+      // What is missing is therefore not permission but the request builders: every route needs its own body shape,
+      // plus a response normaliser. Until those exist this op says that, instead of claiming the client is refused.
+      // See docs/qzone-findings.json; tools/probe_qzone_auth.py re-measures.
       fail('UNSUPPORTED',
-        'Qzone RPC refuses every request with retcode 4001 before checking credentials '
-        + '(measured: identical response with a valid p_skey, with a uin only, and with no cookie). '
-        + 'The pskey and g_tk path works; the endpoint does not accept this client.');
+        'Qzone is reachable from this client (pskey + g_tk + x-oidb all verified) '
+        + 'but no request builders are implemented yet, so there is nothing to call. '
+        + 'See docs/qzone-findings.json.');
     }
     if (op === 'group.shut_list') {
       const svc = service(s, 'Group', REQUIREMENTS[op].slice(1));

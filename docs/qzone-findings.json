@@ -1,6 +1,6 @@
 {
   "reachable": true,
-  "summary": "Qzone RPC is reachable and authorized from this client. The 2026-11-18 'not authorized' finding was an artefact of a probe that omitted the x-oidb header: the gateway is addressed by that header, so without it there was no command to authorize.",
+  "summary": "Qzone is reachable and authorized from this client, over two independent transports (trpc-over-HTTP and the old CGI). The 2026-11-18 'not authorized' finding was an artefact of a probe that omitted the x-oidb header: the trpc gateway is addressed by that header, so without it there was no command to authorize.",
   "superseded_finding": {
     "date": "2026-11-18",
     "conclusion": "every RPC -> retcode 4001 'not authorized', including with no cookie; endpoint refuses before checking credentials",
@@ -17,58 +17,77 @@
       "user.qzone.qq.com": 0
     },
     "header_is_the_difference": {
-      "no_x_oidb": {
-        "status": 200,
-        "retcode": 4001,
-        "body": "{\"retcode\":4001,\"msg\":\"not authorized!\",\"message\":\"not authorized!\",\"data\":{}}"
-      },
-      "with_x_oidb": {
-        "status": 200,
-        "retcode": 0,
-        "note": "EntranceCtrl/BatchEntranceWhitelist answered with real entrance data for the account"
-      },
-      "with_x_oidb_and_x_web_qua": {
-        "status": 200,
-        "retcode": 0
-      },
-      "with_numeric_service_type": {
-        "status": 200,
-        "retcode": 0
-      }
+      "no_x_oidb": {"status": 200, "retcode": 4001, "body": "{\"retcode\":4001,\"msg\":\"not authorized!\",\"message\":\"not authorized!\",\"data\":{}}"},
+      "with_x_oidb": {"status": 200, "retcode": 0},
+      "with_x_oidb_and_x_web_qua": {"status": 200, "retcode": 0},
+      "with_numeric_service_type": {"status": 200, "retcode": 0}
     },
-    "business_calls": {
-      "GetFriendFeeds_0x97e5_0": {
-        "status": 200,
+    "trpc_reads": {
+      "EntranceCtrl_BatchEntranceWhitelist_0x9741_0": {
         "retcode": 0,
-        "note": "returned a feed list with cell_* structures (cell_feed_deco, cell_media, cell_foward_info ...)",
-        "body_sent": "{}"
+        "note": "per-entrance switches; this account has public_qzone_* all false"
       },
-      "GetShuoshuoList_0x9a97_1": {
-        "status": 200,
+      "FeedsReader_GetFriendFeeds_0x97e5_0": {
+        "retcode": 0,
+        "feeds": 10,
+        "note": "body {} accepted; returns feeds[] of cell_* objects plus a pagination attach_info"
+      },
+      "FeedsReader_GetShuoshuoList_0x9a97_1": {
         "retcode": 0,
         "has_more": false,
-        "note": "returned this account's own posts plus an attach_info pagination cursor"
+        "note": "this account's own posts plus attach_info"
+      },
+      "FeedsReader_GetComment_0x9bfd_1": {
+        "retcode": 0,
+        "note": "reachable; cell_comment was null for the feed tested, so the body shape is unconfirmed"
+      },
+      "FeedsReader_GetPublicRecomFeeds_0x9a38_0": {
+        "retcode": 0,
+        "total": 0,
+        "feeds": 0,
+        "note": "route works but the account is not in the public-qzone (空友爱看) whitelist, matching its false entrance switches"
       }
+    },
+    "trpc_write_family": {
+      "InteractionWriter_DeleteComment_0x9989_0": {
+        "retcode": 10000,
+        "message": "[backend] 遇到一点小问题",
+        "note": "aimed at a synthetic comment id, so nothing could be deleted. The point is the answer: not 4001, so the path is routed and authorized and the failure is the bogus target.",
+        "conclusion": "write-family routes are reachable"
+      }
+    },
+    "old_cgi": {
+      "GET_/proxy/domain/base.qzone.qq.com/cgi-bin/user/cgi_userinfo_get_all": {
+        "status": 200,
+        "code": 0,
+        "subcode": 0,
+        "message": "获取成功",
+        "note": "JSONP-wrapped (`_Callback(...)`) and carries real profile fields (uin, nickname, is_famous ...). No x-oidb involved, so the old 4001 never applied here."
+      }
+    },
+    "feed_identifier_shape": {
+      "note": "A feed's identifiers are NOT at the top level -- that level is entirely cell_* keys (43 of them). They are nested one level down as feed_id (a hex string, e.g. 0cae399cdf11036ba3f80500) and app_id (e.g. 311).",
+      "consequence": "Any code that looks for feed.id or feed.tid finds nothing and silently builds a request with an empty id -- which the server answers retcode 0 with empty data rather than an error."
     },
     "gtk_algorithms_agree": true
   },
-  "what_works": [
-    "p_skey for qzone.qq.com via TipOffService.getPskey(domains, true)",
-    "g_tk = hash33(p_skey) & 0x7fffffff",
-    "POST https://h5.qzone.qq.com/http2rpc/gotrpc/v1/{service}/{method}?g_tk=... with headers Cookie, x-oidb, x-web-qua",
-    "read calls: EntranceCtrl.BatchEntranceWhitelist, FeedsReader.GetFriendFeeds, FeedsReader.GetShuoshuoList"
-  ],
-  "open_questions": [
-    "p_skey is unavailable for h5.qzone.qq.com and user.qzone.qq.com (1003). Everything measured works with the qzone.qq.com key, but a call that requires the h5 key would fail.",
-    "Request bodies are guesses: GetFriendFeeds answered retcode 0 even with {}, so pagination/filter parameters are unverified.",
-    "Responses are raw cell_* structures; no normalisation exists yet.",
-    "The 14 'public qzone' (空友爱看) routes and the write routes (PublishFeed 0x9775, likes, comments) are untested.",
-    "Old CGI routes (taotao/profile via /proxy/domain/) are untested — they take no x-oidb, so the earlier 4001 may genuinely apply to them."
-  ],
-  "blocked_in_product_code": {
-    "where": "src/qsick/headless_actions.cjs, the qzone RPC op",
-    "behaviour": "answers UNSUPPORTED with 'Qzone RPC refuses every request with retcode 4001 before checking credentials'",
-    "status": "now known to be false; must be removed before QZone can be implemented"
+  "two_transports": {
+    "trpc_over_http": "POST https://h5.qzone.qq.com/http2rpc/gotrpc/v1/{service}/{method}?g_tk=... with Cookie, x-oidb, x-web-qua; bodies and responses are JSON",
+    "old_cgi": "GET https://h5.qzone.qq.com/proxy/domain/<host>/<path>?g_tk=... with Cookie only; responses are JSONP-wrapped and need the wrapper stripped"
   },
-  "how_to_recheck": "uv run python tools/probe_qzone_auth.py — it queues a probe through the live pipe session and prints all four cases plus two business calls."
+  "open_questions": [
+    "p_skey is unavailable for h5.qzone.qq.com and user.qzone.qq.com (1003). Everything measured works with the qzone.qq.com key.",
+    "Request bodies beyond {} are guesses: pagination/search parameters are unverified.",
+    "GetComment returned cell_comment null for a feed that may simply have no comments; the correct body shape is unconfirmed.",
+    "Publishing, liking and commenting were deliberately not tested -- each needs a real target and would mutate the account. Only DeleteComment was used, aimed at an id that does not exist.",
+    "Public qzone routes answer but this account is not whitelisted, so their payload shapes stay unseen.",
+    "Old CGI write routes (emotion_cgi_publish_v6, upload) are untested.",
+    "No response normalisation exists; everything is raw cell_* / CGI JSON."
+  ],
+  "product_code_after_this": {
+    "where": "src/qsick/headless_actions.cjs",
+    "change": "the qzone.* handler no longer claims the endpoint refuses; it says the transport is verified and the builders are not written yet. It was also unreachable before -- the shared group_id check ran first -- and is now exempt by prefix.",
+    "verify": "POST /action {op:'qzone.feeds'} answers 'Qzone is reachable from this client ... but no request builders are implemented yet'."
+  },
+  "how_to_recheck": "uv run python tools/probe_qzone_auth.py — queues six cases through the live pipe session: the no-x-oidb control, three trpc reads, one write-family reachability call against a synthetic id, and one old CGI read."
 }
