@@ -5,8 +5,8 @@
 ***
 声明：仅项目主要结构、readme.md、以及少量代码由创作者人工编写\
 其余部分均由cc和ds混合工作完成\
-本项目在少部分实现上有所参考napcat/snowluma，实属无奈之举，望见谅
-有任何疑问可以前往QQ群聊
+本项目在少部分实现上有所参考napcat/snowluma，实属无奈之举，望见谅\
+有任何疑问可以前往QQ群聊：https://qm.qq.com/q/IDnnkW9eSs
 ***
 
 ## 快速开始（Windows）
