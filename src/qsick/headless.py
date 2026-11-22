@@ -385,28 +385,49 @@ def pipe_event_offset(root: Path | str = ROOT_NAME) -> int:
 
 def read_pipe_events(root: Path | str = ROOT_NAME,
                      offsets: dict[str, int] | None = None) -> dict[str, Any]:
-    """Read new lines from the pipe event stream, advancing `offsets` in place.
+    """Read new lines from every session's event stream, advancing `offsets` in place.
 
-    The injected script appends one JSON object per message it receives to
-    `<root>/Pipe/owndata/events.jsonl`. That is a **shared** file: every session runs from the same `Pipe/`
-    client and writes to the same `owndata` directory, so one stream carries them all. Each line names the
-    `uin` it belongs to, which is what the dispatch layer needs -- and it is also why this can stay a single
-    file instead of forcing a per-session directory into the DLL (that attempt crashed QQ).
+    Each session appends to `<root>/Pipe/dll/<tmp_id>/events.jsonl` -- its **own** file. The stream used to be one
+    shared `owndata/events.jsonl` carrying a `uin` per line, which relied on every process reporting its own
+    account correctly. It does not hold up: with two sessions live, a message one of them sent was recorded
+    against the other, and one event landed in both accounts' stores. A file per session removes the question --
+    which session wrote a line is known from the path, not from a field inside it.
 
-    Tail-style rather than read-everything: the file grows for as long as QSICK runs. The caller keeps one
-    byte offset under the key `"pipe"` and only reads what is new.
+    A session that has not been migrated still writes to `owndata/events.jsonl`; that stream is read too, so an
+    older launch is not silently ignored.
 
-    A partially written line at the end is left for the next call: the writer may be mid-append, and parsing
-    half a JSON object would drop a message on every poll.
+    Tail-style rather than read-everything: these files grow for as long as QSICK runs. One byte offset is kept per
+    stream, keyed by its path, so adding or removing a session does not disturb the others.
+
+    A partially written line at the end is left for the next call: the writer may be mid-append, and parsing half
+    a JSON object would drop a message on every poll.
 
     Returns `{"events": [...], "error": str}`.
     """
-    path = Path(root) / PIPE_INSTANCE_ID / "owndata" / "events.jsonl"
     state = offsets if offsets is not None else {}
-    key = "pipe"
+    root_path = Path(root)
+    streams: list[Path] = []
+    session_root = session_dll_dir(root_path)
+    if session_root.is_dir():
+        streams.extend(sorted(session_root.glob("*/events.jsonl")))
+    legacy = root_path / PIPE_INSTANCE_ID / "owndata" / "events.jsonl"
+    if legacy.is_file():
+        streams.append(legacy)
+
+    events: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for stream in streams:
+        result = _read_one_stream(stream, state)
+        events.extend(result["events"])
+        if result["error"]:
+            errors.append(result["error"])
+    return {"events": events, "error": "; ".join(errors)}
+
+
+def _read_one_stream(path: Path, state: dict[str, int]) -> dict[str, Any]:
+    """Advance one stream's offset and return the whole lines it gained."""
+    key = str(path)
     start = int(state.get(key) or 0)
-    if not path.is_file():
-        return {"events": [], "error": ""}
     try:
         size = path.stat().st_size
     except OSError as exc:
@@ -434,7 +455,7 @@ def read_pipe_events(root: Path | str = ROOT_NAME,
                 if isinstance(item, dict):
                     events.append(item)
     except OSError as exc:
-        return {"events": [], "error": f"{type(exc).__name__}: {exc}"}
+        return {"events": events, "error": f"{type(exc).__name__}: {exc}"}
     state[key] = consumed
     return {"events": events, "error": ""}
 
@@ -2487,6 +2508,12 @@ class HeadlessManager:
                 # `Pipe/owndata` stayed empty, so `login-boot.json` never appeared where it was read from,
                 # and each launch started against a different data root than the previous one.
                 "owndata": str(own_data.resolve()),
+                # Where this session alone puts its action queue and event stream.
+                #
+                # owndata above is shared by every session, and the queue used to live there: a task posted
+                # to one session's port was claimed by whichever session drained the queue first and ran with
+                # that session's account. QQ's own data stays on owndata; only the queue moves.
+                "taskDir": str(session_dir.resolve()),
                 "port": int(port or instance.port),
                 "nowport": int(port or instance.port),
                 # Token the WebSocket state channel requires.

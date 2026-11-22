@@ -28,7 +28,10 @@ from qsick import headless as headless_module
 
 
 def stream_path(root: Path) -> Path:
-    """Where the injected side appends events: `Pipe/owndata/events.jsonl`."""
+    """The legacy shared stream: `Pipe/owndata/events.jsonl`.
+
+    Kept because an un-migrated session still writes there and the reader must not ignore it.
+    """
     path = root / headless_module.PIPE_INSTANCE_ID / "owndata" / "events.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
@@ -115,7 +118,8 @@ def test_a_truncated_file_starts_over(tmp_path: Path):
 
     offsets: dict[str, int] = {}
     headless_module.read_pipe_events(root, offsets=offsets)
-    assert offsets["pipe"] > 0
+    # One offset per stream now, keyed by the path: several sessions are read in the same pass.
+    assert offsets[str(stream_path(root))] > 0
 
     stream_path(root).write_text(
         json.dumps({"type": "message", "uin": "999"}) + "\n", encoding="utf-8")
@@ -195,3 +199,31 @@ async def test_poll_skips_messages_without_a_normalised_payload(tmp_path: Path):
     await asyncio.wait_for(task, timeout=3)
 
     assert pushed == []
+
+
+def session_stream_path(root: Path, tmp_id: str) -> Path:
+    """Where a migrated session appends events: `Pipe/dll/<tmp_id>/events.jsonl`."""
+    path = root / headless_module.PIPE_INSTANCE_ID / "dll" / tmp_id / "events.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def test_each_session_stream_is_read_separately(tmp_path: Path):
+    """A session owns its own stream, so which session wrote a line is known from the path.
+
+    The shared stream carried a `uin` per line instead, and with two sessions live a message one of them sent was
+    recorded against the other. Reading per-session files is what removes that question.
+    """
+    root = tmp_path / "headlessClient"
+    for tmp_id, uin in (("aaaa", "111"), ("bbbb", "222")):
+        with session_stream_path(root, tmp_id).open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"type": "message", "uin": uin}) + "\n")
+
+    offsets: dict[str, int] = {}
+    result = headless_module.read_pipe_events(root, offsets=offsets)
+    assert sorted(item["uin"] for item in result["events"]) == ["111", "222"]
+
+    # Nothing new the second time, and the two streams keep independent offsets.
+    again = headless_module.read_pipe_events(root, offsets=offsets)
+    assert again["events"] == []
+    assert len(offsets) == 2
