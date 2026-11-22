@@ -26,6 +26,12 @@ class ActionContext:
     media: MediaResolver
     login: LoginState
     cache: TTLCache = field(default_factory=TTLCache)
+    #: Which account must execute this request.
+    #:
+    #: Set from the request's `account` parameter and used by `actions.base.call` to stamp every transport call.
+    #: Without it each handler built its own payload and dropped the account, so the transport could only guess a
+    #: session -- with one session running that guess was right, with two it addressed the wrong account or none.
+    account: str = ""
 
     @property
     def self_id(self) -> int:

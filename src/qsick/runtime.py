@@ -415,8 +415,9 @@ class Runtime:
     def now(self) -> int:
         return int(time.time())
 
-    def context(self) -> ActionContext:
+    def context(self, account: str = "") -> ActionContext:
         return ActionContext(
+            account=str(account or "").strip(),
             runtime=self,
             transport=self.transport,
             config=self.config,
@@ -1689,10 +1690,10 @@ class Runtime:
                 return cached
         try:
             if lock is None:
-                result = await self.registry.dispatch(action, payload, self.context())
+                result = await self.registry.dispatch(action, payload, self.context(requested))
             else:
                 async with lock:
-                    result = await self.registry.dispatch(action, payload, self.context())
+                    result = await self.registry.dispatch(action, payload, self.context(requested))
         except BaseException:
             self._record_action(action, started, ok=False)
             raise

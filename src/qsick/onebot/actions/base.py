@@ -83,6 +83,16 @@ async def call(ctx: ActionContext, op: str, params: dict[str, Any], what: str,
                *, timeout: float | None = None) -> dict[str, Any]:
     from ...transport.base import TransportError
 
+    # Stamp the account here, at the one place every handler's payload passes through.
+    #
+    # Handlers build their own payloads -- `send_message` assembles `{chat, elements}`, a mute builds
+    # `{group_id, ...}` -- and none of them carried the account. The transport therefore received no account and
+    # had to pick a session by guesswork: correct with one session running, and with two either the wrong account
+    # or none at all. That is how a reply could be sent by an account nobody addressed.
+    account = str(getattr(ctx, "account", "") or "").strip()
+    if account and "account" not in params:
+        params = {**params, "account": account}
+
     try:
         result = await ctx.call(op, params, timeout=timeout)
     except TransportError as exc:

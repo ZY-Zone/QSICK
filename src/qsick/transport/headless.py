@@ -296,6 +296,20 @@ class HeadlessTransport(Transport):
             # names the wrong problem entirely: the account is fine, its session is not answering. Saying that
             # is what makes the failure actionable.
             raise RuntimeError(f"no running pipe session is serving account {account}")
+        if not account and self._host_root:
+            # No account at all. With one session running that is unambiguous and `_pipe_session_port` already
+            # answered; reaching here means several are running and there is nothing to choose by. Falling
+            # through would address a headless port that a pipe-only install does not have, which reads as
+            # "connection refused" and hides the real problem: the request never said who should execute it.
+            try:
+                from .. import headless as headless_mod
+                sessions = [s for s in headless_mod.read_session_dirs(self._host_root)
+                            if int(s.get("nowport") or 0) > 0]
+            except Exception:  # noqa: BLE001 - keep the original path if the list cannot be read
+                sessions = []
+            if len(sessions) > 1:
+                raise RuntimeError(
+                    "the request does not say which account should execute it, and several sessions are running")
         instance = self._instance_for_account(account)
         data = self._host_config(instance)
         if not data:
