@@ -1,0 +1,268 @@
+{
+  "群文件": [
+    {
+      "file": "get_group_root_files.py",
+      "op": "group.files.root",
+      "reachable": true
+    },
+    {
+      "file": "cancel_online_file.py",
+      "op": "cancel_online_file",
+      "reachable": false
+    },
+    {
+      "file": "create_group_file_folder.py",
+      "op": "group.files.create_folder",
+      "reachable": true
+    },
+    {
+      "file": "delete_group_file.py",
+      "op": "delete_group_file",
+      "reachable": true
+    },
+    {
+      "file": "delete_group_file_folder.py",
+      "op": "delete_group_file_folder",
+      "reachable": true
+    },
+    {
+      "file": "download_file.py",
+      "op": "download_file",
+      "reachable": false
+    },
+    {
+      "file": "download_fileset.py",
+      "op": "download_fileset",
+      "reachable": false
+    },
+    {
+      "file": "get_group_file_system_info.py",
+      "op": "get_group_file_system_info",
+      "reachable": true
+    },
+    {
+      "file": "get_group_files_by_folder.py",
+      "op": "group.files.folder",
+      "reachable": true
+    },
+    {
+      "file": "get_online_file_msg.py",
+      "op": "get_online_file_msg",
+      "reachable": false
+    },
+    {
+      "file": "move_group_file.py",
+      "op": "move_group_file",
+      "reachable": true
+    },
+    {
+      "file": "receive_online_file.py",
+      "op": "receive_online_file",
+      "reachable": false
+    },
+    {
+      "file": "refuse_online_file.py",
+      "op": "refuse_online_file",
+      "reachable": false
+    },
+    {
+      "file": "rename_group_file.py",
+      "op": "rename_group_file",
+      "reachable": true
+    },
+    {
+      "file": "rename_group_file_folder.py",
+      "op": "rename_group_file_folder",
+      "reachable": true
+    },
+    {
+      "file": "send_online_file.py",
+      "op": "send_online_file",
+      "reachable": false
+    },
+    {
+      "file": "send_online_folder.py",
+      "op": "send_online_folder",
+      "reachable": false
+    },
+    {
+      "file": "trans_group_file.py",
+      "op": "trans_group_file",
+      "reachable": false
+    },
+    {
+      "file": "upload_group_file.py",
+      "op": "upload_group_file",
+      "reachable": false
+    },
+    {
+      "file": "upload_private_file.py",
+      "op": "upload_private_file",
+      "reachable": false
+    }
+  ],
+  "QQ 空间": [
+    {
+      "file": "comment_qzone.py",
+      "op": "comment_qzone",
+      "reachable": true
+    },
+    {
+      "file": "comment_qzone_public_feed.py",
+      "op": "comment_qzone_public_feed",
+      "reachable": true
+    },
+    {
+      "file": "delete_qzone_msg.py",
+      "op": "delete_qzone_msg",
+      "reachable": true
+    },
+    {
+      "file": "delete_qzone_public_comment.py",
+      "op": "delete_qzone_public_comment",
+      "reachable": true
+    },
+    {
+      "file": "delete_qzone_public_reply.py",
+      "op": "delete_qzone_public_reply",
+      "reachable": true
+    },
+    {
+      "file": "forward_qzone_public_feed.py",
+      "op": "forward_qzone_public_feed",
+      "reachable": true
+    },
+    {
+      "file": "get_qzone_feed_detail.py",
+      "op": "get_qzone_feed_detail",
+      "reachable": true
+    },
+    {
+      "file": "get_qzone_feeds.py",
+      "op": "get_qzone_feeds",
+      "reachable": true
+    },
+    {
+      "file": "get_qzone_home_feeds.py",
+      "op": "get_qzone_home_feeds",
+      "reachable": true
+    },
+    {
+      "file": "get_qzone_msg_detail.py",
+      "op": "get_qzone_msg_detail",
+      "reachable": true
+    },
+    {
+      "file": "get_qzone_msg_list.py",
+      "op": "get_qzone_msg_list",
+      "reachable": true
+    },
+    {
+      "file": "get_qzone_profile.py",
+      "op": "get_qzone_profile",
+      "reachable": true
+    },
+    {
+      "file": "get_qzone_public_capabilities.py",
+      "op": "get_qzone_public_capabilities",
+      "reachable": true
+    },
+    {
+      "file": "get_qzone_public_comments.py",
+      "op": "get_qzone_public_comments",
+      "reachable": true
+    },
+    {
+      "file": "get_qzone_public_feed_detail.py",
+      "op": "get_qzone_public_feed_detail",
+      "reachable": true
+    },
+    {
+      "file": "get_qzone_public_feeds.py",
+      "op": "get_qzone_public_feeds",
+      "reachable": true
+    },
+    {
+      "file": "get_qzone_public_replies.py",
+      "op": "get_qzone_public_replies",
+      "reachable": true
+    },
+    {
+      "file": "get_qzone_share_ark.py",
+      "op": "get_qzone_share_ark",
+      "reachable": true
+    },
+    {
+      "file": "like_qzone.py",
+      "op": "like_qzone",
+      "reachable": true
+    },
+    {
+      "file": "reply_qzone_public_feed.py",
+      "op": "reply_qzone_public_feed",
+      "reachable": true
+    },
+    {
+      "file": "send_qzone_msg.py",
+      "op": "send_qzone_msg",
+      "reachable": true
+    },
+    {
+      "file": "set_qzone_ban.py",
+      "op": "set_qzone_ban",
+      "reachable": true
+    },
+    {
+      "file": "set_qzone_msg_right.py",
+      "op": "set_qzone_msg_right",
+      "reachable": true
+    },
+    {
+      "file": "set_qzone_profile.py",
+      "op": "set_qzone_profile",
+      "reachable": true
+    },
+    {
+      "file": "set_qzone_public_comment_like.py",
+      "op": "set_qzone_public_comment_like",
+      "reachable": true
+    },
+    {
+      "file": "set_qzone_public_follow.py",
+      "op": "set_qzone_public_follow",
+      "reachable": true
+    },
+    {
+      "file": "set_qzone_public_like.py",
+      "op": "set_qzone_public_like",
+      "reachable": true
+    },
+    {
+      "file": "set_qzone_public_upvote.py",
+      "op": "set_qzone_public_upvote",
+      "reachable": true
+    },
+    {
+      "file": "unlike_qzone.py",
+      "op": "unlike_qzone",
+      "reachable": true
+    }
+  ],
+  "精华消息": [
+    {
+      "file": "delete_essence_msg.py",
+      "op": "delete_essence_msg",
+      "reachable": true
+    },
+    {
+      "file": "get_essence_msg_list.py",
+      "op": "get_essence_msg_list",
+      "reachable": true
+    },
+    {
+      "file": "set_essence_msg.py",
+      "op": "set_essence_msg",
+      "reachable": true
+    }
+  ]
+}

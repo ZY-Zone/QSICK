@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}消息{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>消息缓存</h1>
+    <p>共 {{ total }} 条；未识别元素以 unknown 段保留，引用型消息保留 id。</p>
+  </div>
+  <form class="toolbar" method="get" action="/messages">
+    <input name="q" value="{{ q }}" placeholder="搜索文本或会话号…" style="width:240px" />
+    <button type="submit">搜索</button>
+    {% if q %}<a class="btn ghost sm" href="/messages">重置</a>{% endif %}
+  </form>
+</div>
+
+<section class="card">
+  {% if messages %}
+    <table class="table">
+      <thead><tr><th>ID</th><th>会话</th><th>发送者</th><th>内容</th><th class="right">时间</th></tr></thead>
+      <tbody>
+      {% for m in messages|reverse %}
+        <tr>
+          <td class="num">{{ m.message_id }}</td>
+          <td class="nowrap"><span class="chatpill">{{ "群" if m.is_group else "私" }} {{ m.chat_id }}</span></td>
+          <td class="nowrap">{{ m.sender_name or m.sender_uin }}</td>
+          <td class="preview" title="{{ m.text }}">{{ m.text }}</td>
+          <td class="right faint nowrap">{{ m.time }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="toolbar" style="margin-top:12px">
+      <span class="muted">第 {{ page_no }} / {{ pages }} 页</span>
+      <span class="spacer"></span>
+      {% if page_no > 1 %}
+        <a class="btn ghost sm" href="/messages?q={{ q|urlencode }}&page={{ page_no - 1 }}">上一页</a>
+      {% endif %}
+      {% if page_no < pages %}
+        <a class="btn ghost sm" href="/messages?q={{ q|urlencode }}&page={{ page_no + 1 }}">下一页</a>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="empty">
+      <strong>{{ "没有匹配的消息" if q else "暂无消息" }}</strong>
+      {{ "换个关键词试试。" if q else "连接真实账号或使用 mock 模式产生一条示例消息。" }}
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

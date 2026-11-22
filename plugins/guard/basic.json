@@ -1,0 +1,99 @@
+{
+  "id": "guard",
+  "name": "消息白名单 / 黑名单",
+  "version": "1.0.0",
+  "api": 1,
+  "entry": "plugin.py:GuardPlugin",
+  "tier": "core",
+  "permissions": [
+    "events.read",
+    "events.drop",
+    "config.read",
+    "config.write",
+    "runtime.read"
+  ],
+  "hooks": [
+    "on_message"
+  ],
+  "priority": 10,
+  "enabled": true,
+  "description": "白名单外或黑名单内的消息在进入事件管线前丢弃；支持群/用户、双向名单与 scope 过滤。",
+  "config_ui": "default",
+  "config_fields": [
+    {
+      "key": "mode",
+      "label": "模式（blacklist = 黑名单，whitelist = 白名单）",
+      "type": "str",
+      "default": "blacklist",
+      "configEnable": {
+        "ifShow": true,
+        "type": "select"
+      },
+      "options": [
+        "blacklist",
+        "whitelist"
+      ]
+    },
+    {
+      "key": "scope",
+      "label": "作用范围（group / private / both）",
+      "type": "str",
+      "default": "both",
+      "configEnable": {
+        "ifShow": true,
+        "type": "select"
+      },
+      "options": [
+        "both",
+        "group",
+        "private"
+      ]
+    },
+    {
+      "key": "groups",
+      "label": "群名单（JSON：whitelist / blacklist 数组）",
+      "type": "json",
+      "default": {
+        "whitelist": [],
+        "blacklist": []
+      },
+      "configEnable": {
+        "ifShow": true,
+        "type": "text"
+      }
+    },
+    {
+      "key": "users",
+      "label": "用户名单（JSON：whitelist / blacklist 数组）",
+      "type": "json",
+      "default": {
+        "whitelist": [],
+        "blacklist": []
+      },
+      "configEnable": {
+        "ifShow": true,
+        "type": "text"
+      }
+    },
+    {
+      "key": "always_allow_users",
+      "label": "始终放行的 QQ（JSON 数组）",
+      "type": "json",
+      "default": [],
+      "configEnable": {
+        "ifShow": true,
+        "type": "text"
+      }
+    },
+    {
+      "key": "log_drops",
+      "label": "记录丢弃日志（true / false）",
+      "type": "bool",
+      "default": true,
+      "configEnable": {
+        "ifShow": true,
+        "type": "switch"
+      }
+    }
+  ]
+}

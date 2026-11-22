@@ -1,0 +1,10 @@
+{% for card in info.network_cards %}
+<a class="net-item" href="/network" title="{{ card.detail }}">
+  <span class="dot {{ card.tone }}"></span>
+  <span class="net-copy">
+    <strong>{{ card.label }}</strong>
+    <span>{{ card.detail }}</span>
+  </span>
+  <span class="net-state">{{ card.state }}</span>
+</a>
+{% endfor %}

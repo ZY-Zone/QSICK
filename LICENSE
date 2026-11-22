@@ -1,0 +1,34 @@
+QSICK is licensed under the GNU Affero General Public License v3.0 or later
+(AGPL-3.0-or-later), **except for the native payload binary** described below.
+
+The canonical AGPL text is available at:
+
+    https://www.gnu.org/licenses/agpl-3.0.txt
+
+In short: you may use, study, modify and redistribute the Python and WebUI sources,
+provided that derivative works and network-served deployments remain under the same
+license and that copyright notices are preserved. There is NO WARRANTY.
+
+A full copy of the AGPL text must be shipped with binary distributions. If you
+received this project without it, obtain it from the URL above.
+
+---------------------------------------------------------------------------
+Native components (separate terms)
+---------------------------------------------------------------------------
+
+`native/qsick-payload/qsick_payload.dll` is a proprietary binary component. It is
+NOT licensed under the AGPL. It is distributed only as part of QSICK, only in the
+precompiled form provided, and only for the non-commercial use permitted by this
+project's license. No rights are granted to reverse engineer, decompile, modify,
+repackage, redistribute separately or relicense it. Its source is not distributed.
+
+This mirrors how other QQ interoperability projects ship their native hooks. If you
+need source-level access to the native component, contact the maintainers for a
+separate written agreement.
+
+Third-party components retain their own licenses:
+
+  - FastAPI, Starlette, Uvicorn, Jinja2, Pydantic, websockets: MIT / BSD / Apache-2.0
+
+QQ and Tencent are trademarks of their respective owners. QSICK is an independent
+interoperability project and is not affiliated with or endorsed by Tencent.

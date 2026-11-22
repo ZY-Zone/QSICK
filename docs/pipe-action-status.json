@@ -1,0 +1,45 @@
+{
+  "verified": {
+    "login.info": "uin/uid from the login callback; no call needed",
+    "profile.self": "getProfileService().getUserDetailInfoByUin(uin) -> result:0, nick",
+    "system.get_server_time": "getMSFService().getServerTime() -> live timestamp",
+    "group.list": "addKernelGroupListener(onGroupListUpdate) + getGroupList(false)",
+    "group.members": "getAllMemberList(group,false) -> result.ids[] (uid only)",
+    "group.member.details": "getMemberInfoCache(group,uid) -> memberInfo{uin,nick,role}",
+    "message.send": "generateMsgUniqueId + sendMsg('0',peer,elements,new Map()) -> result:0",
+    "message.recall": "recallMsg(peer,[msgId]) -> result:0, using a msgId read back from the client",
+    "group.mute": "setMemberShutUp(group,[{uid,timeStamp}]) -> result:0; timeStamp 0 unmutes",
+    "group.whole_ban": "setGroupShutUp(group,false) -> result:0",
+    "group.admin": "modifyMemberRole(group,uid,3) promotes; role 2 demotes -> result:0",
+    "message.history": "getLatestDbMsgs(peer,20) -> msgList[]; getMsgsBySeqAndCount(peer,seq,count,order,filter) also works"
+  },
+  "signature_known": {
+    "getMemberInfo": "3 args (group, uid, bool); returns result:5 without a prior scene",
+    "getMemberCommonInfo": "1 arg",
+    "getNextMemberList": "3 args",
+    "getBuddyList": "1 arg; returns {result,errMsg} with no data on this account",
+    "recallMsg": "2 args (peer, [msgId]) -- verified working",
+    "kickMemberV2": "1 object arg {groupCode,kickFlag,kickList,kickListUids,kickMsg}",
+    "quitGroupV2": "not exercised -- destructive against the account's own group",
+    "getMsgs": "4 args",
+    "getMsgsIncludeSelf": "4 args",
+    "getMsgsBySeqAndCount": "5 args (peer, seq, count, order, filter); seq '0' means current tail",
+    "getMsgsByMsgId": "arity unknown"
+  },
+  "blocked": {
+    "friend.list": "getBuddyList(false) acks but carries no data; field name unknown",
+    "profile_by_uid": "getUserDetailInfoByUin(uid) -> result:4, empty detail (accepts uin only)"
+  },
+  "notes": [
+    "The session registry key moves between runs: nt_2 on one instance, nt_1 on the next.",
+    "Usability test: getGroupService().addKernelGroupListener must be a function.",
+    "Event-delivered data needs the listener registered BEFORE the call.",
+    "getAllMemberList returns ids with an empty infos map; details come from getMemberInfoCache.",
+    "Window suppression is off by default; QSICK_PIPE_HIDE_WINDOWS=1 restores it.",
+    "sendMsg takes 4 args: '0' lets QQ allocate the id, peer.guildId carries the correlation ticket,",
+    "  and the fourth argument must be a Map -- an object literal satisfies the count and fails natively.",
+    "Injection may fail to enumerate the module while frozen; a second attempt after resume recovers it.",
+    "getMsgsBySeqAndCount(peer,'0',...) returns an empty list: seq 0 is before the first message.",
+    "  Use getLatestDbMsgs(peer,count) or a large seq to read the newest messages."
+  ]
+}

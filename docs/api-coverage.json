@@ -1,0 +1,17 @@
+{
+  "total_entries": 242,
+  "status_counts": {
+    "implemented": 242
+  },
+  "wire_counts": {
+    "pending": 166,
+    "core": 76
+  },
+  "onebot_required": 39,
+  "onebot_ready": 38,
+  "onebot_pending": {
+    "group_write": [
+      "set_group_anonymous_ban"
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "arities": {
+    "createGroupProfileShare": 0,
+    "getGroupProfileCardInfo": 0
+  },
+  "asserts": {
+    "createGroupProfileShare": "assertion (argc == 1) failed: NodeIKernelGroupService::createGroupProfileShare needs 1 arguments",
+    "getGroupProfileCardInfo": "assertion (argc == 1) failed: NodeIKernelGroupService::getGroupProfileCardInfo needs 1 arguments"
+  },
+  "names": [
+    "createGroupProfileShare",
+    "getGroupProfileCardInfo"
+  ],
+  "key": "nt_2",
+  "totalMethods": 243
+}

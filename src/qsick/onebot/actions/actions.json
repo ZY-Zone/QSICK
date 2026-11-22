@@ -1,0 +1,3755 @@
+{
+  "version": 1,
+  "note": "One entry per action. `module` is relative to qsick.onebot.actions; `class` must subclass Action (or PlannedAction).",
+  "actions": [
+    {
+      "name": ".get_word_slices",
+      "module": "extended/get_word_slices",
+      "class": "GetWordSlicesAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": ".get_word_slices",
+      "wire": "pending"
+    },
+    {
+      "name": "ArkSharePeer",
+      "module": "extended/arksharepeer",
+      "class": "ArkSharePeerAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "ArkSharePeer",
+      "wire": "pending"
+    },
+    {
+      "name": "_del_group_notice",
+      "module": "group/del_group_notice",
+      "class": "DelGroupNoticeAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "_del_group_notice",
+      "wire": "pending"
+    },
+    {
+      "name": "_get_friend_dress",
+      "module": "extended/get_friend_dress",
+      "class": "GetFriendDressAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "_get_friend_dress",
+      "wire": "pending"
+    },
+    {
+      "name": "_get_group_notice",
+      "module": "group/get_group_notice",
+      "class": "GetGroupNoticeAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "_get_group_notice",
+      "wire": "pending"
+    },
+    {
+      "name": "_get_model_show",
+      "module": "extended/get_model_show",
+      "class": "GetModelShowAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "_get_model_show",
+      "wire": "pending"
+    },
+    {
+      "name": "_mark_all_as_read",
+      "module": "extended/mark_all_as_read",
+      "class": "MarkAllAsReadAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "_mark_all_as_read",
+      "wire": "pending"
+    },
+    {
+      "name": "_send_group_notice",
+      "module": "group/send_group_notice",
+      "class": "SendGroupNoticeAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "_send_group_notice",
+      "wire": "pending"
+    },
+    {
+      "name": "_set_model_show",
+      "module": "extended/set_model_show",
+      "class": "SetModelShowAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "_set_model_show",
+      "wire": "pending"
+    },
+    {
+      "name": "add_custom_face",
+      "module": "extended/add_custom_face",
+      "class": "AddCustomFaceAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "add_custom_face",
+      "wire": "pending"
+    },
+    {
+      "name": "add_group_tag",
+      "module": "group_admin/add_group_tag",
+      "class": "AddGroupTagAction",
+      "category": "group_admin",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "add_group_tag",
+      "wire": "pending"
+    },
+    {
+      "name": "bot_exit",
+      "module": "extended/bot_exit",
+      "class": "BotExitAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "bot_exit",
+      "wire": "pending"
+    },
+    {
+      "name": "can_send_image",
+      "module": "system/can_send_image",
+      "class": "CanSendImageAction",
+      "category": "system",
+      "summary": "检查能否发送图片",
+      "status": "implemented",
+      "read_only": true,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "can_send_record",
+      "module": "system/can_send_record",
+      "class": "CanSendRecordAction",
+      "category": "system",
+      "summary": "检查能否发送语音",
+      "status": "implemented",
+      "read_only": true,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "cancel_group_album_media_like",
+      "module": "group_album/cancel_group_album_media_like",
+      "class": "CancelGroupAlbumMediaLikeAction",
+      "category": "group_album",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "cancel_group_album_media_like",
+      "wire": "pending"
+    },
+    {
+      "name": "cancel_group_todo",
+      "module": "group/cancel_group_todo",
+      "class": "CancelGroupTodoAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "cancel_group_todo",
+      "wire": "pending"
+    },
+    {
+      "name": "cancel_online_file",
+      "module": "group_file/cancel_online_file",
+      "class": "CancelOnlineFileAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "cancel_online_file",
+      "wire": "pending"
+    },
+    {
+      "name": "check_url_safely",
+      "module": "extended/check_url_safely",
+      "class": "CheckUrlSafelyAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "check_url_safely",
+      "wire": "pending"
+    },
+    {
+      "name": "clean_cache",
+      "module": "system/clean_cache",
+      "class": "CleanCacheAction",
+      "category": "system",
+      "summary": "清理缓存",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "clean_stream_temp_file",
+      "module": "stream/clean_stream_temp_file",
+      "class": "CleanStreamTempFileAction",
+      "category": "stream",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "clean_stream_temp_file",
+      "wire": "pending"
+    },
+    {
+      "name": "click_inline_keyboard_button",
+      "module": "extended/click_inline_keyboard_button",
+      "class": "ClickInlineKeyboardButtonAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "click_inline_keyboard_button",
+      "wire": "pending"
+    },
+    {
+      "name": "comment_qzone",
+      "module": "qzone/comment_qzone",
+      "class": "CommentQzoneAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "comment_qzone",
+      "wire": "pending"
+    },
+    {
+      "name": "comment_qzone_public_feed",
+      "module": "qzone/comment_qzone_public_feed",
+      "class": "CommentQzonePublicFeedAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "comment_qzone_public_feed",
+      "wire": "pending"
+    },
+    {
+      "name": "complete_group_todo",
+      "module": "group/complete_group_todo",
+      "class": "CompleteGroupTodoAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "complete_group_todo",
+      "wire": "pending"
+    },
+    {
+      "name": "create_collection",
+      "module": "extended/create_collection",
+      "class": "CreateCollectionAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "create_collection",
+      "wire": "pending"
+    },
+    {
+      "name": "create_flash_task",
+      "module": "flash/create_flash_task",
+      "class": "CreateFlashTaskAction",
+      "category": "flash",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "create_flash_task",
+      "wire": "pending"
+    },
+    {
+      "name": "create_group_file_folder",
+      "module": "group_file/create_group_file_folder",
+      "class": "CreateGroupFileFolderAction",
+      "category": "group_file",
+      "summary": "创建群文件夹",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "name",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "del_group_album_media",
+      "module": "group_album/del_group_album_media",
+      "class": "DelGroupAlbumMediaAction",
+      "category": "group_album",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "del_group_album_media",
+      "wire": "pending"
+    },
+    {
+      "name": "delete_custom_face",
+      "module": "extended/delete_custom_face",
+      "class": "DeleteCustomFaceAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "delete_custom_face",
+      "wire": "pending"
+    },
+    {
+      "name": "delete_essence_msg",
+      "module": "extended/delete_essence_msg",
+      "class": "DeleteEssenceMsgAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "delete_essence_msg",
+      "wire": "pending"
+    },
+    {
+      "name": "delete_flash_file",
+      "module": "extended/delete_flash_file",
+      "class": "DeleteFlashFileAction",
+      "category": "extended",
+      "summary": "删除闪传文件",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "fileset_id",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "file_id",
+          "kind": "str",
+          "required": false,
+          "default": "",
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "delete_friend",
+      "module": "friend/delete_friend",
+      "class": "DeleteFriendAction",
+      "category": "friend",
+      "summary": "删除好友",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "delete_group_file",
+      "module": "group_file/delete_group_file",
+      "class": "DeleteGroupFileAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "delete_group_file",
+      "wire": "pending"
+    },
+    {
+      "name": "delete_group_file_folder",
+      "module": "group_file/delete_group_file_folder",
+      "class": "DeleteGroupFileFolderAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "delete_group_file_folder",
+      "wire": "pending"
+    },
+    {
+      "name": "delete_group_folder",
+      "module": "group/delete_group_folder",
+      "class": "DeleteGroupFolderAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "delete_group_folder",
+      "wire": "pending"
+    },
+    {
+      "name": "delete_group_tag",
+      "module": "group_admin/delete_group_tag",
+      "class": "DeleteGroupTagAction",
+      "category": "group_admin",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "delete_group_tag",
+      "wire": "pending"
+    },
+    {
+      "name": "delete_msg",
+      "module": "message/delete_msg",
+      "class": "DeleteMsgAction",
+      "category": "message",
+      "summary": "撤回消息",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "message_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "delete_qzone_msg",
+      "module": "qzone/delete_qzone_msg",
+      "class": "DeleteQzoneMsgAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "delete_qzone_msg",
+      "wire": "pending"
+    },
+    {
+      "name": "delete_qzone_public_comment",
+      "module": "qzone/delete_qzone_public_comment",
+      "class": "DeleteQzonePublicCommentAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "delete_qzone_public_comment",
+      "wire": "pending"
+    },
+    {
+      "name": "delete_qzone_public_reply",
+      "module": "qzone/delete_qzone_public_reply",
+      "class": "DeleteQzonePublicReplyAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "delete_qzone_public_reply",
+      "wire": "pending"
+    },
+    {
+      "name": "do_group_album_comment",
+      "module": "group_album/do_group_album_comment",
+      "class": "DoGroupAlbumCommentAction",
+      "category": "group_album",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "do_group_album_comment",
+      "wire": "pending"
+    },
+    {
+      "name": "download_file",
+      "module": "group_file/download_file",
+      "class": "DownloadFileAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "download_file",
+      "wire": "pending"
+    },
+    {
+      "name": "download_file_image_stream",
+      "module": "stream/download_file_image_stream",
+      "class": "DownloadFileImageStreamAction",
+      "category": "stream",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "download_file_image_stream",
+      "wire": "pending"
+    },
+    {
+      "name": "download_file_record_stream",
+      "module": "stream/download_file_record_stream",
+      "class": "DownloadFileRecordStreamAction",
+      "category": "stream",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "download_file_record_stream",
+      "wire": "pending"
+    },
+    {
+      "name": "download_file_stream",
+      "module": "stream/download_file_stream",
+      "class": "DownloadFileStreamAction",
+      "category": "stream",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "download_file_stream",
+      "wire": "pending"
+    },
+    {
+      "name": "download_fileset",
+      "module": "group_file/download_fileset",
+      "class": "DownloadFilesetAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "download_fileset",
+      "wire": "pending"
+    },
+    {
+      "name": "fetch_custom_face",
+      "module": "face/fetch_custom_face",
+      "class": "FetchCustomFaceAction",
+      "category": "face",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "fetch_custom_face",
+      "wire": "pending"
+    },
+    {
+      "name": "fetch_custom_face_detail",
+      "module": "face/fetch_custom_face_detail",
+      "class": "FetchCustomFaceDetailAction",
+      "category": "face",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "fetch_custom_face_detail",
+      "wire": "pending"
+    },
+    {
+      "name": "fetch_emoji_like",
+      "module": "friend/fetch_emoji_like",
+      "class": "FetchEmojiLikeAction",
+      "category": "friend",
+      "summary": "拉取消息表情回应（增量）",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "message_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "fetch_face_entity",
+      "module": "face/fetch_face_entity",
+      "class": "FetchFaceEntityAction",
+      "category": "face",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "fetch_face_entity",
+      "wire": "pending"
+    },
+    {
+      "name": "fetch_ptt_text",
+      "module": "extended/fetch_ptt_text",
+      "class": "FetchPttTextAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "fetch_ptt_text",
+      "wire": "pending"
+    },
+    {
+      "name": "fetch_super_face_id",
+      "module": "face/fetch_super_face_id",
+      "class": "FetchSuperFaceIdAction",
+      "category": "face",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "fetch_super_face_id",
+      "wire": "pending"
+    },
+    {
+      "name": "fetch_sys_faces",
+      "module": "face/fetch_sys_faces",
+      "class": "FetchSysFacesAction",
+      "category": "face",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "fetch_sys_faces",
+      "wire": "pending"
+    },
+    {
+      "name": "forward_friend_single_msg",
+      "module": "friend/forward_friend_single_msg",
+      "class": "ForwardFriendSingleMsgAction",
+      "category": "friend",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "forward_friend_single_msg",
+      "wire": "pending"
+    },
+    {
+      "name": "forward_group_single_msg",
+      "module": "extended/forward_group_single_msg",
+      "class": "ForwardGroupSingleMsgAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "forward_group_single_msg",
+      "wire": "pending"
+    },
+    {
+      "name": "forward_qzone_public_feed",
+      "module": "qzone/forward_qzone_public_feed",
+      "class": "ForwardQzonePublicFeedAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "forward_qzone_public_feed",
+      "wire": "pending"
+    },
+    {
+      "name": "friend_poke",
+      "module": "interaction/friend_poke",
+      "class": "FriendPokeAction",
+      "category": "interaction",
+      "summary": "戳好友",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_ai_characters",
+      "module": "extended/get_ai_characters",
+      "class": "GetAiCharactersAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_ai_characters",
+      "wire": "pending"
+    },
+    {
+      "name": "get_ai_record",
+      "module": "extended/get_ai_record",
+      "class": "GetAiRecordAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_ai_record",
+      "wire": "pending"
+    },
+    {
+      "name": "get_clientkey",
+      "module": "extended/get_clientkey",
+      "class": "GetClientkeyAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_clientkey",
+      "wire": "pending"
+    },
+    {
+      "name": "get_collection_list",
+      "module": "extended/get_collection_list",
+      "class": "GetCollectionListAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_collection_list",
+      "wire": "pending"
+    },
+    {
+      "name": "get_cookies",
+      "module": "system/get_cookies",
+      "class": "GetCookiesAction",
+      "category": "system",
+      "summary": "获取 cookies",
+      "status": "implemented",
+      "read_only": true,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "get_credentials",
+      "module": "system/get_credentials",
+      "class": "GetCredentialsAction",
+      "category": "system",
+      "summary": "获取凭证",
+      "status": "implemented",
+      "read_only": true,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "get_csrf_token",
+      "module": "system/get_csrf_token",
+      "class": "GetCsrfTokenAction",
+      "category": "system",
+      "summary": "获取 CSRF token",
+      "status": "implemented",
+      "read_only": true,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "get_doubt_friends_add_request",
+      "module": "friend/get_doubt_friends_add_request",
+      "class": "GetDoubtFriendsAddRequestAction",
+      "category": "friend",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_doubt_friends_add_request",
+      "wire": "pending"
+    },
+    {
+      "name": "get_emoji_likes",
+      "module": "friend/get_emoji_likes",
+      "class": "GetEmojiLikesAction",
+      "category": "friend",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_emoji_likes",
+      "wire": "pending"
+    },
+    {
+      "name": "get_essence_msg_list",
+      "module": "extended/get_essence_msg_list",
+      "class": "GetEssenceMsgListAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_essence_msg_list",
+      "wire": "pending"
+    },
+    {
+      "name": "get_file",
+      "module": "system/get_file",
+      "class": "GetFileAction",
+      "category": "system",
+      "summary": "获取文件 URL",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "file",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "file_id",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_fileset_id",
+      "module": "extended/get_fileset_id",
+      "class": "GetFilesetIdAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_fileset_id",
+      "wire": "pending"
+    },
+    {
+      "name": "get_fileset_info",
+      "module": "extended/get_fileset_info",
+      "class": "GetFilesetInfoAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_fileset_info",
+      "wire": "pending"
+    },
+    {
+      "name": "get_flash_file_list",
+      "module": "flash/get_flash_file_list",
+      "class": "GetFlashFileListAction",
+      "category": "flash",
+      "summary": "获取闪传文件集列表",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "count",
+          "kind": "int",
+          "required": false,
+          "default": 20,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_flash_file_url",
+      "module": "system/get_flash_file_url",
+      "class": "GetFlashFileUrlAction",
+      "category": "system",
+      "summary": "获取闪传下载地址",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "file_set_id",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_forward_msg",
+      "module": "message/get_forward_msg",
+      "class": "GetForwardMsgAction",
+      "category": "message",
+      "summary": "获取合并转发内容",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "id",
+          "kind": "str",
+          "required": true,
+          "default": "",
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_friend_list",
+      "module": "friend/get_friend_list",
+      "class": "GetFriendListAction",
+      "category": "friend",
+      "summary": "获取好友列表",
+      "status": "implemented",
+      "read_only": true,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "get_friend_msg_history",
+      "module": "message/get_friend_msg_history",
+      "class": "GetFriendMsgHistoryAction",
+      "category": "message",
+      "summary": "获取私聊历史消息",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "message_seq",
+          "kind": "int",
+          "required": false,
+          "default": 0,
+          "desc": ""
+        },
+        {
+          "name": "count",
+          "kind": "int",
+          "required": false,
+          "default": 20,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_friends_with_category",
+      "module": "friend/get_friends_with_category",
+      "class": "GetFriendsWithCategoryAction",
+      "category": "friend",
+      "summary": "获取好友分组",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "get_group_admin_permissions",
+      "module": "group_admin/get_group_admin_permissions",
+      "class": "GetGroupAdminPermissionsAction",
+      "category": "group_admin",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_group_admin_permissions",
+      "wire": "pending"
+    },
+    {
+      "name": "get_group_admin_settings",
+      "module": "group_admin/get_group_admin_settings",
+      "class": "GetGroupAdminSettingsAction",
+      "category": "group_admin",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_group_admin_settings",
+      "wire": "pending"
+    },
+    {
+      "name": "get_group_album_list",
+      "module": "group_album/get_group_album_list",
+      "class": "GetGroupAlbumListAction",
+      "category": "group_album",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_group_album_list",
+      "wire": "pending"
+    },
+    {
+      "name": "get_group_album_media_list",
+      "module": "group_album/get_group_album_media_list",
+      "class": "GetGroupAlbumMediaListAction",
+      "category": "group_album",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_group_album_media_list",
+      "wire": "pending"
+    },
+    {
+      "name": "get_group_at_all_remain",
+      "module": "group/get_group_at_all_remain",
+      "class": "GetGroupAtAllRemainAction",
+      "category": "group",
+      "summary": "获取群 @全体成员 剩余次数",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_group_detail_info",
+      "module": "group/get_group_detail_info",
+      "class": "GetGroupDetailInfoAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_group_detail_info",
+      "wire": "pending"
+    },
+    {
+      "name": "get_group_file_system_info",
+      "module": "group_file/get_group_file_system_info",
+      "class": "GetGroupFileSystemInfoAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_group_file_system_info",
+      "wire": "pending"
+    },
+    {
+      "name": "get_group_file_url",
+      "module": "system/get_group_file_url",
+      "class": "GetGroupFileUrlAction",
+      "category": "system",
+      "summary": "获取群文件地址",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "file_id",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "busid",
+          "kind": "int",
+          "required": false,
+          "default": 0,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_group_files_by_folder",
+      "module": "group_file/get_group_files_by_folder",
+      "class": "GetGroupFilesByFolderAction",
+      "category": "group_file",
+      "summary": "获取群文件夹内容",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "folder_id",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_group_honor_info",
+      "module": "group/get_group_honor_info",
+      "class": "GetGroupHonorInfoAction",
+      "category": "group",
+      "summary": "获取群荣誉信息",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "type",
+          "kind": "str",
+          "required": false,
+          "default": "all",
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_group_ignore_add_request",
+      "module": "group/get_group_ignore_add_request",
+      "class": "GetGroupIgnoreAddRequestAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_group_ignore_add_request",
+      "wire": "pending"
+    },
+    {
+      "name": "get_group_ignored_notifies",
+      "module": "group/get_group_ignored_notifies",
+      "class": "GetGroupIgnoredNotifiesAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_group_ignored_notifies",
+      "wire": "pending"
+    },
+    {
+      "name": "get_group_info",
+      "module": "group/get_group_info",
+      "class": "GetGroupInfoAction",
+      "category": "group",
+      "summary": "获取群信息",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "no_cache",
+          "kind": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_group_info_ex",
+      "module": "group/get_group_info_ex",
+      "class": "GetGroupInfoExAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_group_info_ex",
+      "wire": "pending"
+    },
+    {
+      "name": "get_group_list",
+      "module": "group/get_group_list",
+      "class": "GetGroupListAction",
+      "category": "group",
+      "summary": "获取群列表",
+      "status": "implemented",
+      "read_only": true,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "get_group_member_info",
+      "module": "group/get_group_member_info",
+      "class": "GetGroupMemberInfoAction",
+      "category": "group",
+      "summary": "获取群成员信息",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "no_cache",
+          "kind": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_group_member_list",
+      "module": "group/get_group_member_list",
+      "class": "GetGroupMemberListAction",
+      "category": "group",
+      "summary": "获取群成员列表",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_group_msg_history",
+      "module": "message/get_group_msg_history",
+      "class": "GetGroupMsgHistoryAction",
+      "category": "message",
+      "summary": "获取群历史消息",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "message_seq",
+          "kind": "int",
+          "required": false,
+          "default": 0,
+          "desc": ""
+        },
+        {
+          "name": "count",
+          "kind": "int",
+          "required": false,
+          "default": 20,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_group_root_files",
+      "module": "group/get_group_root_files",
+      "class": "GetGroupRootFilesAction",
+      "category": "group",
+      "summary": "获取群文件根目录",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_group_share_link",
+      "module": "group/get_group_share_link",
+      "class": "GetGroupShareLinkAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_group_share_link",
+      "wire": "pending"
+    },
+    {
+      "name": "get_group_shut_list",
+      "module": "group/get_group_shut_list",
+      "class": "GetGroupShutListAction",
+      "category": "group",
+      "summary": "获取群禁言列表",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_group_signed_list",
+      "module": "group/get_group_signed_list",
+      "class": "GetGroupSignedListAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_group_signed_list",
+      "wire": "pending"
+    },
+    {
+      "name": "get_group_system_msg",
+      "module": "group/get_group_system_msg",
+      "class": "GetGroupSystemMsgAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_group_system_msg",
+      "wire": "pending"
+    },
+    {
+      "name": "get_group_tags",
+      "module": "group_admin/get_group_tags",
+      "class": "GetGroupTagsAction",
+      "category": "group_admin",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_group_tags",
+      "wire": "pending"
+    },
+    {
+      "name": "get_group_todo_list",
+      "module": "extended/get_group_todo_list",
+      "class": "GetGroupTodoListAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_group_todo_list",
+      "wire": "pending"
+    },
+    {
+      "name": "get_guild_list",
+      "module": "guild/get_guild_list",
+      "class": "GetGuildListAction",
+      "category": "guild",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_guild_list",
+      "wire": "pending"
+    },
+    {
+      "name": "get_guild_service_profile",
+      "module": "guild/get_guild_service_profile",
+      "class": "GetGuildServiceProfileAction",
+      "category": "guild",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_guild_service_profile",
+      "wire": "pending"
+    },
+    {
+      "name": "get_image",
+      "module": "system/get_image",
+      "class": "GetImageAction",
+      "category": "system",
+      "summary": "获取图片 URL",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "file",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "file_id",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_login_info",
+      "module": "system/get_login_info",
+      "class": "GetLoginInfoAction",
+      "category": "system",
+      "summary": "获取登录号信息",
+      "status": "implemented",
+      "read_only": true,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "get_mini_app_ark",
+      "module": "ark/get_mini_app_ark",
+      "class": "GetMiniAppArkAction",
+      "category": "ark",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_mini_app_ark",
+      "wire": "pending"
+    },
+    {
+      "name": "get_msg",
+      "module": "message/get_msg",
+      "class": "GetMsgAction",
+      "category": "message",
+      "summary": "获取消息",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "message_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_msg_emoji_likes",
+      "module": "extended/get_msg_emoji_likes",
+      "class": "GetMsgEmojiLikesAction",
+      "category": "extended",
+      "summary": "获取消息表情回应列表",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "message_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "count",
+          "kind": "int",
+          "required": false,
+          "default": 20,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_online_clients",
+      "module": "system/get_online_clients",
+      "class": "GetOnlineClientsAction",
+      "category": "system",
+      "summary": "获取在线设备",
+      "status": "implemented",
+      "read_only": true,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "get_online_file_msg",
+      "module": "group_file/get_online_file_msg",
+      "class": "GetOnlineFileMsgAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_online_file_msg",
+      "wire": "pending"
+    },
+    {
+      "name": "get_private_file_url",
+      "module": "system/get_private_file_url",
+      "class": "GetPrivateFileUrlAction",
+      "category": "system",
+      "summary": "获取私聊文件地址",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "file_id",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_profile_like",
+      "module": "friend/get_profile_like",
+      "class": "GetProfileLikeAction",
+      "category": "friend",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_profile_like",
+      "wire": "pending"
+    },
+    {
+      "name": "get_qun_album_list",
+      "module": "group_album/get_qun_album_list",
+      "class": "GetQunAlbumListAction",
+      "category": "group_album",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_qun_album_list",
+      "wire": "pending"
+    },
+    {
+      "name": "get_qzone_comment_list",
+      "module": "extended/get_qzone_comment_list",
+      "class": "GetQzoneCommentListAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_qzone_comment_list",
+      "wire": "pending"
+    },
+    {
+      "name": "get_qzone_comment_replies",
+      "module": "extended/get_qzone_comment_replies",
+      "class": "GetQzoneCommentRepliesAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_qzone_comment_replies",
+      "wire": "pending"
+    },
+    {
+      "name": "get_qzone_feed_detail",
+      "module": "qzone/get_qzone_feed_detail",
+      "class": "GetQzoneFeedDetailAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_qzone_feed_detail",
+      "wire": "pending"
+    },
+    {
+      "name": "get_qzone_feeds",
+      "module": "qzone/get_qzone_feeds",
+      "class": "GetQzoneFeedsAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_qzone_feeds",
+      "wire": "pending"
+    },
+    {
+      "name": "get_qzone_home_feeds",
+      "module": "qzone/get_qzone_home_feeds",
+      "class": "GetQzoneHomeFeedsAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_qzone_home_feeds",
+      "wire": "pending"
+    },
+    {
+      "name": "get_qzone_msg_detail",
+      "module": "qzone/get_qzone_msg_detail",
+      "class": "GetQzoneMsgDetailAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_qzone_msg_detail",
+      "wire": "pending"
+    },
+    {
+      "name": "get_qzone_msg_list",
+      "module": "qzone/get_qzone_msg_list",
+      "class": "GetQzoneMsgListAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_qzone_msg_list",
+      "wire": "pending"
+    },
+    {
+      "name": "get_qzone_profile",
+      "module": "qzone/get_qzone_profile",
+      "class": "GetQzoneProfileAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_qzone_profile",
+      "wire": "pending"
+    },
+    {
+      "name": "get_qzone_public_capabilities",
+      "module": "qzone/get_qzone_public_capabilities",
+      "class": "GetQzonePublicCapabilitiesAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_qzone_public_capabilities",
+      "wire": "pending"
+    },
+    {
+      "name": "get_qzone_public_comments",
+      "module": "qzone/get_qzone_public_comments",
+      "class": "GetQzonePublicCommentsAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_qzone_public_comments",
+      "wire": "pending"
+    },
+    {
+      "name": "get_qzone_public_feed_detail",
+      "module": "qzone/get_qzone_public_feed_detail",
+      "class": "GetQzonePublicFeedDetailAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_qzone_public_feed_detail",
+      "wire": "pending"
+    },
+    {
+      "name": "get_qzone_public_feeds",
+      "module": "qzone/get_qzone_public_feeds",
+      "class": "GetQzonePublicFeedsAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_qzone_public_feeds",
+      "wire": "pending"
+    },
+    {
+      "name": "get_qzone_public_replies",
+      "module": "qzone/get_qzone_public_replies",
+      "class": "GetQzonePublicRepliesAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_qzone_public_replies",
+      "wire": "pending"
+    },
+    {
+      "name": "get_qzone_share_ark",
+      "module": "qzone/get_qzone_share_ark",
+      "class": "GetQzoneShareArkAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_qzone_share_ark",
+      "wire": "pending"
+    },
+    {
+      "name": "get_recent_contact",
+      "module": "friend/get_recent_contact",
+      "class": "GetRecentContactAction",
+      "category": "friend",
+      "summary": "获取最近会话",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "count",
+          "kind": "int",
+          "required": false,
+          "default": 10,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_record",
+      "module": "system/get_record",
+      "class": "GetRecordAction",
+      "category": "system",
+      "summary": "获取语音 URL",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "file",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "file_id",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_rkey",
+      "module": "system/get_rkey",
+      "class": "GetRkeyAction",
+      "category": "system",
+      "summary": "获取下载 rkey",
+      "status": "implemented",
+      "read_only": true,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "get_rkey_server",
+      "module": "system/get_rkey_server",
+      "class": "GetRkeyServerAction",
+      "category": "system",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_rkey_server",
+      "wire": "pending"
+    },
+    {
+      "name": "get_robot_uin_range",
+      "module": "extended/get_robot_uin_range",
+      "class": "GetRobotUinRangeAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_robot_uin_range",
+      "wire": "pending"
+    },
+    {
+      "name": "get_share_link",
+      "module": "ark/get_share_link",
+      "class": "GetShareLinkAction",
+      "category": "ark",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "get_share_link",
+      "wire": "pending"
+    },
+    {
+      "name": "get_status",
+      "module": "system/get_status",
+      "class": "GetStatusAction",
+      "category": "system",
+      "summary": "获取运行状态",
+      "status": "implemented",
+      "read_only": true,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "get_stranger_info",
+      "module": "friend/get_stranger_info",
+      "class": "GetStrangerInfoAction",
+      "category": "friend",
+      "summary": "获取陌生人信息",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "no_cache",
+          "kind": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "get_unidirectional_friend_list",
+      "module": "friend/get_unidirectional_friend_list",
+      "class": "GetUnidirectionalFriendListAction",
+      "category": "friend",
+      "summary": "获取单向好友列表",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "get_version_info",
+      "module": "system/get_version_info",
+      "class": "GetVersionInfoAction",
+      "category": "system",
+      "summary": "获取版本信息",
+      "status": "implemented",
+      "read_only": true,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "group_poke",
+      "module": "interaction/group_poke",
+      "class": "GroupPokeAction",
+      "category": "interaction",
+      "summary": "戳群友",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "like_qzone",
+      "module": "qzone/like_qzone",
+      "class": "LikeQzoneAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "like_qzone",
+      "wire": "pending"
+    },
+    {
+      "name": "list_filesets",
+      "module": "extended/list_filesets",
+      "class": "ListFilesetsAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "list_filesets",
+      "wire": "pending"
+    },
+    {
+      "name": "mark_group_msg_as_read",
+      "module": "extended/mark_group_msg_as_read",
+      "class": "MarkGroupMsgAsReadAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "mark_group_msg_as_read",
+      "wire": "pending"
+    },
+    {
+      "name": "mark_msg_as_read",
+      "module": "message/mark_msg_as_read",
+      "class": "MarkMsgAsReadAction",
+      "category": "message",
+      "summary": "标记已读",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "message_id",
+          "kind": "int",
+          "required": false,
+          "default": 0,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "mark_private_msg_as_read",
+      "module": "message/mark_private_msg_as_read",
+      "class": "MarkPrivateMsgAsReadAction",
+      "category": "message",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "mark_private_msg_as_read",
+      "wire": "pending"
+    },
+    {
+      "name": "modify_custom_face",
+      "module": "extended/modify_custom_face",
+      "class": "ModifyCustomFaceAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "modify_custom_face",
+      "wire": "pending"
+    },
+    {
+      "name": "move_custom_face_to_front",
+      "module": "extended/move_custom_face_to_front",
+      "class": "MoveCustomFaceToFrontAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "move_custom_face_to_front",
+      "wire": "pending"
+    },
+    {
+      "name": "move_group_file",
+      "module": "group_file/move_group_file",
+      "class": "MoveGroupFileAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "move_group_file",
+      "wire": "pending"
+    },
+    {
+      "name": "nc_get_packet_status",
+      "module": "packet/nc_get_packet_status",
+      "class": "NcGetPacketStatusAction",
+      "category": "packet",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "nc_get_packet_status",
+      "wire": "pending"
+    },
+    {
+      "name": "nc_get_rkey",
+      "module": "extended/nc_get_rkey",
+      "class": "NcGetRkeyAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "nc_get_rkey",
+      "wire": "pending"
+    },
+    {
+      "name": "nc_get_user_status",
+      "module": "extended/nc_get_user_status",
+      "class": "NcGetUserStatusAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "nc_get_user_status",
+      "wire": "pending"
+    },
+    {
+      "name": "ocr_image",
+      "module": "extended/ocr_image",
+      "class": "OcrImageAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "ocr_image",
+      "wire": "pending"
+    },
+    {
+      "name": "oidb_call",
+      "module": "packet/oidb_call",
+      "class": "OidbCallAction",
+      "category": "packet",
+      "summary": "调用任意 OIDB",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "command",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "sub_command",
+          "kind": "int",
+          "required": false,
+          "default": 0,
+          "desc": ""
+        },
+        {
+          "name": "body_hex",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "receive_online_file",
+      "module": "group_file/receive_online_file",
+      "class": "ReceiveOnlineFileAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "receive_online_file",
+      "wire": "pending"
+    },
+    {
+      "name": "refuse_online_file",
+      "module": "group_file/refuse_online_file",
+      "class": "RefuseOnlineFileAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "refuse_online_file",
+      "wire": "pending"
+    },
+    {
+      "name": "rename_flash_file",
+      "module": "extended/rename_flash_file",
+      "class": "RenameFlashFileAction",
+      "category": "extended",
+      "summary": "重命名闪传文件",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "fileset_id",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "file_id",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "name",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "rename_group_file",
+      "module": "group_file/rename_group_file",
+      "class": "RenameGroupFileAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "rename_group_file",
+      "wire": "pending"
+    },
+    {
+      "name": "rename_group_file_folder",
+      "module": "group_file/rename_group_file_folder",
+      "class": "RenameGroupFileFolderAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "rename_group_file_folder",
+      "wire": "pending"
+    },
+    {
+      "name": "reply_qzone_public_feed",
+      "module": "qzone/reply_qzone_public_feed",
+      "class": "ReplyQzonePublicFeedAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "reply_qzone_public_feed",
+      "wire": "pending"
+    },
+    {
+      "name": "request_decrypt_key",
+      "module": "extended/request_decrypt_key",
+      "class": "RequestDecryptKeyAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "request_decrypt_key",
+      "wire": "pending"
+    },
+    {
+      "name": "search_sys_faces",
+      "module": "face/search_sys_faces",
+      "class": "SearchSysFacesAction",
+      "category": "face",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "search_sys_faces",
+      "wire": "pending"
+    },
+    {
+      "name": "send_ark_share",
+      "module": "extended/send_ark_share",
+      "class": "SendArkShareAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "send_ark_share",
+      "wire": "pending"
+    },
+    {
+      "name": "send_custom_face",
+      "module": "message/send_custom_face",
+      "class": "SendCustomFaceAction",
+      "category": "message",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "send_custom_face",
+      "wire": "pending"
+    },
+    {
+      "name": "send_flash_msg",
+      "module": "flash/send_flash_msg",
+      "class": "SendFlashMsgAction",
+      "category": "flash",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "send_flash_msg",
+      "wire": "pending"
+    },
+    {
+      "name": "send_forward_msg",
+      "module": "message/send_forward_msg",
+      "class": "SendForwardMsgAction",
+      "category": "message",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "send_forward_msg",
+      "wire": "pending"
+    },
+    {
+      "name": "send_group_ai_record",
+      "module": "group/send_group_ai_record",
+      "class": "SendGroupAiRecordAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "send_group_ai_record",
+      "wire": "pending"
+    },
+    {
+      "name": "send_group_ark_share",
+      "module": "extended/send_group_ark_share",
+      "class": "SendGroupArkShareAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "send_group_ark_share",
+      "wire": "pending"
+    },
+    {
+      "name": "send_group_forward_msg",
+      "module": "extended/send_group_forward_msg",
+      "class": "SendGroupForwardMsgAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "send_group_forward_msg",
+      "wire": "core",
+      "wire_note": "multiForwardMsgWithComment (verified: result 0, recipient reads it back)"
+    },
+    {
+      "name": "send_group_msg",
+      "module": "message/send_group_msg",
+      "class": "SendGroupMsgAction",
+      "category": "message",
+      "summary": "发送群消息",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "message",
+          "kind": "message",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "auto_escape",
+          "kind": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "send_like",
+      "module": "friend/send_like",
+      "class": "SendLikeAction",
+      "category": "friend",
+      "summary": "点赞",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "times",
+          "kind": "int",
+          "required": false,
+          "default": 1,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "send_msg",
+      "module": "message/send_msg",
+      "class": "SendMsgAction",
+      "category": "message",
+      "summary": "发送消息",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "message",
+          "kind": "message",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "message_type",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "auto_escape",
+          "kind": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "send_online_file",
+      "module": "group_file/send_online_file",
+      "class": "SendOnlineFileAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "send_online_file",
+      "wire": "pending"
+    },
+    {
+      "name": "send_online_folder",
+      "module": "group_file/send_online_folder",
+      "class": "SendOnlineFolderAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "send_online_folder",
+      "wire": "pending"
+    },
+    {
+      "name": "send_packet",
+      "module": "packet/send_packet",
+      "class": "SendPacketAction",
+      "category": "packet",
+      "summary": "发送原始 SSO 包",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "cmd",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "data",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "body_hex",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "send_poke",
+      "module": "interaction/send_poke",
+      "class": "SendPokeAction",
+      "category": "interaction",
+      "summary": "发送戳一戳",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": false,
+          "default": 0,
+          "desc": ""
+        },
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": false,
+          "default": 0,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "send_private_forward_msg",
+      "module": "extended/send_private_forward_msg",
+      "class": "SendPrivateForwardMsgAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "send_private_forward_msg",
+      "wire": "core",
+      "wire_note": "multiForwardMsgWithComment (verified: result 0, recipient reads it back)"
+    },
+    {
+      "name": "send_private_msg",
+      "module": "message/send_private_msg",
+      "class": "SendPrivateMsgAction",
+      "category": "message",
+      "summary": "发送私聊消息",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "message",
+          "kind": "message",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "auto_escape",
+          "kind": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "send_qzone_msg",
+      "module": "qzone/send_qzone_msg",
+      "class": "SendQzoneMsgAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "send_qzone_msg",
+      "wire": "pending"
+    },
+    {
+      "name": "send_tuwen_ark",
+      "module": "extended/send_tuwen_ark",
+      "class": "SendTuwenArkAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "send_tuwen_ark",
+      "wire": "pending"
+    },
+    {
+      "name": "set_diy_online_status",
+      "module": "interaction/set_diy_online_status",
+      "class": "SetDiyOnlineStatusAction",
+      "category": "interaction",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_diy_online_status",
+      "wire": "pending"
+    },
+    {
+      "name": "set_doubt_friends_add_request",
+      "module": "friend/set_doubt_friends_add_request",
+      "class": "SetDoubtFriendsAddRequestAction",
+      "category": "friend",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_doubt_friends_add_request",
+      "wire": "pending"
+    },
+    {
+      "name": "set_essence_msg",
+      "module": "extended/set_essence_msg",
+      "class": "SetEssenceMsgAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_essence_msg",
+      "wire": "pending"
+    },
+    {
+      "name": "set_friend_add_request",
+      "module": "request/set_friend_add_request",
+      "class": "SetFriendAddRequestAction",
+      "category": "request",
+      "summary": "处理好友请求",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "flag",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "approve",
+          "kind": "bool",
+          "required": false,
+          "default": true,
+          "desc": ""
+        },
+        {
+          "name": "remark",
+          "kind": "str",
+          "required": false,
+          "default": "",
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "set_friend_remark",
+      "module": "friend/set_friend_remark",
+      "class": "SetFriendRemarkAction",
+      "category": "friend",
+      "summary": "设置好友备注",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "remark",
+          "kind": "str",
+          "required": false,
+          "default": "",
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "set_friends_category",
+      "module": "extended/set_friends_category",
+      "class": "SetFriendsCategoryAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_friends_category",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_add_option",
+      "module": "group_admin/set_group_add_option",
+      "class": "SetGroupAddOptionAction",
+      "category": "group_admin",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_add_option",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_add_request",
+      "module": "request/set_group_add_request",
+      "class": "SetGroupAddRequestAction",
+      "category": "request",
+      "summary": "处理群请求",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "flag",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "sub_type",
+          "kind": "str",
+          "required": false,
+          "default": "",
+          "desc": ""
+        },
+        {
+          "name": "approve",
+          "kind": "bool",
+          "required": false,
+          "default": true,
+          "desc": ""
+        },
+        {
+          "name": "reason",
+          "kind": "str",
+          "required": false,
+          "default": "",
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "set_group_admin",
+      "module": "group_admin/set_group_admin",
+      "class": "SetGroupAdminAction",
+      "category": "group_admin",
+      "summary": "设置群管理员",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "enable",
+          "kind": "bool",
+          "required": false,
+          "default": true,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "set_group_admin_permissions",
+      "module": "group_admin/set_group_admin_permissions",
+      "class": "SetGroupAdminPermissionsAction",
+      "category": "group_admin",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_admin_permissions",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_admin_receive_verify",
+      "module": "group_admin/set_group_admin_receive_verify",
+      "class": "SetGroupAdminReceiveVerifyAction",
+      "category": "group_admin",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_admin_receive_verify",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_album_media_like",
+      "module": "group_album/set_group_album_media_like",
+      "class": "SetGroupAlbumMediaLikeAction",
+      "category": "group_album",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_album_media_like",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_anonymous",
+      "module": "group_admin/set_group_anonymous",
+      "class": "SetGroupAnonymousAction",
+      "category": "group_admin",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_anonymous",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_anonymous_ban",
+      "module": "group_admin/set_group_anonymous_ban",
+      "class": "SetGroupAnonymousBanAction",
+      "category": "group_admin",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_anonymous_ban",
+      "wire": "pending",
+      "wire_note": "client has no anonymous group chat; none of the 13 mute-related group methods concern it"
+    },
+    {
+      "name": "set_group_ban",
+      "module": "group_admin/set_group_ban",
+      "class": "SetGroupBanAction",
+      "category": "group_admin",
+      "summary": "禁言群成员",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "duration",
+          "kind": "int",
+          "required": false,
+          "default": 1800,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "set_group_card",
+      "module": "group_admin/set_group_card",
+      "class": "SetGroupCardAction",
+      "category": "group_admin",
+      "summary": "设置群名片",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "card",
+          "kind": "str",
+          "required": false,
+          "default": "",
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "set_group_kick",
+      "module": "group_admin/set_group_kick",
+      "class": "SetGroupKickAction",
+      "category": "group_admin",
+      "summary": "踢出群成员",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "reject_add_request",
+          "kind": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "set_group_kick_members",
+      "module": "group_admin/set_group_kick_members",
+      "class": "SetGroupKickMembersAction",
+      "category": "group_admin",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_kick_members",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_leave",
+      "module": "group_admin/set_group_leave",
+      "class": "SetGroupLeaveAction",
+      "category": "group_admin",
+      "summary": "退出群",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "is_dismiss",
+          "kind": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "set_group_member_invite_policy",
+      "module": "group_admin/set_group_member_invite_policy",
+      "class": "SetGroupMemberInvitePolicyAction",
+      "category": "group_admin",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_member_invite_policy",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_member_permissions",
+      "module": "group_admin/set_group_member_permissions",
+      "class": "SetGroupMemberPermissionsAction",
+      "category": "group_admin",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_member_permissions",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_name",
+      "module": "group_admin/set_group_name",
+      "class": "SetGroupNameAction",
+      "category": "group_admin",
+      "summary": "设置群名",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "group_name",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "set_group_new_member_history_visibility",
+      "module": "group/set_group_new_member_history_visibility",
+      "class": "SetGroupNewMemberHistoryVisibilityAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_new_member_history_visibility",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_portrait",
+      "module": "group/set_group_portrait",
+      "class": "SetGroupPortraitAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_portrait",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_reaction",
+      "module": "extended/set_group_reaction",
+      "class": "SetGroupReactionAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_reaction",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_remark",
+      "module": "group/set_group_remark",
+      "class": "SetGroupRemarkAction",
+      "category": "group",
+      "summary": "设置群备注",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "remark",
+          "kind": "str",
+          "required": false,
+          "default": "",
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "set_group_robot_add_option",
+      "module": "group_admin/set_group_robot_add_option",
+      "class": "SetGroupRobotAddOptionAction",
+      "category": "group_admin",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_robot_add_option",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_search",
+      "module": "group_admin/set_group_search",
+      "class": "SetGroupSearchAction",
+      "category": "group_admin",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_search",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_sign",
+      "module": "group/set_group_sign",
+      "class": "SetGroupSignAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_sign",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_special_title",
+      "module": "group_admin/set_group_special_title",
+      "class": "SetGroupSpecialTitleAction",
+      "category": "group_admin",
+      "summary": "设置群头衔",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "special_title",
+          "kind": "str",
+          "required": false,
+          "default": "",
+          "desc": ""
+        },
+        {
+          "name": "duration",
+          "kind": "int",
+          "required": false,
+          "default": -1,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "set_group_todo",
+      "module": "group/set_group_todo",
+      "class": "SetGroupTodoAction",
+      "category": "group",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_group_todo",
+      "wire": "pending"
+    },
+    {
+      "name": "set_group_whole_ban",
+      "module": "group_admin/set_group_whole_ban",
+      "class": "SetGroupWholeBanAction",
+      "category": "group_admin",
+      "summary": "全员禁言",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "enable",
+          "kind": "bool",
+          "required": false,
+          "default": true,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "set_input_status",
+      "module": "interaction/set_input_status",
+      "class": "SetInputStatusAction",
+      "category": "interaction",
+      "summary": "设置输入状态（正在输入）",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "event_type",
+          "kind": "int",
+          "required": false,
+          "default": 1,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "set_msg_emoji_like",
+      "module": "interaction/set_msg_emoji_like",
+      "class": "SetMsgEmojiLikeAction",
+      "category": "interaction",
+      "summary": "设置消息表情回应",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "message_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "emoji_id",
+          "kind": "str",
+          "required": false,
+          "default": "",
+          "desc": ""
+        },
+        {
+          "name": "set",
+          "kind": "bool",
+          "required": false,
+          "default": true,
+          "desc": ""
+        }
+      ],
+      "wire": "core"
+    },
+    {
+      "name": "set_online_status",
+      "module": "interaction/set_online_status",
+      "class": "SetOnlineStatusAction",
+      "category": "interaction",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_online_status",
+      "wire": "pending"
+    },
+    {
+      "name": "set_qq_avatar",
+      "module": "extended/set_qq_avatar",
+      "class": "SetQqAvatarAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_qq_avatar",
+      "wire": "pending"
+    },
+    {
+      "name": "set_qq_profile",
+      "module": "friend/set_qq_profile",
+      "class": "SetQqProfileAction",
+      "category": "friend",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_qq_profile",
+      "wire": "pending"
+    },
+    {
+      "name": "set_qzone_ban",
+      "module": "qzone/set_qzone_ban",
+      "class": "SetQzoneBanAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_qzone_ban",
+      "wire": "pending"
+    },
+    {
+      "name": "set_qzone_msg_right",
+      "module": "qzone/set_qzone_msg_right",
+      "class": "SetQzoneMsgRightAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_qzone_msg_right",
+      "wire": "pending"
+    },
+    {
+      "name": "set_qzone_profile",
+      "module": "qzone/set_qzone_profile",
+      "class": "SetQzoneProfileAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_qzone_profile",
+      "wire": "pending"
+    },
+    {
+      "name": "set_qzone_public_comment_like",
+      "module": "qzone/set_qzone_public_comment_like",
+      "class": "SetQzonePublicCommentLikeAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_qzone_public_comment_like",
+      "wire": "pending"
+    },
+    {
+      "name": "set_qzone_public_follow",
+      "module": "qzone/set_qzone_public_follow",
+      "class": "SetQzonePublicFollowAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_qzone_public_follow",
+      "wire": "pending"
+    },
+    {
+      "name": "set_qzone_public_like",
+      "module": "qzone/set_qzone_public_like",
+      "class": "SetQzonePublicLikeAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_qzone_public_like",
+      "wire": "pending"
+    },
+    {
+      "name": "set_qzone_public_upvote",
+      "module": "qzone/set_qzone_public_upvote",
+      "class": "SetQzonePublicUpvoteAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_qzone_public_upvote",
+      "wire": "pending"
+    },
+    {
+      "name": "set_restart",
+      "module": "system/set_restart",
+      "class": "SetRestartAction",
+      "category": "system",
+      "summary": "重启运行时",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "wire": "core"
+    },
+    {
+      "name": "set_self_longnick",
+      "module": "friend/set_self_longnick",
+      "class": "SetSelfLongnickAction",
+      "category": "friend",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "set_self_longnick",
+      "wire": "pending"
+    },
+    {
+      "name": "share_group_ex",
+      "module": "extended/share_group_ex",
+      "class": "ShareGroupExAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "share_group_ex",
+      "wire": "pending"
+    },
+    {
+      "name": "share_peer",
+      "module": "extended/share_peer",
+      "class": "SharePeerAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "share_peer",
+      "wire": "pending"
+    },
+    {
+      "name": "trans_group_file",
+      "module": "group_file/trans_group_file",
+      "class": "TransGroupFileAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "trans_group_file",
+      "wire": "pending"
+    },
+    {
+      "name": "translate_en2zh",
+      "module": "extended/translate_en2zh",
+      "class": "TranslateEn2zhAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "translate_en2zh",
+      "wire": "pending"
+    },
+    {
+      "name": "unlike_qzone",
+      "module": "qzone/unlike_qzone",
+      "class": "UnlikeQzoneAction",
+      "category": "qzone",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "unlike_qzone",
+      "wire": "pending"
+    },
+    {
+      "name": "upload_file_stream",
+      "module": "stream/upload_file_stream",
+      "class": "UploadFileStreamAction",
+      "category": "stream",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "upload_file_stream",
+      "wire": "pending"
+    },
+    {
+      "name": "upload_forward_msg",
+      "module": "extended/upload_forward_msg",
+      "class": "UploadForwardMsgAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "upload_forward_msg",
+      "wire": "pending"
+    },
+    {
+      "name": "upload_foward_msg",
+      "module": "extended/upload_foward_msg",
+      "class": "UploadFowardMsgAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "upload_foward_msg",
+      "wire": "pending"
+    },
+    {
+      "name": "upload_group_file",
+      "module": "group_file/upload_group_file",
+      "class": "UploadGroupFileAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "upload_group_file",
+      "wire": "pending"
+    },
+    {
+      "name": "upload_image_to_qun_album",
+      "module": "group_album/upload_image_to_qun_album",
+      "class": "UploadImageToQunAlbumAction",
+      "category": "group_album",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "upload_image_to_qun_album",
+      "wire": "pending"
+    },
+    {
+      "name": "upload_images_to_qun_album",
+      "module": "extended/upload_images_to_qun_album",
+      "class": "UploadImagesToQunAlbumAction",
+      "category": "extended",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "upload_images_to_qun_album",
+      "wire": "pending"
+    },
+    {
+      "name": "upload_private_file",
+      "module": "group_file/upload_private_file",
+      "class": "UploadPrivateFileAction",
+      "category": "group_file",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "upload_private_file",
+      "wire": "pending"
+    },
+    {
+      "name": "upload_video_to_qun_album",
+      "module": "group_album/upload_video_to_qun_album",
+      "class": "UploadVideoToQunAlbumAction",
+      "category": "group_album",
+      "summary": "",
+      "status": "implemented",
+      "read_only": false,
+      "params": [],
+      "op": "upload_video_to_qun_album",
+      "wire": "pending"
+    },
+    {
+      "name": "get_group_admin_list",
+      "module": "group/get_group_admin_list",
+      "class": "GetGroupAdminListAction",
+      "category": "group",
+      "summary": "get_group_admin_list",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "no_cache",
+          "kind": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        },
+        {
+          "name": "include_owner",
+          "kind": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ],
+      "op": "group.admins",
+      "wire": "core"
+    },
+    {
+      "name": "get_group_member_count",
+      "module": "group/get_group_member_count",
+      "class": "GetGroupMemberCountAction",
+      "category": "group",
+      "summary": "get_group_member_count",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "no_cache",
+          "kind": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ],
+      "op": "group.member_count",
+      "wire": "core"
+    },
+    {
+      "name": "get_group_share_ark",
+      "module": "group/get_group_share_ark",
+      "class": "GetGroupShareArkAction",
+      "category": "group",
+      "summary": "get_group_share_ark",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ],
+      "op": "group.share_ark",
+      "wire": "core"
+    },
+    {
+      "name": "get_friend_status_list",
+      "module": "friend/get_friend_status_list",
+      "class": "GetFriendStatusListAction",
+      "category": "friend",
+      "summary": "get_friend_status_list",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "no_cache",
+          "kind": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ],
+      "op": "friend.statuses",
+      "wire": "core"
+    },
+    {
+      "name": "get_friend_relation_list",
+      "module": "friend/get_friend_relation_list",
+      "class": "GetFriendRelationListAction",
+      "category": "friend",
+      "summary": "get_friend_relation_list",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "no_cache",
+          "kind": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ],
+      "op": "friend.relations",
+      "wire": "core"
+    },
+    {
+      "name": "get_recent_contact_list",
+      "module": "extended/get_recent_contact_list",
+      "class": "GetRecentContactListAction",
+      "category": "extended",
+      "summary": "最近会话列表 (QSICK 扩展)",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "count",
+          "kind": "int",
+          "required": false,
+          "default": 50,
+          "desc": ""
+        }
+      ],
+      "op": "get_recent_contact_list",
+      "wire": "core"
+    }
+  ],
+  "aliases": {
+    "send_group_poke": "group_poke",
+    "send_friend_poke": "friend_poke",
+    "get_group_member_list_no_cache": "get_group_member_list"
+  }
+}

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}设置{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>设置</h1>
+    <p>修改后立即生效并写回配置文件，无需保存按钮。</p>
+  </div>
+  <div class="actions"><span class="badge ok">热重载</span></div>
+</div>
+
+{% if saved %}<p class="okmsg">已保存。</p>{% endif %}
+
+<div class="grid two">
+  <section class="card">
+    <div class="card-head"><h2>管道鉴权</h2><span class="badge accent">{{ config.transport.pipe_auth }}</span></div>
+    <p class="muted">决定本机其他进程能否连上 QSICK 与载荷之间的命名管道。</p>
+    <form method="post" action="/settings/pipe-auth" class="stack narrow auto-form">
+      <label>模式
+        <select name="pipe_auth">
+          <option value="random" {{ "selected" if config.transport.pipe_auth == "random" else "" }}>随机一次性 token（默认，管道名内嵌）</option>
+          <option value="fixed" {{ "selected" if config.transport.pipe_auth == "fixed" else "" }}>固定 token（适合脚本部署）</option>
+          <option value="none" {{ "selected" if config.transport.pipe_auth == "none" else "" }}>不校验（仅单机调试）</option>
+        </select>
+      </label>
+      <label>固定 token
+        <input name="pipe_token" value="{{ config.transport.pipe_token }}" placeholder="仅在固定模式下使用" {{ "disabled" if config.transport.pipe_auth != "fixed" else "" }} />
+      </label>
+      <p class="faint autosave-note">当前：<code>{{ config.transport.pipe_auth }}</code> · 修改后自动应用</p>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>消息保留</h2><span class="sub">{{ info.storage.backend }}</span></div>
+    <form method="post" action="/settings/storage" class="stack narrow auto-form">
+      <label>最多保留条数 <input name="max_messages" type="number" min="0" max="1000000" value="{{ config.rotation.max_messages }}" /></label>
+      <label>最多保留天数 <input name="max_days" type="number" min="0" max="3650" value="{{ config.rotation.max_days }}" /></label>
+      <p class="faint autosave-note">输入后自动应用 · 0 表示不限制</p>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>运行时</h2></div>
+    <form method="post" action="/settings/runtime" class="stack narrow auto-form">
+      <label class="check">
+        <input type="checkbox" name="watch" value="1" {{ "checked" if config.plugins.watch else "" }} />
+        监听插件目录变化并自动重载
+      </label>
+      <p class="faint autosave-note">切换后自动应用</p>
+    </form>
+    <dl class="kv" style="margin-top:16px">
+      <dt>消息后端</dt><dd>{{ info.storage.backend }}</dd>
+      <dt>消息条数</dt><dd>{{ info.storage.messages }}</dd>
+      <dt>数据库</dt><dd>{{ info.storage.path|default("（内存）") }}</dd>
+      <dt>运行时长</dt><dd>{{ info.uptime_human }}</dd>
+      <dt>插件</dt><dd>{{ info.plugins }} 个已加载</dd>
+    </dl>
+  </section>
+</div>
+
+<script>
+  (function () {
+    var timers = new WeakMap();
+
+    function notify(message, kind) {
+      if (typeof window.qsickToast === "function") {
+        window.qsickToast(message, kind || "ok");
+      }
+    }
+
+    async function apply(form) {
+      try {
+        await fetch(form.action, {
+          method: "POST",
+          body: new FormData(form),
+          redirect: "follow"
+        });
+        notify("已应用", "ok");
+      } catch (error) {
+        notify("应用失败：" + error.message, "err");
+      }
+    }
+
+    document.querySelectorAll("form.auto-form").forEach(function (form) {
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        if (timers.has(form)) clearTimeout(timers.get(form));
+        apply(form);
+      });
+
+      form.querySelectorAll("input, select, textarea").forEach(function (field) {
+        var immediate = field.tagName === "SELECT" || field.type === "checkbox" || field.type === "radio";
+        field.addEventListener(immediate ? "change" : "input", function () {
+          if (timers.has(form)) clearTimeout(timers.get(form));
+          if (immediate) {
+            apply(form);
+            return;
+          }
+          timers.set(form, setTimeout(function () { apply(form); }, 500));
+        });
+      });
+    });
+
+    var mode = document.querySelector('select[name="pipe_auth"]');
+    var token = document.querySelector('input[name="pipe_token"]');
+    if (mode && token) {
+      var syncToken = function () {
+        var fixed = mode.value === "fixed";
+        token.disabled = !fixed;
+        token.placeholder = fixed ? "输入固定 token" : "仅固定 token 模式可用";
+      };
+      mode.addEventListener("change", syncToken);
+      syncToken();
+    }
+  })();
+</script>
+{% endblock %}

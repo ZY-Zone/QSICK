@@ -1,0 +1,2069 @@
+"""WebUI: server-rendered pages, a live log stream and an action console.
+
+HTMX is used through a tiny vendored subset (``static/htmx-lite.js``) so the
+console works offline; the markup keeps standard ``hx-*`` attributes, so dropping
+in real htmx later is a one-line change.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import math
+import os
+import re
+import secrets
+import time
+from urllib.parse import quote
+from pathlib import Path
+from typing import Any, TYPE_CHECKING
+
+from fastapi import FastAPI, Form, Request
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from .. import log as logmod
+
+log = logmod.get_logger("WebUI")
+from ..headless import HeadlessManager
+from .. import network_profiles as netprofiles
+from ..market import MarketClient, MarketError, download_archive, install_archive
+
+if TYPE_CHECKING:  # pragma: no cover
+    from ..runtime import Runtime
+
+BASE = Path(__file__).parent
+templates = Jinja2Templates(directory=str(BASE / "templates"))
+
+
+def _human_duration(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    days, rest = divmod(seconds, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes, secs = divmod(rest, 60)
+    if days:
+        return f"{days}天 {hours}小时"
+    if hours:
+        return f"{hours}小时 {minutes}分"
+    if minutes:
+        return f"{minutes}分 {secs}秒"
+    return f"{secs}秒"
+
+
+def _relative(ts: float | int | None) -> str:
+    if not ts:
+        return "—"
+    delta = int(time.time() - float(ts))
+    if delta < 0:
+        return "刚刚"
+    if delta < 60:
+        return f"{delta}秒前"
+    if delta < 3600:
+        return f"{delta // 60}分钟前"
+    if delta < 86400:
+        return f"{delta // 3600}小时前"
+    return f"{delta // 86400}天前"
+
+
+templates.env.filters["duration"] = _human_duration
+templates.env.filters["reltime"] = _relative
+
+
+def _relogin_delays() -> list[tuple[int, str]]:
+    """自动重登时延的下拉选项。
+
+    选项来自 ``headless.RELOGIN_DELAY_CHOICES``，界面与校验共用同一份定义——
+    否则后端拒收某档位时，下拉里还会留着它。
+    """
+    from ..headless import RELOGIN_DELAY_CHOICES, RELOGIN_DELAY_LABELS
+
+    return [(seconds, RELOGIN_DELAY_LABELS.get(seconds, f"{seconds} 秒"))
+            for seconds in RELOGIN_DELAY_CHOICES]
+
+
+def create_app(runtime: "Runtime") -> FastAPI:
+    app = FastAPI(title="QSICK WebUI", docs_url=None, redoc_url=None)
+    app.state.runtime = runtime
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
+    app.mount("/static", StaticFiles(directory=str(BASE / "static")), name="static")
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next: Any) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "public, max-age=3600"
+        return response
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request: Request, exc: StarletteHTTPException) -> Response:
+        if exc.status_code == 404 and not request.url.path.startswith("/api/"):
+            return templates.TemplateResponse(
+                request, "404.html", {"page": "404", "info": runtime.info()}, status_code=404
+            )
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+    def current_token() -> str:
+        # Read live so a token change on /network applies without recreating the app.
+        return runtime.config.webui.access_token
+
+    def authorized(request: Request) -> bool:
+        token = current_token()
+        if not token:
+            return True
+        supplied = request.query_params.get("token") or request.cookies.get("qsick_token")
+        supplied = supplied or request.headers.get("x-access-token", "")
+        return supplied == token
+
+    def guard(request: Request) -> Response | None:
+        if authorized(request):
+            return None
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+        target = quote(request.url.path, safe="/")
+        return RedirectResponse(f"/login?next={target}", status_code=303)
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> Response:
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+            '<rect x="1" y="1" width="30" height="30" rx="7" fill="#ffffff" stroke="#0ea5e9" stroke-width="2"/>'
+            '<text x="16" y="21" font-family="Segoe UI,sans-serif" font-size="12" '
+            'font-weight="700" text-anchor="middle" fill="#0284c7">QS</text></svg>'
+        )
+        return Response(svg, media_type="image/svg+xml")
+
+    @app.get("/login", response_class=HTMLResponse)
+    async def login_page(request: Request, next: str = "/") -> HTMLResponse:
+        if not current_token():
+            return RedirectResponse("/", status_code=303)
+        if authorized(request):
+            return RedirectResponse(next or "/", status_code=303)
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"page": "login", "info": runtime.info(), "next": next, "error": ""},
+        )
+
+    @app.post("/login", response_class=HTMLResponse)
+    async def login_submit(request: Request, token_value: str = Form("", alias="token"), next: str = Form("/")):
+        expected = current_token()
+        if expected and secrets.compare_digest(token_value, expected):
+            response = RedirectResponse(next or "/", status_code=303)
+            response.set_cookie("qsick_token", token_value, httponly=True, samesite="lax")
+            return response
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"page": "login", "info": runtime.info(), "next": next, "error": "token 不正确"},
+            status_code=401,
+        )
+
+    @app.post("/logout")
+    async def logout() -> RedirectResponse:
+        response = RedirectResponse("/login", status_code=303)
+        response.delete_cookie("qsick_token")
+        return response
+
+    @app.get("/", response_class=HTMLResponse)
+    async def dashboard(request: Request) -> HTMLResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return templates.TemplateResponse(
+            request,
+            "index.html",
+            {
+                "page": "dashboard",
+                "info": runtime.info(),
+                "messages": runtime.store.recent(12),
+            },
+        )
+
+    @app.get("/partials/status", response_class=HTMLResponse)
+    async def status_partial(request: Request) -> HTMLResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return templates.TemplateResponse(
+            request, "partials/status.html", {"info": runtime.info()}
+        )
+
+    @app.get("/logs", response_class=HTMLResponse)
+    async def logs_page(request: Request) -> HTMLResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return templates.TemplateResponse(
+            request,
+            "logs.html",
+            {"page": "logs", "info": runtime.info(), "records": [r.to_dict() for r in logmod.BUFFER.tail(300)]},
+        )
+
+    @app.get("/api/logs")
+    async def logs_api(request: Request, cursor: int = 0, limit: int = 500) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        records = logmod.BUFFER.since(cursor)[-limit:]
+        return JSONResponse({"records": [record.to_dict() for record in records]})
+
+    @app.get("/api/logs/stream")
+    async def logs_stream(request: Request) -> StreamingResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=512)
+
+        def on_record(record: logmod.Record) -> None:
+            try:
+                loop.call_soon_threadsafe(queue.put_nowait, record.to_dict())
+            except RuntimeError:
+                pass
+
+        unsubscribe = logmod.BUFFER.subscribe(on_record)
+
+        async def stream() -> Any:
+            try:
+                while True:
+                    try:
+                        item = await asyncio.wait_for(queue.get(), timeout=15)
+                        yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+                    except asyncio.TimeoutError:
+                        yield ": keep-alive\n\n"
+            except asyncio.CancelledError:
+                raise
+            finally:
+                unsubscribe()
+
+        return StreamingResponse(stream(), media_type="text/event-stream")
+
+    @app.get("/api/status")
+    async def status_api(request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return JSONResponse(runtime.info())
+
+    @app.get("/metrics")
+    async def metrics(request: Request) -> PlainTextResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        info = runtime.info()
+        lines = [
+            "# HELP qsick_up Whether the runtime is online.",
+            "# TYPE qsick_up gauge",
+            f"qsick_up {1 if info['online'] else 0}",
+            f"qsick_logged_in {1 if info['logged_in'] else 0}",
+            f"qsick_uptime_seconds {info['uptime']}",
+            f"qsick_events_total {info['events_seen']}",
+            f"qsick_events_dropped_total {info['events_dropped']}",
+            f"qsick_messages_stored {info['messages_stored']}",
+            f"qsick_actions {info['actions']}",
+            f"qsick_plugins {info['plugins']}",
+            f"qsick_events_duplicate_total {info['events_duplicate']}",
+        ]
+        hub = runtime.hub.stats()
+        lines.append(f"qsick_ws_clients {hub['websockets']}")
+        lines.append(f"qsick_sse_clients {hub['sse']}")
+        lines.append(f"qsick_sse_dropped_total {hub['dropped_sse']}")
+        lines.append(f"qsick_ws_slow_total {hub['slow_ws']}")
+        cache = runtime.cache.stats()
+        lines.append(f"qsick_cache_entries {cache['entries']}")
+        lines.append(f"qsick_cache_hits_total {cache['hits']}")
+        lines.append(f"qsick_cache_misses_total {cache['misses']}")
+        for name, stat in sorted(runtime.action_stats().items()):
+            if not stat["calls"]:
+                continue
+            lines.append(f'qsick_action_calls_total{{action="{name}"}} {int(stat["calls"])}')
+            lines.append(f'qsick_action_errors_total{{action="{name}"}} {int(stat["errors"])}')
+            lines.append(f'qsick_action_latency_ms_sum{{action="{name}"}} {stat["total_ms"]:.3f}')
+        return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
+
+    @app.get("/api/actions")
+    async def actions_api(request: Request, q: str = "", category: str = "") -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return JSONResponse({"actions": _filter_specs(runtime.registry.specs(), q, category)})
+
+    @app.get("/api/actions/{name}")
+    async def action_detail(name: str, request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        for spec in runtime.registry.specs():
+            if spec["name"] == name:
+                return JSONResponse(spec)
+        return JSONResponse({"ok": False, "error": f"没有名为 {name!r} 的动作"}, status_code=404)
+
+    @app.post("/api/actions/{name}")
+    async def invoke_api(name: str, request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            params = await request.json()
+        except json.JSONDecodeError:
+            params = {}
+        if not isinstance(params, dict):
+            params = {}
+        try:
+            result = await runtime.invoke(name, params)
+        except Exception as exc:  # noqa: BLE001 - 传输层/宿主抛的异常类型很杂
+            # 不兜底就会变成裸 500，调用方只能看到 "Internal Server Error"，
+            # 真正的失败原因（宿主报了什么）被吞掉。
+            return JSONResponse({"status": "failed", "retcode": 1200,
+                                 "message": f"{name} 执行失败：{exc}", "data": None},
+                                status_code=502)
+        return JSONResponse(result)
+
+    @app.get("/plugins", response_class=HTMLResponse)
+    async def plugins_page(request: Request) -> HTMLResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return templates.TemplateResponse(
+            request, "plugins.html", {"page": "plugins", "info": runtime.info(), "plugins": runtime.plugins.view()}
+        )
+
+    def _market_client() -> MarketClient:
+        return MarketClient(runtime.config.plugins.market_url, runtime.config.plugins.market_timeout)
+
+    @app.get("/plugins/market", response_class=HTMLResponse)
+    async def market_page(
+        request: Request,
+        q: str = "",
+        sort: str = "published",
+        order: str = "desc",
+        client_version: str = "",
+        page: int = 1,
+        msg: str = "",
+    ) -> HTMLResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        data: dict[str, Any] = {"items": [], "total": 0, "pages": 1, "page": 1}
+        error = ""
+        try:
+            data = await _market_client().list_plugins(
+                q=q, sort=sort, order=order, client=client_version, page=page
+            )
+        except MarketError as exc:
+            error = str(exc)
+        return templates.TemplateResponse(
+            request,
+            "market.html",
+            {
+                "page": "market",
+                "info": runtime.info(),
+                "market_url": runtime.config.plugins.market_url,
+                "plugins": data.get("items", []),
+                "total": data.get("total", 0),
+                "page_no": data.get("page", 1),
+                "pages": data.get("pages", 1),
+                "q": q,
+                "sort": sort,
+                "order": order,
+                "client_version": client_version,
+                "error": error,
+                "msg": msg,
+                "allow_install": runtime.config.plugins.allow_remote_install,
+            },
+        )
+
+    @app.post("/plugins/market/{plugin_id}/like")
+    async def market_like(plugin_id: str, request: Request) -> RedirectResponse:
+        voter = hashlib.sha256(
+            f"{request.client.host if request.client else ''}|{request.headers.get('user-agent', '')}".encode()
+        ).hexdigest()[:24]
+        try:
+            await _market_client().like(plugin_id, voter)
+        except MarketError as exc:
+            log.warn("market like failed", id=plugin_id, error=str(exc))
+        return RedirectResponse("/plugins/market", status_code=303)
+
+    @app.post("/plugins/market/{plugin_id}/install")
+    async def market_install(plugin_id: str) -> RedirectResponse:
+        if not runtime.config.plugins.allow_remote_install:
+            return RedirectResponse("/plugins/market?msg=远程安装未启用", status_code=303)
+        try:
+            info = await _market_client().install_info(plugin_id)
+            archive_url = str(info.get("archive_url") or "")
+            if not archive_url:
+                raise MarketError("market returned no archive URL")
+            payload = await download_archive(archive_url)
+            root = Path(runtime.config.plugins.dirs[0] if runtime.config.plugins.dirs else "plugins")
+            root.mkdir(parents=True, exist_ok=True)
+            installed = install_archive(payload, root, expected_id=plugin_id)
+            manifest = next((item for item in runtime.plugins.discover() if item.id == installed), None)
+            if installed in runtime.plugins._loaded:
+                await runtime.plugins.reload(installed)
+            elif manifest is not None:
+                await runtime.plugins.load(manifest)
+            return RedirectResponse(f"/plugins/market?msg=已安装 {installed}", status_code=303)
+        except (MarketError, OSError) as exc:
+            log.warn("market install failed", id=plugin_id, error=str(exc))
+            return RedirectResponse(f"/plugins/market?msg=安装失败：{exc}", status_code=303)
+
+    def _manifest(plugin_id: str):
+        return next((item for item in runtime.plugins.discover() if item.id == plugin_id), None)
+
+    @app.get("/plugins/{plugin_id}/config", response_class=HTMLResponse)
+    async def plugin_config_page(request: Request, plugin_id: str, saved: int = 0) -> HTMLResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        manifest = _manifest(plugin_id)
+        if manifest is None:
+            return HTMLResponse("plugin not found", status_code=404)
+        current = runtime.plugins.plugin_config(plugin_id)
+        enabled = plugin_id not in runtime.plugins._disabled and plugin_id in runtime.plugins._loaded
+        return templates.TemplateResponse(
+            request,
+            "plugin_config.html",
+            {
+                "page": "plugins",
+                "info": runtime.info(),
+                "plugin": manifest.to_dict(),
+                "fields": _config_fields(manifest, current),
+                "enabled": enabled,
+                "saved": bool(saved),
+                "config_path": str(runtime.plugins.config_path(plugin_id)),
+            },
+        )
+
+    @app.post("/plugins/{plugin_id}/config")
+    async def plugin_config_save(plugin_id: str, request: Request) -> RedirectResponse:
+        form = await request.form()
+        manifest = _manifest(plugin_id)
+        if manifest is None:
+            return RedirectResponse("/plugins", status_code=303)
+        types = {str(item["key"]): str(item.get("type", "str")) for item in manifest.config_fields}
+        meta: dict[str, tuple[str, bool]] = {}
+        for item in manifest.config_fields:
+            key = str(item.get("key", ""))
+            if not key:
+                continue
+            raw_enable = item.get("configEnable", item.get("config_enable"))
+            enable = raw_enable if isinstance(raw_enable, dict) else {}
+            widget = str(enable.get("type", "text")).lower()
+            if widget in ("switch", "toggle", "bool", "boolean"):
+                widget = "switch"
+            elif widget in ("select", "dropdown", "choice"):
+                widget = "select"
+            else:
+                widget = "text"
+            visible = bool(enable.get("ifShow", enable.get("if_show", False))) if isinstance(raw_enable, dict) else True
+            meta[key] = (widget, visible)
+
+        # Start from the stored values so hidden fields are not erased on save.
+        values: dict[str, Any] = dict(runtime.plugins.plugin_config(plugin_id))
+        submitted: set[str] = set()
+        for key, raw in form.items():
+            if not key.startswith("cfg_"):
+                continue
+            field = key[4:]
+            submitted.add(field)
+            if meta.get(field, ("text", True))[0] == "switch":
+                values[field] = str(raw).lower() in ("1", "true", "yes", "on")
+            else:
+                values[field] = _coerce_field(str(raw), types.get(field, "str"))
+        # An unchecked switch is absent from the form; persist it as false.
+        for field, (widget, visible) in meta.items():
+            if widget == "switch" and visible and field not in submitted:
+                values[field] = False
+        runtime.plugins.save_plugin_config(plugin_id, values)
+        await runtime.plugins.set_enabled(plugin_id, form.get("enabled") == "on")
+        return RedirectResponse(f"/plugins/{plugin_id}/config?saved=1", status_code=303)
+
+    @app.get("/plugins/{plugin_id}/config/page")
+    async def plugin_custom_page(plugin_id: str) -> Any:
+        manifest = _manifest(plugin_id)
+        if manifest is None or manifest.config_ui != "custom" or not manifest.config_page:
+            return HTMLResponse("no custom page", status_code=404)
+        base = manifest.path.parent.resolve()
+        target = (base / manifest.config_page).resolve()
+        if base not in target.parents or not target.is_file():
+            return HTMLResponse("invalid config page path", status_code=400)
+        return FileResponse(target)
+
+    @app.get("/api/plugins/{plugin_id}/config")
+    async def plugin_config_api(plugin_id: str, request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return JSONResponse(runtime.plugins.plugin_config(plugin_id))
+
+    @app.post("/api/plugins/{plugin_id}/config")
+    async def plugin_config_api_save(plugin_id: str, request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            values = await request.json()
+        except json.JSONDecodeError:
+            return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+        if not isinstance(values, dict):
+            return JSONResponse({"ok": False, "error": "expected object"}, status_code=400)
+        runtime.plugins.save_plugin_config(plugin_id, values)
+        return JSONResponse({"ok": True})
+
+    @app.post("/plugins/{plugin_id}/config/reset")
+    async def reset_plugin_config(plugin_id: str) -> RedirectResponse:
+        path = runtime.plugins.config_path(plugin_id)
+        if path.exists():
+            path.unlink()
+        await runtime.plugins.reload(plugin_id)
+        return RedirectResponse(f"/plugins/{plugin_id}/config?saved=1", status_code=303)
+
+    @app.post("/plugins/{plugin_id}/uninstall")
+    async def uninstall_plugin(plugin_id: str) -> RedirectResponse:
+        await runtime.plugins.uninstall(plugin_id)
+        return RedirectResponse("/plugins", status_code=303)
+
+    @app.post("/plugins/{plugin_id}/update")
+    async def update_plugin(plugin_id: str) -> RedirectResponse:
+        await runtime.plugins.update(plugin_id)
+        return RedirectResponse("/plugins", status_code=303)
+
+    @app.post("/plugins/{plugin_id}/toggle")
+    async def toggle_plugin(plugin_id: str, enabled: str = Form("1")) -> RedirectResponse:
+        await runtime.plugins.set_enabled(plugin_id, enabled == "1")
+        return RedirectResponse("/plugins", status_code=303)
+
+    @app.post("/plugins/{plugin_id}/reload")
+    async def reload_plugin(plugin_id: str) -> RedirectResponse:
+        await runtime.plugins.reload(plugin_id)
+        return RedirectResponse("/plugins", status_code=303)
+
+    @app.get("/api/plugins")
+    async def plugins_api(request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return JSONResponse({"plugins": runtime.plugins.view()})
+
+    @app.get("/settings", response_class=HTMLResponse)
+    async def settings_page(request: Request, saved: int = 0) -> HTMLResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return templates.TemplateResponse(
+            request,
+            "settings.html",
+            {
+                "page": "settings",
+                "info": runtime.info(),
+                "config": runtime.config,
+                "config_json": _config_json(runtime),
+                "saved": bool(saved),
+            },
+        )
+
+    @app.post("/settings/log")
+    async def save_log_level(level: str = Form("INFO")) -> RedirectResponse:
+        name = level.strip().upper()
+        if name not in ("TRACE", "DEBUG", "INFO", "WARN", "ERROR"):
+            return RedirectResponse("/settings?saved=0", status_code=303)
+        logmod.configure(level=name)
+        runtime.config.log.level = name
+        _write_setting(runtime, {"log": {"level": name}})
+        return RedirectResponse("/settings?saved=1", status_code=303)
+
+    @app.post("/settings/storage")
+    async def save_storage(max_messages: int = Form(5000), max_days: int = Form(7)) -> RedirectResponse:
+        max_messages = max(0, min(max_messages, 1_000_000))
+        max_days = max(0, min(max_days, 3650))
+        runtime.config.rotation.max_messages = max_messages
+        runtime.config.rotation.max_days = max_days
+        for attribute, value in (("max_messages", max_messages), ("max_days", max_days)):
+            if hasattr(runtime.store, attribute):
+                setattr(runtime.store, attribute, value)
+        _write_setting(runtime, {"rotation": {"max_messages": max_messages, "max_days": max_days}})
+        return RedirectResponse("/settings?saved=1", status_code=303)
+
+    @app.post("/settings/runtime")
+    async def save_runtime(watch: str = Form("0")) -> RedirectResponse:
+        enabled = watch == "1"
+        runtime.config.plugins.watch = enabled
+        _write_setting(runtime, {"plugins": {"watch": enabled}})
+        return RedirectResponse("/settings?saved=1", status_code=303)
+
+    @app.post("/settings/pipe-auth")
+    async def save_pipe_auth(
+        pipe_auth: str = Form("random"), pipe_token: str = Form("")
+    ) -> RedirectResponse:
+        mode = pipe_auth.strip().lower()
+        if mode not in ("random", "fixed", "none"):
+            return RedirectResponse("/settings?saved=0", status_code=303)
+        if mode == "fixed" and not pipe_token.strip():
+            return RedirectResponse("/settings?saved=0", status_code=303)
+        _write_setting(runtime, {"transport": {"pipe_auth": mode, "pipe_token": pipe_token.strip()}})
+        runtime.config.transport.pipe_auth = mode
+        runtime.config.transport.pipe_token = pipe_token.strip()
+        return RedirectResponse("/settings?saved=1", status_code=303)
+
+    def _parse_urls(raw: str) -> list[str]:
+        items: list[str] = []
+        for chunk in raw.replace(",", "\n").splitlines():
+            value = chunk.strip()
+            if value:
+                items.append(value)
+        return items
+
+    def _apply_network(runtime: "Runtime", data: dict[str, Any]) -> list[str]:
+        errors: list[str] = []
+        onebot = runtime.config.onebot
+        webui = runtime.config.webui
+        host = str(data.get("host", onebot.host)).strip()
+        try:
+            port = int(data.get("port", onebot.port))
+        except (TypeError, ValueError):
+            port = -1
+        if not host or " " in host:
+            errors.append("监听地址不能为空或包含空格")
+        if not 1 <= port <= 65535:
+            errors.append("OneBot 端口必须在 1..65535 之间")
+        paths = {
+            "http_path": str(data.get("http_path", onebot.http_path)),
+            "ws_path": str(data.get("ws_path", onebot.ws_path)),
+            "sse_path": str(data.get("sse_path", onebot.sse_path)),
+        }
+        for name, value in paths.items():
+            if not value.startswith("/") or " " in value:
+                errors.append(f"{name} 必须以 / 开头且不含空格")
+        if len(set(paths.values())) != len(paths):
+            errors.append("HTTP / WS / SSE 路径不能重复")
+        urls = data.get("reverse_ws_urls", onebot.reverse_ws_urls)
+        if isinstance(urls, str):
+            urls = _parse_urls(urls)
+        for url in urls:
+            if not url.startswith(("ws://", "wss://")):
+                errors.append(f"Reverse WS 地址必须以 ws:// 或 wss:// 开头：{url}")
+        try:
+            reconnect = float(data.get("reverse_reconnect_seconds", onebot.reverse_reconnect_seconds))
+        except (TypeError, ValueError):
+            reconnect = -1
+        if not 0 <= reconnect <= 300:
+            errors.append("重连间隔必须在 0..300 秒之间")
+        webui_host = str(data.get("webui_host", webui.host)).strip()
+        try:
+            webui_port = int(data.get("webui_port", webui.port))
+        except (TypeError, ValueError):
+            webui_port = -1
+        if not webui_host or " " in webui_host:
+            errors.append("WebUI 地址不能为空或包含空格")
+        if not 1 <= webui_port <= 65535:
+            errors.append("WebUI 端口必须在 1..65535 之间")
+        if errors:
+            return errors
+
+        onebot.host = host
+        onebot.port = port
+        onebot.enable_http = bool(data.get("enable_http", onebot.enable_http))
+        onebot.enable_ws = bool(data.get("enable_ws", onebot.enable_ws))
+        onebot.enable_sse = bool(data.get("enable_sse", onebot.enable_sse))
+        for name, value in paths.items():
+            setattr(onebot, name, value)
+        if data.get("clear_onebot_token"):
+            onebot.access_token = ""
+        elif data.get("access_token"):
+            onebot.access_token = str(data["access_token"])
+        onebot.reverse_ws_urls = list(urls)
+        onebot.reverse_reconnect_seconds = reconnect
+        webui.host = webui_host
+        webui.port = webui_port
+        if data.get("clear_webui_token"):
+            webui.access_token = ""
+        elif data.get("webui_token"):
+            webui.access_token = str(data["webui_token"])
+        _write_setting(
+            runtime,
+            {
+                "onebot": {
+                    "host": onebot.host,
+                    "port": onebot.port,
+                    "enable_http": onebot.enable_http,
+                    "enable_ws": onebot.enable_ws,
+                    "enable_sse": onebot.enable_sse,
+                    "http_path": onebot.http_path,
+                    "ws_path": onebot.ws_path,
+                    "sse_path": onebot.sse_path,
+                    "access_token": onebot.access_token,
+                    "reverse_ws_urls": onebot.reverse_ws_urls,
+                    "reverse_reconnect_seconds": onebot.reverse_reconnect_seconds,
+                },
+                "webui": {
+                    "host": webui.host,
+                    "port": webui.port,
+                    "access_token": webui.access_token,
+                },
+            },
+        )
+        return []
+
+    def _network_view(runtime: "Runtime", account: str = "", kind: str = "") -> dict[str, Any]:
+        profiles = netprofiles.load(runtime.config)
+        chat_protocols = netprofiles.chat_protocols()
+
+        # Accounts that may own network configs: only ones that are actually logged in.
+        #
+        # The list is built from live state rather than from the instance directory listing, because the
+        # question the operator is answering here is "which account's connections am I editing". Showing an
+        # instance that exists but has never logged in offers a page with nothing behind it -- no messages
+        # to route, no account to attribute them to.
+        #
+        # Two sources, both keyed by account number so that a pipe session and a headless instance running
+        # the same account are one entry rather than two:
+        #
+        #   pipe sessions     each has its own process and port; the account is whatever login-boot.json
+        #                     reports for that session
+        #   headless instances  the manager's own login state
+        #
+        # An account with no login is simply absent. An empty list is a valid state, not an error.
+        accounts: list[dict[str, Any]] = []
+        seen_accounts: set[str] = set()
+
+        try:
+            # Pipe sessions: the same source the accounts page reads.
+            #
+            # `session_rows()` is the state the three-second poll last observed -- no probing here, so rendering
+            # this page cannot stall on a dead session the way one HTTP round trip per session would. It used to
+            # call `manager.live_sessions()`, which probes `login.info` for every session on every render: slow,
+            # and a session whose DLL was busy enough to miss the timeout silently dropped out of the column.
+            for row in runtime.session_rows():
+                info = row.get("account") or {}
+                uin = str(info.get("uin") or "").strip()
+                session_id = str(row.get("tmp_id") or "")
+                if not uin or uin in seen_accounts:
+                    continue
+                seen_accounts.add(uin)
+                accounts.append({
+                    "id": uin,
+                    "qq": uin,
+                    "label": f"{uin} · pipe {session_id}" if session_id else uin,
+                    "kind": "pipe",
+                    "session": session_id,
+                    "logged_in": bool(row.get("logged_in")),
+                    "running": bool(row.get("running")),
+                    "nickname": str(info.get("nickname") or ""),
+                    "phase": str(row.get("phase") or ""),
+                })
+
+            # Headless instances: their login state lives in the runtime's own login registry, keyed by instance
+            # id. `instances()` only knows what `instance.json` says, so asking it for a login state always
+            # answered "not logged in" -- that is the half that was missing, not a stray condition.
+            for instance in _headless().instances():
+                instance_id = str(instance.get("id") or "")
+                state = runtime._logins.get(instance_id)
+                uin = str((state.uin if state else "") or instance.get("qq") or "").strip()
+                logged_in = bool(getattr(state, "logged_in", False))
+                if not uin or uin == "0" or not logged_in or uin in seen_accounts:
+                    continue
+                seen_accounts.add(uin)
+                accounts.append({
+                    "id": uin,
+                    "qq": uin,
+                    "label": f"{uin} · headless {instance_id}",
+                    "kind": "headless",
+                    "session": instance_id,
+                    "logged_in": True,
+                    "running": True,
+                    "nickname": str(getattr(state, "nickname", "") or ""),
+                    "phase": "",
+                })
+        except Exception:  # noqa: BLE001 - the page must render even if state cannot be read
+            accounts = []
+
+        # An account with profiles but no live login still belongs in the column. Without it, the only way to
+        # reach that account's settings was to be signed in as it -- so a misconfigured profile could become
+        # unreachable precisely when it needed fixing.
+        try:
+            for owner in netprofiles.accounts_in_store(runtime.config):
+                if owner in seen_accounts:
+                    continue
+                seen_accounts.add(owner)
+                accounts.append({
+                    "id": owner,
+                    "qq": owner,
+                    "label": f"{owner} · 已配置",
+                    "kind": "",
+                    "session": "",
+                    "logged_in": False,
+                    "running": False,
+                    "nickname": "",
+                })
+        except Exception:  # noqa: BLE001 - a broken store must not blank the page
+            pass
+
+        accounts.sort(key=lambda item: (not item["logged_in"], item["kind"] != "pipe", item["id"]))
+
+        selected = str(account or "").strip()
+        known = {entry["id"] for entry in accounts}
+        if selected and selected not in known:
+            selected = ""
+        if not selected and accounts:
+            # Prefer an account that actually has profiles. Defaulting to "the first logged-in account" landed
+            # on one with nothing configured whenever a second account was also signed in, and the page then
+            # looked empty even though the operator's configuration was right there under another account.
+            configured = {netprofiles.owner_of(item) for item in profiles}
+            selected = next((entry["id"] for entry in accounts if entry["id"] in configured), accounts[0]["id"])
+
+        # Only this account's profiles. The `instance` field is the ownership key and already existed;
+        # the change is that the page now filters on it instead of showing everything at once.
+        scoped = [item for item in profiles if netprofiles.owner_of(item) == selected]
+        groups = {kind: [item for item in scoped if item.get("kind") == kind]
+                  for kind in netprofiles.KINDS}
+
+        # Which tab to open. Explicit choice wins; otherwise the first kind this account actually configures, so
+        # landing on an empty HTTP tab when the account only has WebSocket clients no longer looks like "my
+        # configuration is gone".
+        if kind not in netprofiles.KINDS:
+            kind = next((name for name in netprofiles.KINDS if groups[name]), netprofiles.KINDS[0])
+
+        return {
+            "page": "network",
+            "info": runtime.info(),
+            "config": runtime.config,
+            "onebot": runtime.config.onebot,
+            "webui": runtime.config.webui,
+            "applied": runtime.last_network_apply,
+            "profiles": scoped,
+            "all_profiles": profiles,
+            "groups": groups,
+            "accounts": accounts,
+            "selected_account": selected,
+            # Which kind tab was open. Every action reloads the page, and without this the reload landed on the
+            # first tab -- editing a WS client on the second account put the operator back on HTTP for account
+            # one, which reads as "my change was thrown away".
+            "selected_kind": kind,
+            # 下拉候选项来自 protocols/enabled_protocol.json；maxStore 是存储协议，
+            # 不在其中，因此永远不会被选成聊天协议。
+            "chat_protocols": chat_protocols,
+            "protocol_names": {item["id"]: item["name"] for item in chat_protocols},
+            # 账号下拉的候选实例（C0、C1 …），与账户管理页同源。
+            "instance_choices": netprofiles.instance_choices(runtime.config),
+        }
+
+    @app.get("/network", response_class=HTMLResponse)
+    async def network_page(request: Request, saved: int = 0, account: str = "", kind: str = "") -> HTMLResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return templates.TemplateResponse(
+            request, "network.html",
+            {**_network_view(runtime, account, kind), "saved": bool(saved), "errors": []}
+        )
+
+    @app.post("/api/network/profiles")
+    async def network_profiles_api(request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            payload = await request.json()
+        except json.JSONDecodeError:
+            return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+        if not isinstance(payload, dict):
+            return JSONResponse({"ok": False, "error": "expected object"}, status_code=400)
+        profiles = netprofiles.load(runtime.config)
+        action = str(payload.get("action") or "upsert")
+        try:
+            if action == "delete":
+                netprofiles.remove(profiles, str(payload.get("id") or ""))
+            elif action == "toggle":
+                target = next((item for item in profiles if item.get("id") == payload.get("id")), None)
+                if target is None:
+                    raise KeyError("profile not found")
+                target["enabled"] = bool(payload.get("enabled"))
+            else:
+                if not str(payload.get("instance") or payload.get("account") or "").strip():
+                    # A profile created without an explicit owner belongs to the account whose page it came from.
+                    # Leaving it unset put it on "C0" -- an owner nobody has -- and an ownerless profile is
+                    # active for whichever account happens to be serving, which is the leak this page must not
+                    # have. Only an unambiguous single logged-in account is used as the default.
+                    active = runtime._active_accounts()
+                    if len(active) == 1:
+                        payload["instance"] = active[0]
+                # Passed the config so the owner is validated: without it an unknown owner was stored verbatim
+                # and the profile then matched no account at all.
+                netprofiles.upsert(profiles, payload, runtime.config)
+        except (ValueError, KeyError) as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+        netprofiles.save(runtime.config, profiles)
+        # Only logged-in accounts' profiles are applied. `apply_to_config` takes the first enabled listener out of
+        # whatever it is handed, so handing it the whole store let one account's profile open a listener that then
+        # answered as a different account.
+        active_profiles = runtime._network_profiles_for(runtime._active_accounts())
+        data, warnings = netprofiles.apply_to_config(runtime.config, active_profiles)
+        data["clear_onebot_token"] = False
+        errors = _apply_network(runtime, data)
+        if errors:
+            return JSONResponse({"ok": False, "error": "; ".join(errors)}, status_code=400)
+        _write_setting(runtime, {"onebot": {key: value for key, value in data.items() if key != "clear_onebot_token"}})
+        # Hot reload still happens immediately -- but through the account gate, so a profile for an account
+        # that is not logged in saves without opening a listener for it. `force` is what makes this a reload:
+        # without it a save that does not change the logged-in account set would be a no-op.
+        applied = await runtime.sync_account_network(force=True, reason="settings saved")
+        return JSONResponse({"ok": True, "profiles": profiles, "warnings": warnings,
+                             "applied": applied})
+
+    @app.post("/network", response_class=HTMLResponse)
+    async def save_network(request: Request) -> Response:
+        denied = guard(request)
+        if denied:
+            return denied
+        form = await request.form()
+        data: dict[str, Any] = {key: form.get(key) for key in form.keys()}
+        data["enable_http"] = form.get("enable_http") == "on"
+        data["enable_ws"] = form.get("enable_ws") == "on"
+        data["enable_sse"] = form.get("enable_sse") == "on"
+        data["clear_onebot_token"] = form.get("clear_onebot_token") == "on"
+        data["clear_webui_token"] = form.get("clear_webui_token") == "on"
+        errors = _apply_network(runtime, data)
+        if errors:
+            return templates.TemplateResponse(
+                request,
+                "network.html",
+                {**_network_view(runtime), "saved": False, "errors": errors},
+                status_code=400,
+            )
+        applied = await runtime.apply_network()
+        runtime.last_network_apply = applied
+        return RedirectResponse("/network?saved=1", status_code=303)
+
+    @app.post("/api/headless/event")
+    async def headless_event(request: Request) -> JSONResponse:
+        client = request.client.host if request.client else ""
+        if client not in ("127.0.0.1", "::1", "localhost"):
+            return JSONResponse({"ok": False, "error": "loopback only"}, status_code=403)
+        push = getattr(runtime.transport, "push", None)
+        if push is None:
+            return JSONResponse({"ok": False, "error": "headless transport is not active"}, status_code=409)
+        # 允许多个实例上报：网络配置可以限定"只处理某个实例的事件"，那要求
+        # 该实例的事件真能进来。安全性由两点保证——回环地址 + 该实例自己的
+        # bridgeToken（每个实例启动时随机生成，互不相同）。
+        instance = str(request.headers.get("X-QSICK-Instance") or "").strip()
+        if not re.fullmatch(r"C(?:0|[1-9]\d*)", instance):
+            return JSONResponse({"ok": False, "error": "unsupported host instance"}, status_code=409)
+        try:
+            host_config = json.loads((Path(runtime.config.headless_root) / instance / "config.json").read_text(encoding="utf-8"))
+            token = str(host_config.get("bridgeToken") or "")
+        except (OSError, json.JSONDecodeError):
+            token = ""
+        if not token or not secrets.compare_digest(request.headers.get("Authorization", ""), "Bearer " + token):
+            return JSONResponse({"ok": False, "error": "bridge authorization required"}, status_code=401)
+        try:
+            payload = await request.json()
+        except json.JSONDecodeError:
+            return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+        if not isinstance(payload, dict):
+            return JSONResponse({"ok": False, "error": "expected object"}, status_code=400)
+        try:
+            push({**payload, "instance": instance})
+        except (ValueError, TypeError) as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        return JSONResponse({"ok": True})
+
+    @app.get("/api/headless/capabilities")
+    async def headless_capabilities(request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        if runtime.transport.name != "headless":
+            return JSONResponse({"ok": False, "error": "headless transport is not active"}, status_code=409)
+        result = await runtime.transport.send("runtime.capabilities", {}, timeout=5)
+        return JSONResponse({"ok": result.ok, "data": result.data, "error": result.message}, status_code=200 if result.ok else 503)
+
+    @app.get("/api/network")
+    async def network_api(request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        onebot = runtime.config.onebot
+        webui = runtime.config.webui
+        return JSONResponse(
+            {
+                "transport": runtime.config.transport.mode,
+                "onebot": {
+                    "host": onebot.host,
+                    "port": onebot.port,
+                    "enable_http": onebot.enable_http,
+                    "enable_ws": onebot.enable_ws,
+                    "enable_sse": onebot.enable_sse,
+                    "http_path": onebot.http_path,
+                    "ws_path": onebot.ws_path,
+                    "sse_path": onebot.sse_path,
+                    "access_token": "***" if onebot.access_token else "",
+                    "reverse_ws_urls": onebot.reverse_ws_urls,
+                    "reverse_reconnect_seconds": onebot.reverse_reconnect_seconds,
+                },
+                "webui": {
+                    "host": webui.host,
+                    "port": webui.port,
+                    "access_token": "***" if webui.access_token else "",
+                },
+                "reverse_ws": runtime.info()["reverse_ws"],
+            }
+        )
+
+    @app.post("/api/network")
+    async def network_api_save(request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            data = await request.json()
+        except json.JSONDecodeError:
+            return JSONResponse({"ok": False, "errors": ["invalid JSON"]}, status_code=400)
+        if not isinstance(data, dict):
+            return JSONResponse({"ok": False, "errors": ["expected object"]}, status_code=400)
+        errors = _apply_network(runtime, data)
+        if errors:
+            return JSONResponse({"ok": False, "errors": errors}, status_code=400)
+        applied = await runtime.apply_network()
+        return JSONResponse({"ok": True, "applied": applied, "webui_port_restart_required": True})
+
+    def _message_page(request: Request, q: str, page: int, limit: int) -> dict[str, Any]:
+        page = max(1, page)
+        total = runtime.store.count_matching(q)
+        pages = max(1, math.ceil(total / limit))
+        items = runtime.store.search(q, (page - 1) * limit, limit)
+        return {
+            "page": "messages",
+            "info": runtime.info(),
+            "messages": items,
+            "q": q,
+            "page_no": page,
+            "pages": pages,
+            "total": total,
+            "limit": limit,
+            "preview": _preview,
+        }
+
+    def _headless() -> HeadlessManager:
+        return HeadlessManager(runtime.config.headless_root)
+
+    @app.get("/partials/network", response_class=HTMLResponse)
+    async def partial_network(request: Request) -> HTMLResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return templates.TemplateResponse(request, "partials/network.html", {"page": "index", "info": runtime.info()})
+
+    @app.get("/accounts/{instance_id}/login", response_class=HTMLResponse)
+    async def accounts_login(instance_id: str, request: Request, embedded: int = 0) -> HTMLResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        account = next((item for item in _headless().instances() if item["id"] == instance_id), None)
+        if account is None:
+            return HTMLResponse(f"<h1>404</h1><p>找不到实例 {instance_id}</p>", status_code=404)
+        return templates.TemplateResponse(
+            request, "login_qr.html", {"page": "accounts", "account": account, "embedded": bool(embedded)}
+        )
+
+    def _headless_only() -> list[dict[str, Any]]:
+        """The instance table's rows.
+
+        One function for both the initial render and the 5-second refresh. They previously disagreed:
+        the poll filtered pipe out, the first render did not, so a Pipe row appeared on load and vanished
+        on the first refresh. Anything that decides what belongs in this table belongs here.
+
+        `instances()` already excludes anything that is not a `C<n>` directory holding a `wrapper.node`,
+        so no kind filter is needed on top -- only headless instances exist in that list by construction.
+        """
+        return _headless().instances()
+
+    @app.get("/accounts", response_class=HTMLResponse)
+    async def accounts_page(request: Request) -> HTMLResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return templates.TemplateResponse(
+            request,
+            "accounts.html",
+            {"page": "accounts", "info": runtime.info(), "accounts": _headless_only(),
+             "relogin_delays": _relogin_delays(), "config": runtime.config},
+        )
+
+    @app.get("/api/accounts")
+    async def accounts_api(request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        # Headless instances only, from the same function the page uses. Pipe sessions have their own
+        # endpoint and their own section: they are started and closed per session, which is a different
+        # lifecycle from "delete this instance directory".
+        return JSONResponse({"accounts": _headless_only()})
+
+    @app.post("/api/accounts")
+    async def accounts_create(request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        # 创建参数可选：老前端（以及脚本）不带 body 时沿用原来的"下一个 C<n>"。
+        try:
+            payload = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        name = str(payload.get("name") or "").strip()
+        kind = str(payload.get("kind") or "headless").strip().lower()
+        if kind not in ("headless", "pipe"):
+            return JSONResponse({"ok": False, "error": "kind must be headless or pipe"},
+                                status_code=400)
+        try:
+            # pipe 实例要铺一份完整客户端（模板用硬链接），几秒钟起步：别放在
+            # 事件循环上，否则这段时间整个 WebUI 都不响应。
+            account = await asyncio.to_thread(_headless().create, name, kind)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        except Exception as exc:  # noqa: BLE001 - 模板/磁盘问题都要如实回报
+            return JSONResponse({"ok": False, "error": f"创建失败：{exc}"}, status_code=500)
+        return JSONResponse({"ok": True, "account": account})
+
+    @app.get("/partials/accounts", response_class=HTMLResponse)
+    async def partial_accounts(request: Request) -> HTMLResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return templates.TemplateResponse(
+            request, "partials/accounts_table.html",
+                {"page": "accounts",
+                 # Same source as the initial render, so a refresh cannot change which rows exist.
+                 "accounts": _headless_only(),
+                 "relogin_delays": _relogin_delays()},
+        )
+
+    @app.get("/api/accounts/{instance_id}/qrcode")
+    async def accounts_qrcode(instance_id: str, request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            instance = next((item for item in _headless().instances() if item["id"] == instance_id), None)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+        if instance is None:
+            return JSONResponse({"ok": False, "error": f"找不到实例 {instance_id!r}"}, status_code=404)
+        return JSONResponse({"ok": True, "account": instance})
+
+    @app.post("/api/accounts/{instance_id}/refresh")
+    async def accounts_refresh(instance_id: str, request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            account = await asyncio.to_thread(_headless().refresh, instance_id)
+            return JSONResponse({"ok": True, "account": account})
+        except KeyError:
+            return JSONResponse({"ok": False, "error": f"找不到实例 {instance_id!r}"}, status_code=404)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+    @app.post("/api/accounts/{instance_id}/port")
+    async def accounts_set_port(instance_id: str, request: Request) -> JSONResponse:
+        """Set or clear a session's DLL port.
+
+        The port is where the injected DLL serves its action API, so a wrong value makes the session
+        unreachable rather than merely misconfigured. Validation is therefore strict about the range and
+        about collisions: two sessions on one port means the second cannot bind, and the failure would
+        only show up later as "this session does not respond".
+
+        An empty or zero value means "go back to automatic": the override is removed and the next start
+        allocates from 7540 again.
+        """
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            payload = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+        if not isinstance(payload, dict):
+            return JSONResponse({"ok": False, "error": "body must be an object"}, status_code=400)
+
+        raw = payload.get("port")
+        try:
+            port = int(raw or 0)
+        except (TypeError, ValueError):
+            return JSONResponse({"ok": False, "error": "port must be a number"}, status_code=400)
+
+        from .. import headless as headless_mod
+
+        if port:
+            if not (headless_mod.PIPE_PORT_BASE <= port <= headless_mod.PIPE_PORT_MAX):
+                return JSONResponse(
+                    {"ok": False,
+                     "error": f"端口必须落在 {headless_mod.PIPE_PORT_BASE}-"
+                              f"{headless_mod.PIPE_PORT_MAX} 之间"},
+                    status_code=400)
+            # Refuse a port another session already claims: the collision is silent at bind time and
+            # only surfaces as an unreachable session.
+            for other in _headless().instances():
+                if other["id"] == instance_id:
+                    continue
+                if int(other.get("port") or 0) == port and other.get("running"):
+                    return JSONResponse(
+                        {"ok": False, "error": f"端口 {port} 已被运行中的 session "
+                                               f"「{other.get('name') or other['id']}」占用"},
+                        status_code=409)
+
+        try:
+            overrides = headless_mod.read_port_override()
+            if port:
+                overrides[instance_id] = port
+            else:
+                overrides.pop(instance_id, None)
+            headless_mod.write_port_override(overrides)
+            account = await asyncio.to_thread(_headless().set_port, instance_id, port)
+            return JSONResponse({"ok": True, "account": account, "port": port})
+        except KeyError:
+            return JSONResponse({"ok": False, "error": f"找不到实例 {instance_id!r}"},
+                                status_code=404)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+    @app.get("/api/sessions")
+    async def sessions_api(request: Request) -> JSONResponse:
+        """The pipe sessions and whether each is actually running.
+
+        The list comes from `Pipe/dll/`: one directory per session, holding that session's port. That is
+        the durable half -- a session directory outlives its process, so sessions survive a QSICK restart.
+
+        Liveness is not read from any file. Each session's status is asked of its own DLL, over
+        `GET /health` on the port the session was given:
+
+            reply with status "ok"   -> running
+            connection refused       -> not started
+            timeout / other error    -> not started
+
+        That is the authoritative answer because the DLL answers only while its process is alive and bound.
+        A status file would report whatever was true when it was written -- a killed session keeps its last
+        heartbeat, which is exactly how a dead session used to keep showing as running.
+
+        Probes run concurrently: sequentially, one unreachable session would add its full timeout to the
+        list before the next was even tried, and a page polling every 5 s cannot afford that.
+        """
+        denied = guard(request)
+        if denied:
+            return denied
+        from .. import headless as headless_mod
+
+        try:
+            sessions = await asyncio.to_thread(headless_mod.read_session_dirs)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+        if sessions:
+            # Read the state the three-second poll left behind; do not probe here.
+            #
+            # The poll owns the cadence, and the retry ladder lives in it: one probe every three seconds, then
+            # one per second for the next two while a session goes unanswered, then the session is judged dead
+            # and stops being probed until the operator starts it again. Probing from this endpoint would
+            # bypass all of that -- a page refresh would revive a stopped session and the answers would race
+            # the poll's own.
+            live = {str(row.get("tmp_id") or ""): row for row in runtime.session_rows()}
+            for item in sessions:
+                row = live.get(str(item.get("tmp_id") or ""))
+                if row is not None:
+                    item.update({key: row[key] for key in
+                                 ("running", "logged_in", "closed", "detail", "account", "probed",
+                                  "stage", "ready", "phase")
+                                 if key in row})
+                else:
+                    # Never polled yet: say so instead of implying 已停止.
+                    item.setdefault("running", False)
+                    item["logged_in"] = False
+                    item["probed"] = False
+                # A session whose answer came from `nowport` but whose requested port differs has an edit
+                # waiting for a restart. Surfaced so the row can say so instead of looking settled.
+                item["port_changed"] = bool(
+                    item["running"] and item.get("port") and item.get("nowport")
+                    and int(item["port"]) != int(item["nowport"]))
+        return JSONResponse({"ok": True, "sessions": sessions})
+
+    @app.post("/api/sessions")
+    async def sessions_start(request: Request) -> JSONResponse:
+        """Start one more pipe session.
+
+        This does *not* create an instance. Only one client copy exists under `Pipe/`, and a session is
+        that client being launched again -- a new process with its own temporary id and port. Copying the
+        client per session was the earlier behaviour and it cost 1.3 GB each time, which is neither what
+        "repeat-launch QQ.exe" means nor something the disk can absorb.
+
+        The launch path is the existing pipe start: a fresh 4-character id, a DLL copy under `dll/<id>/`, and
+        a port allocated from 7540.
+        """
+        denied = guard(request)
+        if denied:
+            return denied
+        from .. import headless as headless_mod
+
+        manager = _headless()
+        try:
+            # The port comes from the hot-reloaded override map or the next free one.
+            port = headless_mod.read_port_override().get(manager.pipe_instance_id(), 0)
+            result = await asyncio.to_thread(
+                manager.start_session, port, 5754)
+            # A brand-new session has never been polled; make sure it is, whatever the previous run left in
+            # the "given up" set for an id that happens to collide.
+            if isinstance(result, dict) and result.get("id"):
+                runtime.resume_session_polling(str(result.get("id")))
+            return JSONResponse({"ok": True, "session": result})
+        except FileNotFoundError:
+            return JSONResponse(
+                {"ok": False, "error": "还没有 Pipe 客户端。先在账户管理里创建一个 pipe 实例。"},
+                status_code=404)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+    @app.post("/api/sessions/{tmp_id}/port")
+    async def sessions_set_port(tmp_id: str, request: Request) -> JSONResponse:
+        """Change one session's DLL port, in that session's own config.
+
+        The port is written to `dll/<tmp_id>/qsick_pipe.json` and takes effect the next time this session is
+        started.
+
+        It cannot take effect immediately, and that is a property of the DLL rather than of this code: the
+        injected side exposes `QsickStartHttp(port)` guarded by an `InterlockedCompareExchange` one-shot, so
+        the listener is created once per process and there is no stop or rebind. A running session therefore
+        keeps the port it bound. The response says so, and `needs_restart` lets the UI state it instead of
+        leaving the operator to discover it.
+
+        Everything else about the edit is live: the new number is on disk at once, the list shows it on the
+        next poll, and an invalid or conflicting value is refused here rather than at the next launch.
+        """
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            payload = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+        if not isinstance(payload, dict):
+            return JSONResponse({"ok": False, "error": "body must be an object"}, status_code=400)
+        try:
+            port = int(payload.get("port") or 0)
+        except (TypeError, ValueError):
+            return JSONResponse({"ok": False, "error": "port must be a number"}, status_code=400)
+
+        from .. import headless as headless_mod
+
+        if port and not (headless_mod.PIPE_PORT_BASE <= port <= headless_mod.PIPE_PORT_MAX):
+            return JSONResponse(
+                {"ok": False,
+                 "error": f"端口必须落在 {headless_mod.PIPE_PORT_BASE}-"
+                          f"{headless_mod.PIPE_PORT_MAX} 之间"},
+                status_code=400)
+        # Refuse a port another *running* session actually answers on. Checking liveness rather than the
+        # recorded number, because a stopped session's port is free to take.
+        #
+        # `login.info` is the liveness test: it is a plain round trip to the other session's DLL, and a
+        # refused connection means that session is closed, so the number is free.
+        if port:
+            for other in headless_mod.read_session_dirs():
+                if other["tmp_id"] == tmp_id or int(other.get("port") or 0) != port:
+                    continue
+                if headless_mod.probe_session_login(port).get("running"):
+                    return JSONResponse(
+                        {"ok": False,
+                         "error": f"端口 {port} 已被运行中的 session {other['tmp_id']} 占用"},
+                        status_code=409)
+
+        directory = headless_mod.session_dll_dir() / tmp_id
+        config_path = directory / headless_mod.PIPE_DLL_CONFIG
+        if not config_path.is_file():
+            return JSONResponse({"ok": False, "error": f"找不到 session {tmp_id!r} 的配置"},
+                                status_code=404)
+
+        # Only `port` changes here. `nowport` deliberately does not: it records what the process bound, and
+        # the process is still listening on the old number. Leaving it alone is what lets a caller tell
+        # "edited but not applied" from "applied", and what keeps probes pointed at a live socket.
+        old_port, old_nowport = headless_mod.session_ports(headless_mod.read_session_config(tmp_id))
+        effective = port or old_port
+        headless_mod.write_session_ports(tmp_id, port=effective)
+        was_running = bool(
+            (old_nowport or old_port)
+            and headless_mod.probe_session_login(int(old_nowport or old_port)).get("running"))
+        return JSONResponse({
+            "ok": True,
+            "tmp_id": tmp_id,
+            "port": effective,
+            "nowport": old_nowport,
+            # A running session keeps its old port until relaunched; saying so is the whole point.
+            "needs_restart": was_running and effective != (old_nowport or old_port),
+        })
+
+    @app.post("/api/sessions/autostart")
+    async def sessions_autostart(request: Request) -> JSONResponse:
+        """Read or set which pipe session starts with QSICK.
+
+        Two values, because one is not enough: a switch alone cannot say *which* session, and a choice alone
+        cannot say whether to act on it. Both live in the config file so they survive a restart -- that is the
+        whole point of an auto-start setting.
+
+        An empty session id with the switch on is accepted and simply starts nothing. Refusing it would force
+        the operator to pick a session before they can turn the switch off, which is backwards.
+        """
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            payload = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        config = runtime.config
+        if "enabled" in payload:
+            config.pipe_auto_start = bool(payload.get("enabled"))
+        if "session" in payload:
+            config.pipe_auto_start_session = str(payload.get("session") or "").strip()
+        _write_setting(runtime, {
+            "pipe_auto_start": config.pipe_auto_start,
+            "pipe_auto_start_session": config.pipe_auto_start_session,
+        })
+        return JSONResponse({
+            "ok": True,
+            "enabled": config.pipe_auto_start,
+            "session": config.pipe_auto_start_session,
+        })
+
+    @app.post("/api/sessions/{tmp_id}/start")
+    async def sessions_start_one(tmp_id: str, request: Request) -> JSONResponse:
+        """Relaunch one existing session on its requested port.
+
+        Starting is the point where `nowport` is aligned to `port`: the process is launched on the number the
+        operator asked for, and `nowport` records that it is now bound. Until then the two may differ, which
+        is how a pending edit is represented.
+
+        A port that the launch cannot bind fails loudly rather than being silently swapped for another: the
+        operator picked that number, and moving it would undo their choice without saying so.
+        """
+        denied = guard(request)
+        if denied:
+            return denied
+        from .. import headless as headless_mod
+        from ..transport import session_link
+
+        directory = headless_mod.session_dll_dir() / tmp_id
+        if not directory.is_dir():
+            return JSONResponse({"ok": False, "error": f"找不到 session {tmp_id!r}"},
+                                status_code=404)
+        port, _ = headless_mod.session_ports(headless_mod.read_session_config(tmp_id))
+        try:
+            # `tmp_id` is passed so the launch reuses this session's directory. Without it a fresh id is
+            # generated, which is how pressing 启动 used to add a second row for the same process.
+            result = await asyncio.to_thread(_headless().start_session, port, 5754, tmp_id)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+        headless_mod.write_session_ports(tmp_id, nowport=int(port or 0))
+        # A session that was judged dead is not being polled. Pressing 启动 is what brings it back, which is the
+        # operator's rule and also the only moment its state can meaningfully change.
+        runtime.resume_session_polling(tmp_id)
+        return JSONResponse({"ok": True, "session": result})
+
+    @app.post("/api/sessions/{tmp_id}/close")
+    async def sessions_close(tmp_id: str, request: Request) -> JSONResponse:
+        """Close one session: kill its process, keep its directory.
+
+        Closing is about the process. The directory holds the port and the DLL copy, so deleting it would
+        lose the operator's port assignment and make "close then start" impossible -- they would be
+        configuring a new session each time. Use `/delete` to remove the session entirely.
+        """
+        denied = guard(request)
+        if denied:
+            return denied
+        from .. import headless as headless_mod
+
+        directory = headless_mod.session_dll_dir() / tmp_id
+        if not directory.is_dir():
+            return JSONResponse({"ok": False, "error": f"找不到 session {tmp_id!r}"},
+                                status_code=404)
+        # Learn the account before the process dies: after the kill nothing can answer for it, and the
+        # account is what owns a network config.
+        account = ""
+        config = {}
+        port = 0
+        try:
+            config = await asyncio.to_thread(headless_mod.read_session_config, tmp_id)
+            # `session_ports` knows both config shapes: `nowport` is nested inside `session` in current
+            # launches and top-level in older ones. Reading only one shape gives 0 and silently skips every
+            # step below that needs the port.
+            requested, bound = headless_mod.session_ports(config or {})
+            port = int(bound or requested or 0)
+            if port:
+                probe = await asyncio.to_thread(headless_mod.probe_session_login, port)
+                if probe.get("logged_in"):
+                    account = str(probe.get("uin") or "")
+        except Exception as exc:  # noqa: BLE001 - a missing account only costs the immediate close
+            log.debug("could not read the session account before closing", error=str(exc))
+
+        # Close, in the operator's order: end the session first, then wait for it to say it is going.
+        #
+        # `/quit` is the normal kill on Windows: there is no SIGTERM, so the DLL is asked and announces itself
+        # over the state link (`closing`) before exiting. A hard `TerminateProcess` first would give it no
+        # chance to say anything, which is exactly what made the disconnect packet unobservable.
+        graceful = False
+        announced = False
+        try:
+            token = str((config or {}).get("ws_token") or "")
+            if port:
+                graceful = await asyncio.to_thread(session_link.request_shutdown, port, token, 5.0)
+        except Exception as exc:  # noqa: BLE001 - fall through to the kill
+            log.debug("graceful shutdown request failed", error=str(exc))
+
+        # Either the state link reports the disconnect, or ten seconds pass and we insist.
+        deadline = 10.0
+        waited = 0.0
+        while waited < deadline:
+            link = runtime._links.get(tmp_id)
+            if link is not None and link.state.closing:
+                announced = True
+                break
+            if port:
+                still_up = await asyncio.to_thread(headless_mod.probe_session_login, port, 0.5)
+                if not still_up.get("running"):
+                    # The port stopped answering: whatever it managed to send, it is gone.
+                    announced = True
+                    break
+            await asyncio.sleep(0.5)
+            waited += 0.5
+
+        forced = False
+        try:
+            killed = await asyncio.to_thread(headless_mod.kill_session_process,
+                                             headless_mod.ROOT_NAME, tmp_id)
+            # Ten seconds without a goodbye means it is still running: terminate it for real.
+            if not announced:
+                forced = True
+                await asyncio.to_thread(headless_mod.kill_session_process,
+                                        headless_mod.ROOT_NAME, tmp_id)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+        # The account is gone, so its network config must not stay open.
+        closed_network = runtime.mark_account_offline(account, reason="session closed") if account else False
+        # Closing is final until 启动: the link stops, and the row says 已关闭.
+        runtime.stop_session_polling(tmp_id, detail="已关闭")
+        # Only now is the port settled: `nowport` is what a running session bound, and a stopped one binds
+        # nothing -- aligning it with `port` is what makes the row read "stopped on this port" instead of
+        # showing a pending restart. Deliberately after the disconnect, never before: clearing it early is
+        # what made the close path lose the port it needed to ask the session to shut down.
+        try:
+            headless_mod.write_session_ports(tmp_id, nowport=int(port or 0))
+        except Exception as exc:  # noqa: BLE001 - a stale row is better than a failed close
+            log.debug("could not align the session port", error=str(exc))
+
+        return JSONResponse({"ok": True, "closed": tmp_id, "killed": killed,
+                             "graceful": graceful, "forced": forced,
+                             "account": account, "network_closed": closed_network})
+
+    @app.post("/api/sessions/{tmp_id}/delete")
+    async def sessions_delete(tmp_id: str, request: Request) -> JSONResponse:
+        """Delete one session: kill its process and remove its directory.
+
+        The row disappears from the list because the list is read from `dll/`. This is the destructive one
+        -- the port assignment goes with it.
+
+        Deleting a running session waits for the DLL to be released before removing anything, so a single
+        click is enough. If the files are still held after that wait the request reports it as a conflict
+        rather than a success, which is what stops the UI from showing a half-deleted row that only a second
+        click clears.
+        """
+        denied = guard(request)
+        if denied:
+            return denied
+        from .. import headless as headless_mod
+
+        directory = headless_mod.session_dll_dir() / tmp_id
+        if not directory.is_dir():
+            return JSONResponse({"ok": False, "error": f"找不到 session {tmp_id!r}"},
+                                status_code=404)
+        try:
+            deleted = await asyncio.to_thread(headless_mod.close_session,
+                                              headless_mod.ROOT_NAME, tmp_id)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+        if not deleted:
+            return JSONResponse(
+                {"ok": False,
+                 "error": "session 的 dll 仍被占用，目录没删掉。稍等几秒再点一次删除。"},
+                status_code=409)
+        return JSONResponse({"ok": True, "deleted": tmp_id})
+
+    @app.post("/api/accounts/{instance_id}/auto-start")
+    async def accounts_auto_start(instance_id: str, request: Request) -> JSONResponse:
+        """开关单个实例的"随 QSICK 启动"。
+
+        只写配置，不立刻启动或停止实例——开关管的是**下次**启动的行为。想马上生效
+        请点"启动"。这样两者职责分明，也不会让一次误触把 QQ 拉起来。
+        """
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            payload = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+        if not isinstance(payload, dict) or not isinstance(payload.get("enabled"), bool):
+            return JSONResponse({"ok": False, "error": "enabled must be a boolean"},
+                                status_code=400)
+        try:
+            account = await asyncio.to_thread(_headless().set_auto_start,
+                                              instance_id, payload["enabled"])
+            return JSONResponse({"ok": True, "account": account})
+        except KeyError:
+            return JSONResponse({"ok": False, "error": f"找不到实例 {instance_id!r}"},
+                                status_code=404)
+        except Exception as exc:  # noqa: BLE001 - 交给界面显示
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+    @app.post("/api/accounts/{instance_id}/auto-relogin")
+    async def accounts_auto_relogin(instance_id: str, request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            payload = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+        if not isinstance(payload, dict) or not isinstance(payload.get("enabled"), bool):
+            return JSONResponse({"ok": False, "error": "enabled must be a boolean"}, status_code=400)
+        delay = payload.get("delay")
+        if delay is not None:
+            if not isinstance(delay, int) or isinstance(delay, bool):
+                return JSONResponse({"ok": False, "error": "delay 必须是整数秒"}, status_code=400)
+            # 在路由层就挡掉非法档位，而不是只依赖 manager 里的校验：那个方法在
+            # 测试里会被替换掉，而"任意数字"会让重登节拍失控，这是策略而不是
+            # 实现细节，应该在入口处守住。
+            from ..headless import RELOGIN_DELAY_CHOICES
+
+            if delay not in RELOGIN_DELAY_CHOICES:
+                allowed = "、".join(str(item) for item in RELOGIN_DELAY_CHOICES)
+                return JSONResponse({"ok": False, "error": f"不支持的时延 {delay}；可选：{allowed}"},
+                                    status_code=400)
+        try:
+            account = await asyncio.to_thread(_headless().set_auto_relogin,
+                                              instance_id, payload["enabled"], delay)
+            # 刚被踢的实例一旦打开开关，计时器要从现在开始算；关掉则清空，
+            # 下次被踢重新等满整个档位。
+            from ..backoff import KICK_CLOCK
+
+            if payload["enabled"]:
+                KICK_CLOCK.start(instance_id)
+            else:
+                KICK_CLOCK.clear(instance_id)
+            return JSONResponse({"ok": True, "account": account})
+        except KeyError:
+            return JSONResponse({"ok": False, "error": f"找不到实例 {instance_id!r}"}, status_code=404)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+    @app.post("/api/accounts/{instance_id}/recover")
+    async def accounts_recover(instance_id: str, request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            # 手动点重登 = 用户明确决定"再试一次"，先清掉退避账本；否则熔断之后
+            # 这个按钮永远只会回一句"已停止自动重试"，等于坏了。
+            from ..backoff import BOOK
+
+            BOOK.reset(instance_id)
+            result = await asyncio.to_thread(_headless().recover_kicked, instance_id, runtime.config.webui.port)
+            return JSONResponse({"ok": True, **result})
+        except KeyError:
+            return JSONResponse({"ok": False, "error": f"找不到实例 {instance_id!r}"}, status_code=404)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+    @app.post("/api/accounts/{instance_id}/quick-login")
+    async def accounts_quick_login(instance_id: str, request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            result = await asyncio.to_thread(_headless().quick_login, instance_id, runtime.config.webui.port)
+            return JSONResponse({"ok": True, **result})
+        except KeyError:
+            return JSONResponse({"ok": False, "error": f"找不到实例 {instance_id!r}"}, status_code=404)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        except RuntimeError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=409)
+
+    @app.post("/api/accounts/{instance_id}/start")
+    async def accounts_start(instance_id: str, request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            return JSONResponse({"ok": True, "account": _headless().start(instance_id, runtime.config.webui.port)})
+        except KeyError:
+            return JSONResponse({"ok": False, "error": f"找不到实例 {instance_id!r}"}, status_code=404)
+        except Exception as exc:  # noqa: BLE001 - host startup failures are reported to the UI
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+    @app.post("/api/accounts/{instance_id}/stop")
+    async def accounts_stop(instance_id: str, request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            return JSONResponse({"ok": True, "account": _headless().stop(instance_id)})
+        except KeyError:
+            return JSONResponse({"ok": False, "error": f"找不到实例 {instance_id!r}"}, status_code=404)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+    @app.delete("/api/accounts/{instance_id}")
+    async def accounts_delete(instance_id: str, request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            return JSONResponse({"ok": _headless().delete(instance_id)})
+        except KeyError:
+            return JSONResponse({"ok": False, "error": f"找不到实例 {instance_id!r}"}, status_code=404)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+    @app.get("/chat", response_class=HTMLResponse)
+    async def chat_page(request: Request) -> HTMLResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return templates.TemplateResponse(
+            request,
+            "chat.html",
+            {
+                "page": "chat",
+                "info": runtime.info(),
+                "chat_enabled": runtime.config.webui.chat_enabled,
+            },
+        )
+
+    @app.post("/chat/enable")
+    async def chat_enable() -> RedirectResponse:
+        runtime.config.webui.chat_enabled = True
+        _write_setting(runtime, {"webui": {"chat_enabled": True}})
+        log.warn("GUI chat layer enabled from WebUI")
+        return RedirectResponse("/chat", status_code=303)
+
+    @app.post("/chat/disable")
+    async def chat_disable() -> RedirectResponse:
+        runtime.config.webui.chat_enabled = False
+        _write_setting(runtime, {"webui": {"chat_enabled": False}})
+        log.info("GUI chat layer disabled")
+        return RedirectResponse("/chat", status_code=303)
+
+    # Account-scoped APIs coexist with the legacy group-only routes below.
+    from .chat_api import register_chat_routes
+
+    register_chat_routes(app, runtime, guard)
+
+    @app.get("/api/chat/groups")
+    async def chat_groups(request: Request, account: str = "") -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        groups: list[dict[str, Any]] = []
+        try:
+            result = await runtime.invoke("get_group_list", {})
+            raw = result.get("data") if isinstance(result, dict) else []
+            if isinstance(raw, list):
+                groups = [
+                    {"group_id": int(group.get("group_id", 0)), "group_name": str(group.get("group_name", ""))}
+                    for group in raw
+                    if isinstance(group, dict)
+                ]
+        except Exception:  # noqa: BLE001 - headless transports may not expose group list yet
+            groups = []
+        if not groups:
+            # Fall back to groups observed in message history.
+            # 按账号取它所属实例的库：实例各有自己的数据库，读主库会漏掉别的号。
+            from .chat_api import _store_for
+
+            seen: dict[int, dict[str, Any]] = {}
+            for message in _store_for(runtime, account).recent(400):
+                if not message.is_group:
+                    continue
+                if account and str(message.account or "") != account:
+                    continue
+                group_id = int(message.chat_id)
+                if group_id <= 0:
+                    continue
+                seen.setdefault(group_id, {"group_id": group_id, "group_name": f"群 {group_id}"})
+            groups = list(seen.values())
+        return JSONResponse({"groups": groups})
+
+    @app.get("/api/chat/messages")
+    async def chat_messages(request: Request, group_id: int = 0, limit: int = 100, account: str = "") -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        from .chat_api import _store_for
+
+        items = _store_for(runtime, account).recent(min(400, max(1, limit * 3)))
+        messages = []
+        for message in items:
+            if not message.is_group:
+                continue
+            if group_id and int(message.chat_id) != int(group_id):
+                continue
+            if account and str(message.account or "") != account:
+                continue
+            messages.append(
+                {
+                    "message_id": message.message_id,
+                    "group_id": int(message.chat_id),
+                    "sender": message.sender_name or str(message.sender_uin),
+                    "text": message.text,
+                    "time": message.time,
+                }
+            )
+        return JSONResponse({"messages": messages[-limit:]})
+
+    @app.post("/api/chat/send")
+    async def chat_send(request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        if not runtime.config.webui.chat_enabled:
+            return JSONResponse({"ok": False, "error": "chat disabled"}, status_code=403)
+        try:
+            payload = await request.json()
+        except json.JSONDecodeError:
+            return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+        group_id = int(payload.get("group_id") or 0) if isinstance(payload, dict) else 0
+        text = str(payload.get("text") or "").strip() if isinstance(payload, dict) else ""
+        if group_id <= 0 or not text:
+            return JSONResponse({"ok": False, "error": "group_id and text are required"}, status_code=400)
+        params: dict[str, Any] = {"group_id": group_id,
+                                  "message": [{"type": "text", "data": {"text": text}}]}
+        # 这是一个保留的旧端点，调用方可能不带 account；带了就传给动作层，
+        # 多实例下才能落到正确的号上（不带则仍按主实例处理，行为与以前一致）。
+        account = str(payload.get("account") or "").strip() if isinstance(payload, dict) else ""
+        if account:
+            params["account"] = account
+        result = await runtime.invoke("send_group_msg", params)
+        return JSONResponse(result)
+
+    @app.get("/messages", response_class=HTMLResponse)
+    async def messages_page(request: Request, q: str = "", page: int = 1) -> HTMLResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return templates.TemplateResponse(request, "messages.html", _message_page(request, q, page, 30))
+
+    @app.get("/api/messages")
+    async def messages_api(request: Request, q: str = "", page: int = 1) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        limit = 50
+        page = max(1, page)
+        total = runtime.store.count_matching(q)
+        items = runtime.store.search(q, (page - 1) * limit, limit)
+        return JSONResponse(
+            {
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "messages": [message.to_dict() for message in items],
+            }
+        )
+
+    @app.get("/healthz")
+    async def healthz() -> PlainTextResponse:
+        return PlainTextResponse("ok")
+
+    @app.get("/api/logs/download")
+    async def logs_download(request: Request) -> PlainTextResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        lines = []
+        for record in logmod.BUFFER.since(0):
+            data = record.to_dict()
+            fields = " ".join(f"{key}={value!r}" for key, value in data["fields"].items())
+            lines.append(f"{data['time']} {data['level']:<5} {data['category']:<12} {data['message']} {fields}".rstrip())
+        return PlainTextResponse(
+            "\n".join(lines) + "\n",
+            headers={"Content-Disposition": 'attachment; filename="qsick.log"'},
+        )
+
+    @app.post("/api/logs/clear")
+    async def logs_clear(request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        logmod.BUFFER.clear()
+        return JSONResponse({"ok": True})
+
+    return app
+
+
+def _config_fields(manifest: Any, current: dict[str, Any]) -> list[dict[str, Any]]:
+    declared = [dict(item) for item in getattr(manifest, "config_fields", [])]
+    if not declared:
+        for key, value in current.items():
+            declared.append({"key": key, "label": key, "type": _infer_type(value), "default": value})
+    fields = []
+    for item in declared:
+        key = str(item.get("key", ""))
+        if not key:
+            continue
+        kind = str(item.get("type", "str")).lower()
+        raw_enable = item.get("configEnable", item.get("config_enable"))
+        has_enable = isinstance(raw_enable, dict)
+        enable = raw_enable if has_enable else {}
+        visible = bool(enable.get("ifShow", enable.get("if_show", False))) if has_enable else True
+        widget = str(enable.get("type", "text")).lower()
+        if widget in ("switch", "toggle", "bool", "boolean"):
+            widget = "switch"
+        elif widget in ("select", "dropdown", "choice"):
+            widget = "select"
+        else:
+            widget = "text"
+
+        value = current.get(key, item.get("default"))
+        if widget == "switch":
+            value = value if isinstance(value, bool) else str(value).lower() in ("1", "true", "yes", "on")
+            rendered = "true" if value else "false"
+            kind = "bool"
+        elif kind in ("json", "object", "array") or isinstance(value, (dict, list)):
+            rendered = json.dumps(value, ensure_ascii=False, indent=2) if value is not None else "{}"
+            kind = "json"
+        elif isinstance(value, bool) or kind in ("bool", "boolean"):
+            rendered = "true" if value else "false"
+            kind = "bool"
+        elif value is None:
+            rendered = ""
+        else:
+            rendered = str(value)
+
+        options = item.get("options") or enable.get("options") or item.get("choices") or []
+        if not isinstance(options, list):
+            options = []
+        options = [str(option) for option in options]
+        if widget == "select" and rendered not in options and options:
+            options.insert(0, rendered)
+
+        fields.append(
+            {
+                "key": key,
+                "label": str(item.get("label", key)),
+                "type": kind,
+                "value": rendered,
+                "help": str(item.get("help", "")),
+                "visible": visible,
+                "widget": widget,
+                "options": options,
+            }
+        )
+    return fields
+
+
+def _infer_type(value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        return "json"
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, int):
+        return "int"
+    return "str"
+
+
+def _coerce_field(raw: str, kind: str) -> Any:
+    text = raw.strip()
+    if kind in ("int", "integer"):
+        try:
+            return int(text)
+        except ValueError:
+            return text
+    if kind in ("float", "number"):
+        try:
+            return float(text)
+        except ValueError:
+            return text
+    if kind in ("bool", "boolean"):
+        return text.lower() in ("1", "true", "yes", "on")
+    if kind in ("json", "object", "array"):
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return text
+    return raw
+
+
+def _write_setting(runtime: "Runtime", updates: dict[str, Any]) -> None:
+    """Merge one section into the on-disk config, preserving everything else.
+
+    写回**启动时真正读到的那份文件**。早先这里只看 ``QSICK_CONFIG`` 与
+    ``qsick.json``，于是用 ``--config other.json`` 起的进程一旦保存设置，就把
+    端口写进了 ``qsick.json``——正在用的那份没变，另一份被改坏，表现就是
+    "WebUI 端口莫名其妙变了"。
+    """
+    from dataclasses import asdict
+
+    recorded = str(getattr(runtime.config, "source_path", "") or "")
+    path = Path(recorded or os.environ.get("QSICK_CONFIG", "qsick.json"))
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            data = asdict(runtime.config)
+    else:
+        data = asdict(runtime.config)
+    for section, values in updates.items():
+        if isinstance(values, dict):
+            data.setdefault(section, {}).update(values)
+        else:
+            data[section] = values
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _filter_specs(specs: list[dict[str, Any]], q: str, category: str) -> list[dict[str, Any]]:
+    needle = q.strip().lower()
+    out = []
+    for spec in specs:
+        if category and spec["category"] != category:
+            continue
+        if needle and needle not in spec["name"].lower() and needle not in spec["summary"].lower():
+            continue
+        out.append(spec)
+    return out
+
+
+def _config_json(runtime: "Runtime") -> str:
+    from dataclasses import asdict
+
+    data = asdict(runtime.config)
+    data["onebot"]["access_token"] = "***" if runtime.config.onebot.access_token else ""
+    data["webui"]["access_token"] = "***" if runtime.config.webui.access_token else ""
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def _preview(message: Any) -> str:
+    from ..protocol import elements as E
+
+    return E.preview(message.elements, limit=80)

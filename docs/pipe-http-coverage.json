@@ -1,0 +1,166 @@
+{
+  "results": [
+    {
+      "op": "login.info",
+      "state": "OK",
+      "detail": "{ok,data}"
+    },
+    {
+      "op": "group.list",
+      "state": "OK",
+      "detail": "{ok,data}"
+    },
+    {
+      "op": "group.info",
+      "state": "OK",
+      "detail": "{ok,data}"
+    },
+    {
+      "op": "group.members",
+      "state": "OK",
+      "detail": "{ok,data}"
+    },
+    {
+      "op": "group.admins",
+      "state": "OK",
+      "detail": "{ok,data}"
+    },
+    {
+      "op": "group.member_count",
+      "state": "OK",
+      "detail": "{ok,data}"
+    },
+    {
+      "op": "group.share_link",
+      "state": "OK",
+      "detail": "ActionError: Service response is missing result"
+    },
+    {
+      "op": "group.share_ark",
+      "state": "OK",
+      "detail": "ActionError: Service response is missing result"
+    },
+    {
+      "op": "group.at_all_remain",
+      "state": "OK",
+      "detail": "{ok,data}"
+    },
+    {
+      "op": "group.shut_list",
+      "state": "OK",
+      "detail": "ActionError: No complete onShutUpMemberListChanged response before timeout"
+    },
+    {
+      "op": "group.ignored_notifies",
+      "state": "OK",
+      "detail": "ActionError: General notify pages do not verify ignored-only filtering or complete ignored"
+    },
+    {
+      "op": "group.not_joined_info",
+      "state": "OK",
+      "detail": "ActionError: getGroupInfoForJoinGroup returns unknown; joined-list absence does not provid"
+    },
+    {
+      "op": "group.admin_permissions",
+      "state": "OK",
+      "detail": "ActionError: Member roles do not define granular permissions; native privilege flag meanin"
+    },
+    {
+      "op": "group.admin_settings",
+      "state": "OK",
+      "detail": "ActionError: No verified native admin-settings result and flag semantics"
+    },
+    {
+      "op": "friend.list",
+      "state": "OK",
+      "detail": "ActionError: assertion (argc == 2) failed: NodeIKernelBuddyService::getBuddyListFromCache "
+    },
+    {
+      "op": "friend.categories",
+      "state": "OK",
+      "detail": "ActionError: assertion (argc == 2) failed: NodeIKernelBuddyService::getBuddyListFromCache "
+    },
+    {
+      "op": "friend.info",
+      "state": "OK",
+      "detail": "ActionError: user_id must be a positive canonical decimal ID"
+    },
+    {
+      "op": "friend.statuses",
+      "state": "OK",
+      "detail": "ActionError: assertion (argc == 2) failed: NodeIKernelBuddyService::getBuddyListFromCache "
+    },
+    {
+      "op": "friend.relations",
+      "state": "OK",
+      "detail": "ActionError: assertion (argc == 2) failed: NodeIKernelBuddyService::getBuddyListFromCache "
+    },
+    {
+      "op": "friend.online",
+      "state": "OK",
+      "detail": "ActionError: UserStatus defines numeric codes but no online/offline enum; use friend.statu"
+    },
+    {
+      "op": "recent.list",
+      "state": "OK",
+      "detail": "{ok,data}"
+    },
+    {
+      "op": "online.clients",
+      "state": "OK",
+      "detail": "ActionError: Local OneBot action returns an empty placeholder; no verified complete native"
+    },
+    {
+      "op": "guild.list",
+      "state": "OK",
+      "detail": "ActionError: Local guild list action is an empty void stub; no verified service payload co"
+    },
+    {
+      "op": "emoji.favorites",
+      "state": "OK",
+      "detail": "{ok,data}"
+    },
+    {
+      "op": "user.status",
+      "state": "OK",
+      "detail": "ActionError: user_id must be a positive canonical decimal ID"
+    },
+    {
+      "op": "system.rkey",
+      "state": "OK",
+      "detail": "ActionError: OIDB returned errorCode=253 | command=381 sub=253 bodyHex="
+    },
+    {
+      "op": "cache.clean",
+      "state": "OK",
+      "detail": "ActionError: keys must be a non-empty array of cache key strings"
+    },
+    {
+      "op": "message.history",
+      "state": "OK",
+      "detail": "{ok,data}"
+    },
+    {
+      "op": "group.file.list",
+      "state": "OK",
+      "detail": "{ok,data}"
+    },
+    {
+      "op": "group.file.count",
+      "state": "OK",
+      "detail": "{ok,data}"
+    },
+    {
+      "op": "group.essence.list",
+      "state": "OK",
+      "detail": "ActionError: The client refuses essence listing for this account (errCode 5 on every group"
+    },
+    {
+      "op": "group.essence.latest",
+      "state": "OK",
+      "detail": "ActionError: The client refuses essence listing for this account (errCode 5 on every group"
+    }
+  ],
+  "ok": 32,
+  "total": 32
+}

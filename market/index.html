@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QSICK 插件市场</title>
+  <link rel="stylesheet" href="static/style.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo">QS</span>
+      <div>
+        <strong>QSICK 插件市场</strong>
+        <small>插件只托管在 GitHub / Gitee，本市场只存元数据</small>
+      </div>
+    </div>
+    <div class="stats" id="stats">—</div>
+  </header>
+
+  <section class="toolbar">
+    <input id="search" type="search" placeholder="搜索插件名称、简介或 ID…" autocomplete="off" />
+    <select id="sort" title="排序字段">
+      <option value="published">发布日期</option>
+      <option value="updated">最后更新</option>
+      <option value="name">名称</option>
+      <option value="stars">Stars</option>
+      <option value="views">浏览量</option>
+      <option value="likes">点赞数</option>
+      <option value="match">匹配客户端版本</option>
+    </select>
+    <button id="order" class="ghost" type="button" title="切换正序 / 倒序">↓ 倒序</button>
+    <input id="client" placeholder="客户端版本，如 0.3.0" title="用于匹配与排序" />
+    <button id="reload" class="ghost" type="button">刷新</button>
+  </section>
+
+  <main>
+    <div id="empty" class="empty" hidden>
+      <strong>还没有插件</strong>
+      <p>运营者可以通过 <code>POST /api/plugins</code> 推送插件（需要管理 token）。</p>
+    </div>
+    <div id="grid" class="grid" aria-live="polite"></div>
+    <div class="pager">
+      <button id="prev" class="ghost" type="button">上一页</button>
+      <span id="pageinfo" class="muted"></span>
+      <button id="next" class="ghost" type="button">下一页</button>
+    </div>
+  </main>
+
+  <dialog id="detail">
+    <div class="dialog-head">
+      <h2 id="detail-title">安装插件</h2>
+      <button id="detail-close" class="ghost" type="button">关闭</button>
+    </div>
+    <p class="muted" id="detail-desc"></p>
+    <label>下载地址 <input id="detail-url" readonly /></label>
+    <div class="inline">
+      <button id="detail-copy" type="button">复制下载地址</button>
+      <a id="detail-repo" class="ghost" target="_blank" rel="noreferrer noopener">打开仓库</a>
+    </div>
+    <p class="muted" style="margin-top:12px">
+      在 QSICK WebUI 的“插件市场”里点击安装/更新，会由 QSICK 下载并校验后落盘。
+    </p>
+  </dialog>
+
+  <footer>
+    <span>QSICK Market</span>
+    <span class="muted">仅存储仓库 URL、简介、图标、版本；stars/浏览/点赞为本市场计数</span>
+  </footer>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="static/app.js"></script>
+</body>
+</html>

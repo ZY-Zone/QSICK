@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>QSICK · {% block title %}{{ page }}{% endblock %}</title>
+  <link rel="icon" href="/favicon.ico" />
+  <link rel="stylesheet" href="/static/app.css?v=20261114a" />
+  <script src="/static/htmx-lite.js" defer></script>
+  <script src="/static/app.js?v=20261114a" defer></script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body data-page="{{ page }}">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M4 10.5 12 4l8 6.5V20h-5v-6H9v6H4z"/></symbol>
+  <symbol id="i-logs" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M5 6h14M5 10h14M5 14h9M5 18h6"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" d="M13 3 5 14h6l-1 7 8-11h-6z"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" d="M4 5h16v11H9l-5 4z"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M9 3v5M15 3v5M7 8h10v5a5 5 0 0 1-5 5 5 5 0 0 1-5-5zM12 18v3"/></symbol>
+  <symbol id="i-store" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" d="M4 9h16l-1-4H5zM5 9v11h14V9M10 13h4"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8m0-5v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1M7.7 16.3 5.6 18.4"/></symbol>
+  <symbol id="i-net" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M3 12h18M12 3c2.6 2.4 4 5.7 4 9s-1.4 6.6-4 9c-2.6-2.4-4-5.7-4-9s1.4-6.6 4-9"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M4 7h9m4 0h3M4 17h3m4 0h9M13 7a2 2 0 1 1 4 0 2 2 0 0 1-4 0M7 17a2 2 0 1 1 4 0 2 2 0 0 1-4 0"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h8"/></symbol>
+</svg>
+
+<header class="topbar">
+  <a class="brand" href="/" style="color:inherit;text-decoration:none">
+    <span class="logo">QS</span>
+    <span>
+      <strong>QSICK</strong>
+      <small>OneBot v11 runtime</small>
+    </span>
+  </a>
+
+  <nav class="nav">
+    {% set nav = [
+      ("dashboard", "/", "总览", "i-home"),
+      ("logs", "/logs", "日志", "i-logs"),
+      ("messages", "/messages", "消息", "i-chat"),
+      ("chat", "/chat", "聊天", "i-chat"),
+      ("accounts", "/accounts", "账户管理", "i-plug"),
+      ("plugins", "/plugins", "插件", "i-plug"),
+      ("market", "/plugins/market", "市场", "i-store"),
+      ("network", "/network", "网络", "i-net"),
+      ("settings", "/settings", "设置", "i-sliders")
+    ] %}
+    {% for key, href, label, icon in nav %}
+      <a href="{{ href }}" class="{{ 'active' if page == key else '' }}">
+        <svg aria-hidden="true"><use href="#{{ icon }}"/></svg>{{ label }}
+        {% if key == "chat" and not info.chat_enabled %}<span class="nav-badge">待启用</span>{% endif %}
+      </a>
+    {% endfor %}
+  </nav>
+
+  <div class="right">
+    {# 被踢和普通"未登录"必须长得不一样：前者需要用户处理（重新登录/检查安全），
+       后者只是还没登录。以前两者都渲染成"未登录"，掉线原因无处可寻。 #}
+    <span class="pill {{ 'is-kicked' if info.kicked and not info.logged_in else '' }}"
+          title="{{ (info.kick_reason or '被 QQ 强制下线') if info.kicked and not info.logged_in else 'OneBot 账号状态' }}">
+      <span class="dot {{ 'ok' if info.logged_in else ('err' if info.kicked else 'off') }}"></span>
+      {% if info.logged_in %}<strong>{{ info.nickname or info.uin }}</strong><code class="faint">{{ info.uin }}</code>
+      {% elif info.kicked %}<strong>已被踢下线</strong>{% if info.kick_reason %}<code class="faint">{{ info.kick_reason }}</code>{% endif %}
+      {% else %}<strong>未登录</strong>{% endif %}
+    </span>
+    {% if info.webui_auth %}
+      <form method="post" action="/logout" style="margin:0">
+        <button class="iconbtn" type="submit" title="退出登录" aria-label="退出登录">
+          <svg aria-hidden="true"><use href="#i-out"/></svg>
+        </button>
+      </form>
+    {% endif %}
+  </div>
+</header>
+
+<div class="shell">
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="foot">
+    {# 已登录的账号放在最左边：它是最常被确认的一件事（"我现在操作的是哪个号"），排在版本号前面
+       比排在其后有用得多。未登录时不显示 uin，只留一句状态，避免空白让人以为界面坏了。 #}
+    {% if info.logged_in and info.uin %}
+    <span class="foot-account">账号 <code>{{ info.uin }}</code>{% if info.nickname %} · {{ info.nickname }}{% endif %}</span>
+    {% else %}
+    <span class="foot-account faint">未登录</span>
+    {% endif %}
+    <span>QSICK v{{ info.version }}</span>
+    <span>transport <code>{{ info.transport }}</code></span>
+    <span>OneBot <code>{{ info.onebot.host }}:{{ info.onebot.port }}</code></span>
+    <span>WebUI <code>{{ info.webui.host }}:{{ info.webui.port }}</code></span>
+    <span class="spacer"></span>
+            <a href="/plugins/market">插件市场</a>
+  </footer>
+</div>
+
+<div id="toasts" aria-live="polite"></div>
+</body>
+</html>

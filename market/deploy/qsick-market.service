@@ -1,0 +1,31 @@
+[Unit]
+Description=QSICK plugin market (stdlib HTTP + SQLite)
+Documentation=https://sickcc.online/QSICK/plugins-market/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=qsickmarket
+Group=qsickmarket
+WorkingDirectory=/opt/qsick-market
+EnvironmentFile=/etc/qsick-market.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /opt/qsick-market/app.py
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/qsick-market
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

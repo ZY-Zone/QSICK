@@ -1,0 +1,87 @@
+{% if accounts %}
+<table class="table">
+  <thead><tr><th>实例</th><th>QQ</th><th>状态</th><th>端口</th><th class="right">操作</th></tr></thead>
+  <tbody>
+    {% for account in accounts %}
+    <tr data-id="{{ account.id }}">
+      <td><code>{{ account.id }}</code><div class="faint">{{ account.path }}</div>
+        {# 数据目录按 QQ 自己的方式取值（reports/06：系统配置的 UserDataSavePath）。
+           pipe 实例与真实客户端共用这一份；取不到时显示"未知"，不猜路径。
+           加“数据目录”前缀是为了说清这不是实例目录，而是账号数据真正所在的位置。 #}
+        {% if account.data_dir %}
+        <div class="faint" title="账号数据实际存放位置（由 QQ 自己的配置决定）">数据目录：{{ account.data_dir }}</div>
+        {% else %}
+        <div class="faint" title="读不到 QQ 的数据目录配置">数据目录：未知</div>
+        {% endif %}
+      </td>
+      <td>{{ account.qq or "未登录" }}</td>
+      <td>
+        {# 被踢是"需要用户处理"的状态，必须用红色看得到。之前这里永远给 warn，
+           所以"已被踢下线"写在黄色徽章里，和"未登录"没有视觉区别。 #}
+        {% set is_kicked = account.phase == "kicked" %}
+        {% set is_broken = account.phase in ("error", "login_failed", "qrcode_failed", "offline") %}
+        <span class="badge {{ 'ok' if account.logged_in else ('err' if (is_kicked or is_broken) else 'warn') }}"
+              title="{{ account.kick_reason or account.error or '' }}">
+          {% if is_kicked %}{{ "被安全策略踢下线" if account.security_kicked else "已被踢下线" }}
+          {% elif account.phase == "offline" %}连接已断开
+          {% elif account.phase in ("error", "login_failed", "qrcode_failed") %}登录异常
+          {% elif account.phase == "quick_login" %}快捷登录中
+          {% elif account.phase == "initializing" %}会话初始化中
+          {% elif account.logged_in %}已登录
+          {% elif account.running %}未登录
+          {% else %}已停止{% endif %}
+        </span>
+        {% if is_kicked and (account.kick_reason or account.error) %}
+        <div class="faint" style="margin-top:4px">{{ account.kick_reason or account.error }}</div>
+        {% endif %}
+        {# 熔断与冷却要说清楚，否则"开了自动重登却不动"看起来像坏了。 #}
+        {% if account.auto_relogin and is_kicked %}
+          {% if account.retry_exhausted %}
+          <div class="faint" style="margin-top:2px;color:#b42318">连续重登失败过多，已停止自动重试，请手动处理</div>
+          {% elif account.next_retry_in and account.next_retry_in > 0 %}
+          <div class="faint" style="margin-top:2px">自动重登冷却中，约 {{ (account.next_retry_in // 60) | int }} 分钟后重试</div>
+          {% endif %}
+        {% endif %}
+      </td>
+      <td class="num">{{ account.port }}</td>
+      <td class="right">
+        <div class="inline" style="justify-content:flex-end">
+          <button type="button" class="ghost sm" data-action="start" {{ "disabled" if account.running else "" }}>启动</button>
+          <button type="button" class="ghost sm" data-action="stop" title="强制停止该无头实例">停止</button>
+          {# 逐实例的启动开关。默认关闭：QSICK 起来时不会自作主张拉起任何 QQ，
+             要不要开机启动由这里决定，避免一次把全部账号的内存和网络都占上。 #}
+          <label class="auto-start" title="开启后，QSICK 启动时会自动拉起这个实例。默认关闭——否则每次启动都会把全部账号一起打开。">
+            <input type="checkbox" data-auto-start {{ "checked" if account.auto_start else "" }} />
+            <span>随 QSICK 启动</span>
+            <span class="help-dot" aria-hidden="true">?</span>
+          </label>
+          <label class="auto-relogin" title="开启后，当 QQ 把该实例踢下线时，会自动结束它的子进程并重新启动，然后尝试登录上次的账号。关闭时只显示状态，不做任何自动操作。">
+            <input type="checkbox" data-auto-relogin {{ "checked" if account.auto_relogin else "" }} />
+            <span>自动重新登陆</span>
+            <span class="help-dot" aria-hidden="true">?</span>
+          </label>
+          {# 时延只在开关打开时可用。被踢瞬间就重登反而是风控最敏感的特征，
+             所以这里让用户显式选一个等待档位。 #}
+          <label class="relogin-delay" title="检测到被踢后等多久再重新登录。等得久一点，风控标记消退的机会更大；秒级重登只会让账号被咬得更紧。">
+            <select data-auto-relogin-delay
+                    {{ "" if account.auto_relogin else "disabled" }}
+                    aria-label="自动重登时延">
+              {% for seconds, label in relogin_delays %}
+              <option value="{{ seconds }}" {{ "selected" if account.auto_relogin_delay == seconds else "" }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <button type="button" class="ghost sm" data-action="quick-login" {{ "disabled" if not account.can_quick_login or account.logged_in or (account.running and account.phase in ("quick_login", "initializing")) else "" }} title="{{ ('尝试登录 ' ~ account.last_qq) if account.can_quick_login else '尚无上次登录记录，请先扫码' }}">登录上次账号</button>
+          <button type="button" class="ghost sm" data-action="login">登录二维码</button>
+          {# 任何实例都可以删，包括 pipe。目录会移进 .trash 而不是直接抹掉，
+             误删时还能找回；需要的实例会按既有规则重新创建。 #}
+          <button type="button" class="danger sm" data-action="delete" title="删除实例（目录会移入 .trash，可找回）">删除</button>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty"><strong>还没有实例</strong>点击右上角“新建实例”创建 C1。</div>
+{% endif %}

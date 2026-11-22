@@ -1,0 +1,59 @@
+﻿{% extends "base.html" %}
+{% block title %}插件{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>插件</h1>
+    <p>{{ plugins|length }} 个已安装插件；配置页由插件在 basic.json 中声明。</p>
+  </div>
+  <div class="actions">
+    <a class="btn ghost" href="/plugins/market">插件市场</a>
+  </div>
+</div>
+
+{% if not plugins %}
+  <section class="card">
+    <div class="empty">
+      <strong>没有发现插件</strong>
+      把带有 <code>basic.json</code> 的插件目录放进 <code>plugins/</code> 后刷新本页。
+    </div>
+  </section>
+{% else %}
+<div class="plugins">
+  {% for plugin in plugins %}
+    <article class="pluginrow {{ 'disabled' if not plugin.loaded else '' }}">
+      <div class="meta">
+        <div class="line">
+          <strong>{{ plugin.name }}</strong>
+          <code>{{ plugin.id }}@{{ plugin.version }}</code>
+          <span class="badge tier-{{ plugin.tier }}">{{ plugin.tier }}</span>
+          <span class="badge {{ 'ok' if plugin.loaded else 'warn' }}">{{ "运行中" if plugin.loaded else "未加载" }}</span>
+          <span class="badge">{{ "自定义配置页" if plugin.config_ui == "custom" else "默认配置页" }}</span>
+        </div>
+        <p>{{ plugin.description }}</p>
+        <div class="chips">
+          {% for permission in plugin.permissions %}<span class="chip">{{ permission }}</span>{% endfor %}
+        </div>
+      </div>
+      <div class="actions">
+        <form method="post" action="/plugins/{{ plugin.id }}/toggle">
+          <input type="hidden" name="enabled" value="{{ '0' if plugin.loaded else '1' }}" />
+          <label class="switch" title="启用 / 停用">
+            <input type="checkbox" {{ "checked" if plugin.loaded else "" }} onchange="this.form.submit()" />
+            <span class="track"></span>
+          </label>
+        </form>
+        <a class="btn ghost sm" href="/plugins/{{ plugin.id }}/config">配置</a>
+        <form method="post" action="/plugins/{{ plugin.id }}/update">
+          <button type="submit" class="ghost sm">更新</button>
+        </form>
+        <form method="post" action="/plugins/{{ plugin.id }}/uninstall"
+              onsubmit="return confirm('卸载 {{ plugin.id }}？目录会移动到 data/plugins/.trash，可手动恢复。');">
+          <button type="submit" class="danger sm">卸载</button>
+        </form>
+      </div>
+    </article>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

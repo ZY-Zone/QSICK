@@ -1,0 +1,74 @@
+﻿{% extends "base.html" %}
+{% block title %}{{ plugin.name }} 配置{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ plugin.name }}</h1>
+    <p><code>{{ plugin.id }}@{{ plugin.version }}</code> · {{ "自定义配置页" if plugin.config_ui == "custom" else "默认配置页" }}</p>
+  </div>
+  <div class="actions">
+    <a class="btn ghost" href="/plugins">返回插件</a>
+    {% if plugin.config_ui != "custom" %}
+      <form method="post" action="/plugins/{{ plugin.id }}/config/reset"
+            onsubmit="return confirm('恢复默认配置？现有 config.json 会删除。');">
+        <button type="submit" class="ghost">恢复默认</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<section class="card">
+  {% if saved %}<p class="okmsg">配置已保存（{{ "插件已启用" if enabled else "插件已停用" }}）。</p>{% endif %}
+
+  {% if plugin.config_ui == "custom" %}
+    <p class="muted">该插件自带配置页，通过 <code>/api/plugins/{{ plugin.id }}/config</code>（GET / POST JSON）读写配置。</p>
+    <iframe class="pluginconfig" src="/plugins/{{ plugin.id }}/config/page"
+            sandbox="allow-forms allow-scripts allow-same-origin"></iframe>
+  {% else %}
+    <form method="post" action="/plugins/{{ plugin.id }}/config" class="stack">
+      <label class="check">
+        <input type="checkbox" name="enabled" {{ "checked" if enabled else "" }} />
+        启用该插件
+      </label>
+
+      {% for field in fields %}
+        {% if field.visible %}
+        {% if field.widget == "switch" %}
+        <label class="check">
+          <input type="checkbox" name="cfg_{{ field.key }}" value="true" {{ "checked" if field.value == "true" else "" }} />
+          {{ field.label }}
+          <code class="faint">{{ field.key }} · switch</code>
+          {% if field.help %}<span class="faint">{{ field.help }}</span>{% endif %}
+        </label>
+        {% elif field.widget == "select" and field.options %}
+        <label>
+          {{ field.label }} <code class="faint">{{ field.key }} · select</code>
+          <select name="cfg_{{ field.key }}">
+            {% for option in field.options %}
+            <option value="{{ option }}" {{ "selected" if option == field.value else "" }}>{{ option }}</option>
+            {% endfor %}
+          </select>
+          {% if field.help %}<span class="faint">{{ field.help }}</span>{% endif %}
+        </label>
+        {% else %}
+        <label>
+          {{ field.label }} <code class="faint">{{ field.key }} · {{ field.type }}</code>
+          {% if field.type in ("json", "object", "array") %}
+            <textarea name="cfg_{{ field.key }}" rows="5" spellcheck="false">{{ field.value }}</textarea>
+          {% else %}
+            <input name="cfg_{{ field.key }}" value="{{ field.value }}" />
+          {% endif %}
+          {% if field.help %}<span class="faint">{{ field.help }}</span>{% endif %}
+        </label>
+        {% endif %}
+        {% endif %}
+      {% endfor %}
+
+      <div class="inline">
+        <button type="submit">保存配置</button>
+        <span class="muted">配置文件：<code>{{ config_path }}</code></span>
+      </div>
+    </form>
+  {% endif %}
+</section>
+{% endblock %}

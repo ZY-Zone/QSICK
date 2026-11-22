@@ -1,0 +1,640 @@
+{% extends "base.html" %}
+{% block title %}账户管理{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>账户管理</h1>
+    <p>每个账号一份独立目录：<code>headlessClient/C0</code>、<code>C1</code> …，类型可选无头或 pipe。</p>
+  </div>
+  <div class="actions">
+    <button type="button" id="account-create">新建实例</button>
+  </div>
+</div>
+<p id="account-feedback" class="muted" role="status" aria-live="polite" hidden></p>
+
+{# 新建实例对话框：名称 + 类型。
+   名称必须唯一，前端只做"看起来对不对"的即时校验，真正的查重在后端——
+   两个人同时开这个框是常事，前端校验永远是过期的。 #}
+<dialog id="create-dialog" class="qsick-dialog">
+  <form method="dialog" id="create-form">
+    <h2>新建实例</h2>
+    <label class="dialog-field">
+      <span>实例名称</span>
+      <input id="create-name" name="name" type="text" maxlength="32" required
+             placeholder="例如客服A" autocomplete="off" />
+      <small class="hint">用来在界面上区分实例，不可重复。目录名仍会分配 C0、C1…</small>
+    </label>
+    <label class="dialog-field">
+      <span>实例类型</span>
+      <select id="create-kind" name="kind" data-native-select>
+        <option value="headless">headless —— 无壳，直接加载 wrapper.node（省空间）</option>
+        <option value="pipe">pipe —— 完整客户端 + 注入（能力全，约 1.1 GB/实例）</option>
+      </select>
+      <small class="hint" id="create-kind-hint">
+        headless 不启动 QQ 界面，登录靠扫码页；占空间很小，所有实例共用一份 runtime。
+      </small>
+    </label>
+    <p id="create-error" class="dialog-error" role="alert" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" class="ghost" id="create-cancel">取消</button>
+      <button type="submit" id="create-submit">创建</button>
+    </div>
+  </form>
+</dialog>
+
+{# pipe session：独立二级栏目。
+   QQ 客户端本身允许重复打开，所以 pipe 不是一个"实例"而是一组 session：每个 session 一个进程、
+   一份数据目录、一个 DLL 端口。把它们和 headless 实例混在一张表里会让"删除实例"和"关闭 session"
+   看起来是同一件事，而它们的后果不同——前者删目录，后者只结束进程。 #}
+<section class="card" id="pipe-sessions" style="margin-top:14px"
+         data-auto-start="{{ '1' if config.pipe_auto_start else '0' }}"
+         data-auto-session="{{ config.pipe_auto_start_session }}">
+  <div class="card-head">
+    <h2>pipe session</h2>
+    <div class="actions">
+      <button type="button" id="pipe-start">新增 session</button>
+    </div>
+  </div>
+  {# 自启动：开关 + 选哪个 session。
+     两者缺一不可——只给开关没法说是哪一个，只给选择没法说是要不要。选中项来自下面的 session 列表，
+     列表每次轮询后重建，所以下拉在渲染时同步。 #}
+  <div class="pipe-autostart">
+    {# 开关的标记必须带 <i>：`.switch` 把 input 隐藏成 0×0 的透明元素，滑轨全靠
+       `.switch i` 画。少了它就只剩一个看不见的复选框。文字放在 label 外面。 #}
+    <label class="switch" title="随 QSICK 启动时拉起所选 session">
+      <input type="checkbox" id="pipe-autostart-enabled"
+             {% if config.pipe_auto_start %}checked{% endif %}>
+      <i></i>
+    </label>
+    <span class="pipe-autostart-label">随 QSICK 启动</span>
+    <label class="pipe-autostart-pick">
+      <span class="faint">自启动的 session</span>
+      <select id="pipe-autostart-session">
+        <option value="">（未选择）</option>
+      </select>
+    </label>
+    <span class="faint" id="pipe-autostart-hint">关闭时不拉起任何 session。</span>
+  </div>
+  <div id="pipe-session-list" data-poll="5000">
+    <p class="muted">还没有 session。点「新增 session」新开一个。</p>
+  </div>
+</section>
+
+<section class="card" style="margin-top:14px">
+  <div class="card-head"><h2>实例</h2><span class="sub">每 5 秒刷新</span></div>
+  <div id="accounts-list" hx-get="/partials/accounts" hx-trigger="every 5s" hx-swap="innerHTML">
+    {% include "partials/accounts_table.html" %}
+  </div>
+</section>
+
+<div class="qr-modal" id="qr-float" hidden>
+  <div class="qr-dialog">
+    <div class="qr-dialog-head">
+      <strong>QQ 扫码登录 · <span id="qr-float-id"></span></strong>
+    </div>
+    <iframe id="qr-frame" title="QQ 扫码登录"></iframe>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const pendingQuick = new Set();
+    function feedback(text, failed) {
+      const box = document.getElementById("account-feedback");
+      box.hidden = false;
+      box.textContent = text;
+      box.className = failed ? "danger-text" : "muted";
+    }
+    async function refreshAccounts() {
+      const response = await fetch("/partials/accounts", { cache: "no-store" });
+      if (response.ok) document.getElementById("accounts-list").innerHTML = await response.text();
+    }
+    function openLogin(id) {
+      const panel = document.getElementById("qr-float");
+      const frame = document.getElementById("qr-frame");
+      document.getElementById("qr-float-id").textContent = id;
+      frame.src = "/accounts/" + id + "/login?embedded=1";
+      panel.hidden = false;
+      fetch("/api/accounts/" + id + "/start", { method: "POST" }).catch(function () {});
+    }
+
+    function closeQr() {
+      const panel = document.getElementById("qr-float");
+      panel.hidden = true;
+      document.getElementById("qr-frame").src = "about:blank";
+    }
+
+    document.getElementById("qr-float").addEventListener("click", function (event) {
+      if (event.target !== this) return;
+      closeQr();
+    });
+
+    // The embedded login page reports a ready session; the QR window is then
+    // pointless, so it closes itself and the table refreshes.
+    window.addEventListener("message", function (event) {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data || {};
+      if (data.type !== "qsick:login-ready") return;
+      closeQr();
+      if (typeof data.id === "string") {
+        feedback(data.id + " 登录成功，会话已就绪", false);
+      }
+      refreshAccounts().catch(function () {});
+    });
+
+    async function call(url, options) {
+      let response;
+      try {
+        response = await fetch(url, options);
+      } catch (error) {
+        throw new Error("无法连接 QSICK（端口 5754），请确认程序仍在运行");
+      }
+      const body = await response.json();
+      if (!response.ok || body.ok === false) throw new Error(body.error || response.statusText);
+      return body;
+    }
+    // ---------------------------------------------------------- 新建实例对话框
+    var dialog = document.getElementById("create-dialog");
+    var createName = document.getElementById("create-name");
+    var createKind = document.getElementById("create-kind");
+    var createError = document.getElementById("create-error");
+    var createSubmit = document.getElementById("create-submit");
+    var kindHint = document.getElementById("create-kind-hint");
+
+    var KIND_HINTS = {
+      headless: "headless 不启动 QQ 界面，登录靠扫码页；占空间很小，所有实例共用一份 runtime。",
+      pipe: "pipe 会铺一份完整 QQ 客户端（硬链接，磁盘只多占很少），带 launch.bat，能力最全。"
+    };
+
+    function showCreateError(message) {
+      createError.textContent = message;
+      createError.hidden = !message;
+    }
+
+    document.getElementById("account-create").addEventListener("click", function () {
+      createName.value = "";
+      createKind.value = "headless";
+      kindHint.textContent = KIND_HINTS.headless;
+      createSubmit.disabled = false;
+      createSubmit.textContent = "创建";
+      showCreateError("");
+      dialog.showModal();
+      createName.focus();
+    });
+
+    createKind.addEventListener("change", function () {
+      kindHint.textContent = KIND_HINTS[createKind.value] || "";
+    });
+
+    document.getElementById("create-cancel").addEventListener("click", function () {
+      dialog.close();
+    });
+
+    document.getElementById("create-form").addEventListener("submit", async function (event) {
+      event.preventDefault();
+      var name = createName.value.trim();
+      if (!name) { showCreateError("请填写实例名称"); return; }
+      createSubmit.disabled = true;
+      createSubmit.textContent = "创建中…";
+      showCreateError("");
+      try {
+        await call("/api/accounts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name, kind: createKind.value })
+        });
+        dialog.close();
+        location.reload();
+      } catch (error) {
+        showCreateError(error.message);
+        createSubmit.disabled = false;
+        createSubmit.textContent = "创建";
+      }
+    });
+    var initialLogin = new URLSearchParams(window.location.search).get("login");
+    if (initialLogin) openLogin(initialLogin);
+
+    // 自动重新登陆 switch: applies per instance and persists immediately.
+    document.addEventListener("change", async function (event) {
+      // 时延下拉：立刻落盘。它只在开关打开时可用，启用/禁用由模板和开关共同决定。
+      const delayBox = event.target.closest("[data-auto-relogin-delay]");
+      if (delayBox) {
+        const delayRow = delayBox.closest("tr");
+        if (!delayRow) return;
+        const delayId = delayRow.dataset.id;
+        delayBox.disabled = true;
+        try {
+          const result = await call("/api/accounts/" + encodeURIComponent(delayId) + "/auto-relogin", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              enabled: !!delayRow.querySelector("[data-auto-relogin]")?.checked,
+              delay: Number(delayBox.value)
+            })
+          });
+          const label = result.account && result.account.auto_relogin_delay_label;
+          feedback(delayId + " 自动重登时延已设为 " + (label || delayBox.value + " 秒"), false);
+        } catch (error) {
+          feedback("设置时延失败：" + error.message, true);
+        } finally {
+          await refreshAccounts();
+        }
+        return;
+      }
+      // 随 QSICK 启动：只写配置，不立刻启动实例。开关管的是下次启动的行为，
+      // 想马上跑请点"启动"——两件事分开，误触也不会把 QQ 拉起来。
+      const startBox = event.target.closest("[data-auto-start]");
+      if (startBox) {
+        const startRow = startBox.closest("tr");
+        if (!startRow) return;
+        const startId = startRow.dataset.id;
+        startBox.disabled = true;
+        try {
+          const result = await call("/api/accounts/" + encodeURIComponent(startId) + "/auto-start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled: startBox.checked })
+          });
+          feedback(startId + (result.account && result.account.auto_start ? " 已加入自动启动" : " 已取消自动启动"), false);
+        } catch (error) {
+          startBox.checked = !startBox.checked;
+          feedback("设置失败：" + error.message, true);
+        } finally {
+          startBox.disabled = false;
+          await refreshAccounts();
+        }
+        return;
+      }
+      const box = event.target.closest("[data-auto-relogin]");
+      if (!box) return;
+      const row = box.closest("tr");
+      if (!row) return;
+      const id = row.dataset.id;
+      // 开关一拨，同行的下拉立刻跟着变可用/禁用，不必等整表刷新。
+      const delaySelect = row.querySelector("[data-auto-relogin-delay]");
+      if (delaySelect) delaySelect.disabled = !box.checked;
+      box.disabled = true;
+      try {
+        const result = await call("/api/accounts/" + encodeURIComponent(id) + "/auto-relogin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            enabled: box.checked,
+            delay: delaySelect ? Number(delaySelect.value) : undefined
+          })
+        });
+        feedback(id + (result.account && result.account.auto_relogin ? " 已开启自动重新登陆" : " 已关闭自动重新登陆"), false);
+      } catch (error) {
+        box.checked = !box.checked;
+        if (delaySelect) delaySelect.disabled = !box.checked;
+        feedback("设置失败：" + error.message, true);
+      } finally {
+        box.disabled = false;
+        await refreshAccounts();
+      }
+    });
+
+    document.addEventListener("click", async function (event) {
+      const button = event.target.closest("[data-action]");
+      if (!button || button.disabled) return;
+      const row = button.closest("tr");
+      if (!row) return;
+      const id = row.dataset.id;
+      const action = button.dataset.action;
+      if (action === "auto-relogin") return;
+      if (action === "quick-login") {
+        if (pendingQuick.has(id)) return;
+        pendingQuick.add(id); button.disabled = true;
+        feedback(id + " 正在尝试登录上次账号…", false);
+        try {
+          const result = await call("/api/accounts/" + encodeURIComponent(id) + "/quick-login", { method: "POST" });
+          feedback(result.already_logged_in ? id + " 已登录，无需重复登录" : result.account.phase === "ready" ? id + " 登录成功，会话已就绪" : id + " 快捷登录已受理，等待会话初始化…", false);
+        } catch (error) {
+          feedback(id + " 登录失败：" + error.message, true);
+        } finally {
+          pendingQuick.delete(id);
+          await refreshAccounts();
+        }
+        return;
+      }
+      try {
+        if (action === "login") {
+          openLogin(id);
+          return;
+        }
+        if (action === "delete") {
+          if (id === "C0") { alert("C0 由程序管理，不能删除。"); return; }
+          if (!confirm("删除 " + id + "？目录会移动到 headlessClient/.trash。")) return;
+          await call("/api/accounts/" + id, { method: "DELETE" });
+        } else {
+          await call("/api/accounts/" + id + "/" + action, { method: "POST" });
+        }
+        location.reload();
+      } catch (error) { alert("操作失败：" + error.message); }
+    });
+
+    // ---------------------------------------------------------------- pipe sessions
+    //
+    // The list polls every 5 s, which is the interval asked for. Polling rather than pushing is a
+    // deliberate trade: a session whose process the user killed outside the UI produces no event at
+    // all, so nothing would trigger a push and the row would sit there stale. A timer always fires.
+    //
+    // Polling also does the removing: /api/sessions reports `running` from whether the process still
+    // exists, so a killed session comes back stopped and the renderer drops it. That keeps the rule on
+    // the server, where it can also be used by anything else.
+
+    var sessionBox = document.getElementById("pipe-session-list");
+
+    function sessionRow(item) {
+      var row = document.createElement("div");
+      row.className = "session-row";
+      // The temporary id names the directory, so it is the row's identity: a session has no other lasting
+      // name, and its port can differ between launches.
+      row.dataset.tmpId = item.tmp_id;
+
+      var name = document.createElement("div");
+      name.className = "session-name";
+      var title = document.createElement("strong");
+      title.textContent = item.tmp_id;
+      var sub = document.createElement("span");
+      sub.className = "faint";
+      // Say which account this session is logged in as. The uin comes from `login.info` on this session's
+      // own port, so it identifies *this process* -- unlike the shared login file, where every session
+      // reported the same account.
+      var account = item.account || {};
+      if (item.port_changed) {
+        sub.textContent = "正在使用 " + item.nowport + "，待重启后改用 " + item.port;
+      } else if (item.running && item.nowport) {
+        // Bound port first: it is what the operator needs to call the API on.
+        var bound = "端口 " + item.nowport;
+        if (account.uin) {
+          sub.textContent = bound + " · " + account.uin + (account.nickname ? " " + account.nickname : "");
+        } else {
+          sub.textContent = bound + " · 未登录";
+        }
+      } else {
+        sub.textContent = item.port ? "端口 " + item.port : "端口未知（配置缺失）";
+      }
+      name.appendChild(title);
+      name.appendChild(sub);
+
+      var state = document.createElement("div");
+      state.className = "session-state";
+      var badge = document.createElement("span");
+      // Three states, because they mean different things to the operator.
+      //
+      // "运行中" alone was not enough: a session sitting at a QR code is running but has no account, and
+      // calling that 运行中 made it look ready to route messages when it is not. "已停止" is the DLL not
+      // answering at all, which is what closing a session produces.
+      if (!item.running) {
+        badge.className = "badge off";
+        badge.textContent = "已停止";
+      } else if (item.logged_in) {
+        badge.className = "badge ok";
+        badge.textContent = "已登录";
+      } else {
+        badge.className = "badge";
+        badge.textContent = "运行中 · 未登录";
+        if (item.detail) badge.title = item.detail;
+      }
+      state.appendChild(badge);
+
+      var port = document.createElement("div");
+      port.className = "session-port";
+      // A visible label, not just a title attribute: a bare number box gives no clue what the number is,
+      // and this one is the DLL's API port rather than anything QQ-related.
+      var portLabel = document.createElement("label");
+      portLabel.className = "session-port-label";
+      portLabel.textContent = "端口";
+      var portInput = document.createElement("input");
+      portInput.type = "number";
+      portInput.min = "7540";
+      portInput.max = "9198";
+      portInput.value = item.port || "";
+      portLabel.appendChild(portInput);
+      // The restart caveat sits beside the field rather than in a paragraph above the list: it applies to
+      // this one control, and it is only true while the session is running.
+      var portNote = document.createElement("span");
+      portNote.className = "faint session-port-note";
+      portNote.textContent = item.running ? "改动需重启生效" : "";
+      port.appendChild(portLabel);
+      port.appendChild(portNote);
+      portInput.addEventListener("change", async function () {
+        var wanted = Number(portInput.value) || 0;
+        try {
+          var body = await call("/api/sessions/" + item.tmp_id + "/port",
+                                { method: "POST", headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ port: wanted }) });
+          // The DLL binds its port once per process and cannot rebind, so a running session keeps the old
+          // number until it is restarted. Saying that here is better than letting it look applied.
+          if (body.needs_restart) {
+            alert("端口已保存为 " + body.port + "。这个 session 正在运行，需点「关闭」再「启动」才会换到新端口。");
+          }
+          loadSessions();
+        } catch (error) {
+          alert("设置端口失败：" + error.message);
+          portInput.value = item.port || "";
+        }
+      });
+
+      var actions = document.createElement("div");
+      actions.className = "session-actions";
+
+      var qr = document.createElement("button");
+      qr.type = "button";
+      qr.textContent = "登录二维码";
+      qr.addEventListener("click", function () { openLogin("Pipe"); });
+      actions.appendChild(qr);
+
+      // Start: relaunch this session on its own recorded port. Disabled while it is already running,
+      // because a second process on the same port would fail to bind.
+      var startOne = document.createElement("button");
+      startOne.type = "button";
+      startOne.textContent = "启动";
+      startOne.disabled = Boolean(item.running);
+      startOne.addEventListener("click", async function () {
+        startOne.disabled = true;
+        try {
+          await call("/api/sessions/" + item.tmp_id + "/start", { method: "POST" });
+          loadSessions();
+        } catch (error) {
+          alert("启动失败：" + error.message);
+        } finally {
+          startOne.disabled = false;
+        }
+      });
+      actions.appendChild(startOne);
+
+      // Close: kill the process, keep the directory. The port and DLL copy survive, so starting it again
+      // returns the same session rather than a new one.
+      var closeBtn = document.createElement("button");
+      closeBtn.type = "button";
+      closeBtn.textContent = "关闭";
+      closeBtn.disabled = !item.running;
+      closeBtn.addEventListener("click", async function () {
+        if (!confirm("关闭 session " + item.tmp_id + "？只结束进程，dll 目录和端口会保留。")) return;
+        try {
+          await call("/api/sessions/" + item.tmp_id + "/close", { method: "POST" });
+          loadSessions();
+        } catch (error) { alert("关闭失败：" + error.message); }
+      });
+      actions.appendChild(closeBtn);
+
+      // Delete: kill and remove the directory. This one loses the port assignment, hence the stronger
+      // wording in the prompt.
+      var deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "danger";
+      deleteBtn.textContent = "删除";
+      deleteBtn.addEventListener("click", async function () {
+        if (!confirm("删除 session " + item.tmp_id + "？会结束进程并删除 dll 目录，端口设置一并丢失。"))
+          return;
+        try {
+          await call("/api/sessions/" + item.tmp_id + "/delete", { method: "POST" });
+          loadSessions();
+        } catch (error) { alert("删除失败：" + error.message); }
+      });
+      actions.appendChild(deleteBtn);
+
+      row.appendChild(name);
+      row.appendChild(state);
+      row.appendChild(port);
+      row.appendChild(actions);
+      return row;
+    }
+
+    // ---------------------------------------------------------------- pipe auto-start
+    //
+    // The switch says whether to launch a session at startup; the dropdown says which one. Both are stored
+    // server-side (they have to survive a restart, which is the whole point), so this only reads and posts.
+    //
+    // The dropdown is rebuilt from the live session list on every poll: a session can be added or deleted
+    // while the page is open, and a stale option list would let the operator nominate an id that no longer
+    // exists. The current choice is preserved across rebuilds by value.
+
+    var autoBox = document.getElementById("pipe-sessions");
+    var autoToggle = document.getElementById("pipe-autostart-enabled");
+    var autoSelect = document.getElementById("pipe-autostart-session");
+    var autoHint = document.getElementById("pipe-autostart-hint");
+    var autoChosen = autoBox ? (autoBox.dataset.autoSession || "") : "";
+
+    function autoHintText() {
+      if (!autoToggle || !autoToggle.checked) return "关闭时不拉起任何 session。";
+      if (!autoSelect || !autoSelect.value) return "已开启，但还没选 session——不会拉起任何东西。";
+      return "启动时拉起 session " + autoSelect.value + "（已在运行的不会重复拉起）。";
+    }
+
+    function syncAutoHint() {
+      if (autoHint) autoHint.textContent = autoHintText();
+    }
+
+    async function saveAutoStart() {
+      try {
+        var body = await call("/api/sessions/autostart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            enabled: !!(autoToggle && autoToggle.checked),
+            session: autoSelect ? autoSelect.value : ""
+          })
+        });
+        if (body && body.ok) {
+          autoChosen = body.session || "";
+          if (autoBox) autoBox.dataset.autoSession = autoChosen;
+        }
+      } catch (error) {
+        alert("保存自启动设置失败：" + error.message);
+      }
+      syncAutoHint();
+    }
+
+    function renderAutoSessions(sessions) {
+      if (!autoSelect) return;
+      var previous = autoSelect.value || autoChosen;
+      autoSelect.textContent = "";
+      var blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "（未选择）";
+      autoSelect.appendChild(blank);
+      sessions.forEach(function (item) {
+        var option = document.createElement("option");
+        option.value = item.tmp_id;
+        // Show what the session currently is, so the choice is not a bare random id.
+        var label = item.tmp_id;
+        if (item.running && item.account && item.account.uin) label += " · " + item.account.uin;
+        else if (item.running) label += " · 运行中未登录";
+        else label += " · 已停止";
+        option.textContent = label;
+        autoSelect.appendChild(option);
+      });
+      // Restore the choice if it still exists. A deleted session leaves the select on "（未选择）", which is
+      // the honest state: the stored id no longer refers to anything.
+      var stillThere = previous && sessions.some(function (x) { return x.tmp_id === previous; });
+      autoSelect.value = stillThere ? previous : "";
+      if (!stillThere && previous && autoToggle && autoToggle.checked) {
+        // Keep the stored value honest rather than leaving the config pointing at a session that is gone.
+        saveAutoStart();
+        return;
+      }
+      syncAutoHint();
+    }
+
+    if (autoToggle) {
+      autoToggle.addEventListener("change", saveAutoStart);
+      syncAutoHint();
+    }
+    if (autoSelect) {
+      autoSelect.addEventListener("change", saveAutoStart);
+    }
+
+    async function loadSessions() {
+      if (!sessionBox) return;
+      try {
+        var response = await fetch("/api/sessions", { headers: { "Accept": "application/json" } });
+        var data = await response.json();
+        if (!data.ok) throw new Error(data.error || "读取 session 失败");
+        var sessions = data.sessions || [];
+        renderAutoSessions(sessions);
+        sessionBox.textContent = "";
+        if (!sessions.length) {
+          var empty = document.createElement("p");
+          empty.className = "muted";
+          empty.textContent = "还没有 session。点「启动 session」新开一个。";
+          sessionBox.appendChild(empty);
+          return;
+        }
+        sessions.forEach(function (item) { sessionBox.appendChild(sessionRow(item)); });
+      } catch (error) {
+        // Network hiccups while polling are expected; leave the last good list in place rather than
+        // replacing it with an error row that would then be indistinguishable from a real one.
+      }
+    }
+
+    if (sessionBox) {
+      var poll = setInterval(loadSessions, Number(sessionBox.dataset.poll || 5000));
+      // Stop polling while the tab is hidden: an idle page should not keep asking.
+      document.addEventListener("visibilitychange", function () {
+        if (document.hidden) { clearInterval(poll); }
+        else { loadSessions(); poll = setInterval(loadSessions, 5000); }
+      });
+      loadSessions();
+    }
+
+    var startBtn = document.getElementById("pipe-start");
+    if (startBtn) {
+      startBtn.addEventListener("click", async function () {
+        startBtn.disabled = true;
+        try {
+          // One launch of the shared client, not a new client copy.
+          await call("/api/sessions", { method: "POST" });
+          loadSessions();
+        } catch (error) {
+          alert("启动 session 失败：" + error.message);
+        } finally {
+          startBtn.disabled = false;
+        }
+      });
+    }
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,17 @@
+﻿{% extends "base.html" %}
+{% block title %}登录{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <section class="card login-card">
+    <h1>QSICK 控制台</h1>
+    <p class="muted">输入 WebUI 访问 token 以继续。</p>
+    {% if error %}<p class="errmsg">{{ error }}</p>{% endif %}
+    <form method="post" action="/login" class="stack">
+      <input type="hidden" name="next" value="{{ next }}" />
+      <label>访问 token <input type="password" name="token" autofocus autocomplete="current-password" /></label>
+      <button type="submit">登录</button>
+    </form>
+    <p class="faint" style="margin-top:14px">token 在 <code>qsick.json</code> 的 <code>webui.access_token</code>。</p>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}插件市场{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>插件市场</h1>
+    <p>{{ total }} 个插件 · 元数据来自 <a href="{{ market_url }}" target="_blank" rel="noreferrer noopener">{{ market_url }}</a></p>
+  </div>
+  <div class="actions">
+    <a class="btn ghost" href="/plugins">本地插件</a>
+    {% if not allow_install %}<span class="badge warn">远程安装已关闭</span>{% endif %}
+  </div>
+</div>
+
+{% if msg %}<p class="okmsg">{{ msg }}</p>{% endif %}
+{% if error %}<p class="errmsg">市场不可用：{{ error }}</p>{% endif %}
+
+<form class="card" method="get" action="/plugins/market" style="margin-bottom:14px">
+  <div class="toolbar">
+    <input name="q" value="{{ q }}" placeholder="搜索名称、简介或 ID…" style="flex:1;min-width:220px" />
+    <select name="sort">
+      {% for value, label in [("published","发布日期"),("updated","最后更新"),("name","名称"),("stars","Stars"),("views","浏览量"),("likes","点赞数"),("match","匹配客户端版本")] %}
+        <option value="{{ value }}" {{ "selected" if sort == value else "" }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <select name="order">
+      <option value="desc" {{ "selected" if order == "desc" else "" }}>倒序</option>
+      <option value="asc" {{ "selected" if order == "asc" else "" }}>正序</option>
+    </select>
+    <input name="client_version" value="{{ client_version }}" placeholder="客户端版本 0.3.0" style="width:150px" />
+    <button type="submit">筛选</button>
+  </div>
+</form>
+
+{% if plugins %}
+<div class="market-grid">
+  {% for plugin in plugins %}
+    <article class="mcard">
+      <div class="mcard-head">
+        <div class="micon">
+          {% if plugin.icon_url %}<img src="{{ plugin.icon_url }}" alt="" loading="lazy" />{% else %}{{ plugin.name[:1]|upper }}{% endif %}
+        </div>
+        <div class="mtitle">
+          <strong>{{ plugin.name }}</strong>
+          <code>{{ plugin.id }}@{{ plugin.version or "?" }}</code>
+        </div>
+        <span class="badge {{ 'ok' if plugin.matches_client else 'warn' }}">
+          {{ "版本匹配" if plugin.matches_client else "不匹配" }}
+        </span>
+      </div>
+      <p class="muted">{{ plugin.description or "（暂无简介）" }}</p>
+      <div class="chips">
+        <span class="chip">★ <b>{{ plugin.stars }}</b></span>
+        <span class="chip">浏览 <b>{{ plugin.views }}</b></span>
+        <span class="chip">♥ <b>{{ plugin.likes }}</b></span>
+        <span class="chip">{{ plugin.published_at[:10] }}</span>
+      </div>
+      <div class="mcard-actions">
+        <form method="post" action="/plugins/market/{{ plugin.id }}/like">
+          <button type="submit" class="ghost sm">点赞</button>
+        </form>
+        <a class="btn ghost sm" href="{{ plugin.repo_url }}" target="_blank" rel="noreferrer noopener">仓库</a>
+        {% if allow_install %}
+          <form method="post" action="/plugins/market/{{ plugin.id }}/install"
+                onsubmit="return confirm('安装/更新 {{ plugin.id }}@{{ plugin.version }}？将下载并执行第三方插件代码。');">
+            <button type="submit" class="sm">安装 / 更新</button>
+          </form>
+        {% else %}
+          <button type="button" class="ghost sm" disabled>安装已禁用</button>
+        {% endif %}
+      </div>
+    </article>
+  {% endfor %}
+</div>
+
+<div class="toolbar" style="justify-content:center;margin-top:16px">
+  {% if page_no > 1 %}
+    <a class="btn ghost sm" href="/plugins/market?q={{ q|urlencode }}&sort={{ sort }}&order={{ order }}&client_version={{ client_version|urlencode }}&page={{ page_no - 1 }}">上一页</a>
+  {% endif %}
+  <span class="muted">第 {{ page_no }} / {{ pages }} 页</span>
+  {% if page_no < pages %}
+    <a class="btn ghost sm" href="/plugins/market?q={{ q|urlencode }}&sort={{ sort }}&order={{ order }}&client_version={{ client_version|urlencode }}&page={{ page_no + 1 }}">下一页</a>
+  {% endif %}
+</div>
+{% else %}
+  <section class="card">
+    <div class="empty">
+      <strong>市场里还没有插件</strong>
+    </div>
+  </section>
+{% endif %}
+{% endblock %}

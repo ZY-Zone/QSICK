@@ -1,0 +1,2 @@
+# .bat 必须始终以 CRLF 检出：cmd.exe 解析 LF-only 的批处理会串行错乱。
+*.bat text eol=crlf

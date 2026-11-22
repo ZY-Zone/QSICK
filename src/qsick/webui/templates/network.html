@@ -1,0 +1,417 @@
+{% extends "base.html" %}
+{% block title %}网络{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>网络配置</h1>
+    <p>按类型管理 HTTP 服务器、WS 客户端与 WS 服务器。</p>
+  </div>
+</div>
+
+{% if saved %}
+  <p class="okmsg">
+    已保存：
+    OneBot
+    {% if applied and applied.onebot %}监听已重启
+    {% elif applied and applied.onebot_enabled %}启动失败，请查看日志（端口被占用？）
+    {% else %}未启用{% endif %} ·
+    Reverse WS {{ "已重建连接" if applied and applied.reverse_ws else "未配置" }}。
+  </p>
+{% endif %}
+{% if errors %}
+  <div class="errmsg" style="display:block;margin-bottom:12px">
+    {% for error in errors %}<div>• {{ error }}</div>{% endfor %}
+  </div>
+{% endif %}
+
+<div class="net-shell">
+  {# 二级菜单：可用账户。
+     网络配置属于某个账户——一条连接只服务一个号，否则消息会带着错误的 self_id 下发。
+     所以先选账户，再选连接类型；以前一屏列出全部配置，跨账户混在一起看不出归属。 #}
+  <aside class="card net-accounts">
+    <div class="card-head"><h2>账户</h2></div>
+    {% if accounts %}
+    <div class="net-account-list">
+      {% for item in accounts %}
+      <a class="net-account {{ 'active' if item.id == selected_account else '' }}"
+         href="/network?account={{ item.id|urlencode }}&kind={{ selected_kind|urlencode }}"
+         title="{{ item.label }}{% if item.kind %} · {{ item.kind }}{% endif %}">
+        <span class="net-account-name">{{ item.qq or item.id }}</span>
+        {# Wording follows the accounts table, so the same account reads the same way in both places. #}
+        {% set is_broken = item.phase in ("error", "login_failed", "qrcode_failed", "offline", "kicked") %}
+        <span class="badge {{ 'ok' if item.logged_in else ('err' if is_broken else ('warn' if item.running else 'off')) }}">
+          {%- if is_broken -%}连接已断开
+          {%- elif item.logged_in -%}已登录
+          {%- elif item.running -%}未登录
+          {%- else -%}未启动
+          {%- endif -%}
+        </span>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="faint" style="margin:10px 0">还没有可用账户。先在「账户管理」启动一个 pipe session。</p>
+    {% endif %}
+  </aside>
+
+  <aside class="card net-side">
+    <div class="card-head"><h2>连接类型</h2></div>
+    <button type="button" class="net-tab{% if selected_kind == 'http' %} active{% endif %}" data-tab="http">
+      <span>HTTP 服务器</span><b>{{ groups.http|length }}</b>
+    </button>
+    <button type="button" class="net-tab{% if selected_kind == 'ws_client' %} active{% endif %}" data-tab="ws_client">
+      <span>WS 客户端</span><b>{{ groups.ws_client|length }}</b>
+    </button>
+    <button type="button" class="net-tab{% if selected_kind == 'ws_server' %} active{% endif %}" data-tab="ws_server">
+      <span>WS 服务器</span><b>{{ groups.ws_server|length }}</b>
+    </button>
+    <p class="faint net-side-note">当前内核使用单监听端口；同类型多个启用项时，第一个生效。</p>
+  </aside>
+
+  <div class="net-panels">
+    {% for kind, title, desc in [
+      ("http", "HTTP 服务器", "提供 OneBot HTTP API，供客户端调用动作与拉取事件。"),
+      ("ws_client", "WS 客户端", "QSICK 主动连接到框架的 WebSocket 地址。"),
+      ("ws_server", "WS 服务器", "提供 OneBot WebSocket 入口，供客户端主动连接。")
+    ] %}
+    <section class="net-panel {{ 'active' if kind == selected_kind else '' }}" data-panel="{{ kind }}">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2>{{ title }}</h2>
+            <p class="faint">{{ desc }}</p>
+          </div>
+          <button type="button" class="btn sm" data-new="{{ kind }}">+ 新建配置</button>
+        </div>
+
+        <div class="net-list">
+          {% for profile in groups[kind] %}
+          <div class="net-row">
+            <div class="net-row-main">
+              <strong>{{ profile.name }}</strong>
+              <span>
+                {% if kind == "ws_client" %}
+                  {{ profile.url }}
+                {% else %}
+                  {{ profile.host }}:{{ profile.port }}{{ profile.path }}
+                {% endif %}
+              </span>
+              <span class="net-protocol">{{ protocol_names.get(profile.get("protocol", ""), profile.get("protocol", "")) }}</span>
+              {% if kind != "ws_client" %}
+              <span class="net-account" title="归属该实例：只收它的消息、只执行它的动作">
+                {{ profile.get("instance") or "C0" }}
+              </span>
+              {% endif %}
+            </div>
+            <label class="switch" title="{{ '已启用' if profile.enabled else '已关闭' }}">
+              <input type="checkbox" data-toggle="{{ profile.id }}" {{ "checked" if profile.enabled else "" }} />
+              <i></i>
+            </label>
+            <button type="button" class="ghost sm" data-edit="{{ profile.id }}">编辑</button>
+            <button type="button" class="iconbtn" data-delete="{{ profile.id }}" title="删除">×</button>
+          </div>
+          {% else %}
+          <div class="net-empty">
+            <strong>还没有配置</strong>
+            <span>点击右上角“新建配置”添加一个{{ title }}。</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="modal-backdrop" id="profile-modal" hidden>
+  <section class="modal profile-modal">
+    <div class="card-head" style="margin-bottom:10px">
+      <h2 id="profile-title">新建配置</h2>
+      <button type="button" class="ghost sm" id="profile-close">关闭</button>
+    </div>
+    <form id="profile-form" class="stack">
+      <input type="hidden" id="profile-id" />
+      <input type="hidden" id="profile-kind" />
+      <label>名称
+        <input id="profile-name" placeholder="配置名称" />
+      </label>
+      <label>协议
+        <select id="profile-protocol"
+                data-default="{{ (chat_protocols | selectattr('default') | map(attribute='id') | first) or (chat_protocols[0].id if chat_protocols else '') }}">
+          {% for option in chat_protocols %}
+          <option value="{{ option.id }}" title="{{ option.description }}"
+                  {{ "selected" if option.default else "" }}>{{ option.name }}</option>
+          {% endfor %}
+        </select>
+        <small id="profile-protocol-hint" class="hint"></small>
+      </label>
+      <label>所属账户
+        <select id="profile-account" data-selected="{{ selected_account }}">
+          {% for item in accounts %}
+          <option value="{{ item.id }}">{{ item.qq or item.id }}{% if not item.logged_in %} · 未登录{% endif %}</option>
+          {% endfor %}
+        </select>
+        <small class="hint">这条配置只对所选账号生效：只有该账号登录时才会启用，事件也只带该账号的 self_id。</small>
+      </label>
+      <div class="form-grid" id="profile-server-fields">
+        <label>地址 <input id="profile-host" value="127.0.0.1" /></label>
+        <label>端口 <input id="profile-port" type="number" min="1" max="65535" value="3000" /></label>
+        <label class="span-2">路径 <input id="profile-path" value="/" /></label>
+        <label class="span-2">Access token
+          <input id="profile-token" type="password" placeholder="留空表示不校验" autocomplete="new-password" />
+        </label>
+        {# HTTP 服务器特有的两个开关，对齐 SnowLuma 的 HttpServerNetwork。
+           它们只对 http 类型显示：ws 服务器没有 HTTP 监听，把开关放在那里等于提供一个不生效的选项，
+           保存下来却不生效比没有这个选项更糟。 #}
+        <label class="check span-2" id="profile-http-ws-wrap">
+          <input type="checkbox" id="profile-enable-ws" /> 同一端口也接受 WebSocket 客户端
+        </label>
+        <label class="check span-2" id="profile-http-sse-wrap">
+          <input type="checkbox" id="profile-enable-sse" /> 提供 SSE 事件流（<code>&lt;path&gt;/_events</code>）
+        </label>
+        {# 入站帧上限。留空表示用传输默认值；填了就是硬上限，超过会被断开（1009）。 #}
+        <label class="span-2" id="profile-max-payload-wrap">单帧上限（字节，可留空）
+          <input id="profile-max-payload" type="number" min="1024" placeholder="留空 = 默认 100 MiB" />
+        </label>
+      </div>
+      <label id="profile-client-fields" hidden>连接地址
+        <input id="profile-url" placeholder="ws://127.0.0.1:8080/onebot/v11/ws" spellcheck="false" />
+      </label>
+      {# 重连间隔只对 ws 客户端有意义：服务器不会主动重连，给它这个字段会让人以为它有用。 #}
+      <label id="profile-reconnect-wrap" hidden>重连间隔（毫秒）
+        <input id="profile-reconnect" type="number" min="500" value="5000" />
+      </label>
+      {# 上报自身消息：打开后机器人自己发的消息也会作为 message_sent 事件下发。
+         默认关闭，避免把机器人自己的消息再喂回去形成回路。 #}
+      <label class="check"><input type="checkbox" id="profile-report-self" /> 上报自身消息（message_sent 事件）</label>
+      <label class="check"><input type="checkbox" id="profile-enabled" checked /> 启用此配置</label>
+      <div class="inline" style="justify-content:flex-end">
+        <button type="button" class="ghost" id="profile-cancel">取消</button>
+        <button type="submit">保存</button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<script type="application/json" id="profile-data">{{ profiles|tojson }}</script>
+<script>
+  (function () {
+    var profiles = JSON.parse(document.getElementById("profile-data").textContent || "[]");
+    var modal = document.getElementById("profile-modal");
+    var form = document.getElementById("profile-form");
+
+    function byId(id) {
+      return profiles.find(function (item) { return item.id === id; });
+    }
+
+    function selectTab(kind, remember) {
+      document.querySelectorAll(".net-tab").forEach(function (button) {
+        button.classList.toggle("active", button.dataset.tab === kind);
+      });
+      // Keep the address bar in step so a reload (every action does one) returns to this tab.
+      if (remember !== false) {
+        var url = new URLSearchParams(location.search);
+        url.set("kind", kind);
+        history.replaceState(null, "", location.pathname + "?" + url.toString());
+      }
+      document.querySelectorAll(".net-panel").forEach(function (panel) {
+        panel.classList.toggle("active", panel.dataset.panel === kind);
+      });
+    }
+
+    document.querySelectorAll(".net-tab").forEach(function (button) {
+      button.addEventListener("click", function () { selectTab(button.dataset.tab); });
+    });
+
+    // 协议决定这条配置收发消息时怎么编码表情。选中项会实时显示它支持什么，
+    // 免得用户以为"只是换个名字"。
+    var protocolInfo = {};
+    {% for option in chat_protocols %}
+    protocolInfo[{{ option.id|tojson }}] = {{ option.description|tojson }};
+    {% endfor %}
+
+    function setProtocol(value) {
+      var select = document.getElementById("profile-protocol");
+      var wanted = value || select.dataset.default || select.options[0].value;
+      var found = Array.prototype.some.call(select.options, function (option) {
+        return option.value === wanted;
+      });
+      select.value = found ? wanted : select.options[0].value;
+      updateProtocolHint();
+    }
+
+    function updateProtocolHint() {
+      var select = document.getElementById("profile-protocol");
+      document.getElementById("profile-protocol-hint").textContent = protocolInfo[select.value] || "";
+    }
+
+    document.getElementById("profile-protocol").addEventListener("change", updateProtocolHint);
+
+    function openModal(kind, profile) {
+      selectTab(kind);
+      var editing = !!profile;
+      document.getElementById("profile-title").textContent = editing ? "编辑配置" : "新建配置";
+      document.getElementById("profile-id").value = profile ? profile.id : "";
+      document.getElementById("profile-kind").value = kind;
+      document.getElementById("profile-name").value = profile ? profile.name : "";
+      setProtocol(profile ? profile.protocol : null);
+      var placeholders = {
+        http: "例如：主 HTTP 服务器",
+        ws_client: "例如：反向上游",
+        ws_server: "例如：主 WS 服务器"
+      };
+      document.getElementById("profile-name").placeholder = placeholders[kind] || "配置名称";
+      document.getElementById("profile-enabled").checked = profile ? !!profile.enabled : true;
+      document.getElementById("profile-server-fields").hidden = kind === "ws_client";
+      document.getElementById("profile-client-fields").hidden = kind !== "ws_client";
+      // Only show the fields that the chosen kind actually uses. A switch that saves but never takes
+      // effect is worse than an absent one: the operator believes they configured something.
+      document.getElementById("profile-http-ws-wrap").hidden = kind !== "http";
+      document.getElementById("profile-http-sse-wrap").hidden = kind !== "http";
+      // The frame cap applies to every adapter that reads WebSocket frames, which is all three of the
+      // server kinds -- but not http client, which has no WebSocket transport at all.
+      document.getElementById("profile-max-payload-wrap").hidden = kind === "ws_client";
+      document.getElementById("profile-reconnect-wrap").hidden = kind !== "ws_client";
+      document.getElementById("profile-report-self").checked =
+        profile ? !!profile.report_self_message : false;
+      document.getElementById("profile-enable-ws").checked =
+        profile ? !!profile.enable_websocket : false;
+      document.getElementById("profile-enable-sse").checked =
+        profile ? !!profile.enable_sse : false;
+      document.getElementById("profile-max-payload").value =
+        profile && profile.max_payload_bytes ? profile.max_payload_bytes : "";
+      document.getElementById("profile-reconnect").value =
+        profile && profile.reconnect_interval_ms ? profile.reconnect_interval_ms : 5000;
+      document.getElementById("profile-host").value = profile && profile.host ? profile.host : "127.0.0.1";
+      document.getElementById("profile-port").value = profile && profile.port ? profile.port : (kind === "http" ? 3000 : 3001);
+      document.getElementById("profile-path").value = profile && profile.path ? profile.path : (kind === "http" ? "/" : "/ws");
+      document.getElementById("profile-token").value = profile && profile.token ? profile.token : "";
+      document.getElementById("profile-url").value = profile && profile.url ? profile.url : "ws://127.0.0.1:8080/onebot/v11/ws";
+      // 账号：沿用配置里的值；新配置默认当前页面选中的账户。
+      // 配置里存的实例如果已经不存在（例如实例被删），select 会落回第一项——保存时才由后端校验并报错，
+      // 而不是让界面悄悄把它改成"全部实例"。
+      var accountSelect = document.getElementById("profile-account");
+      // A new config belongs to the account whose page you are on. Defaulting to "nothing selected" made
+      // the operator pick the account twice, once in the sidebar and once here, and picking differently
+      // put the config under an account they were not looking at.
+      var wanted = profile && profile.instance
+        ? String(profile.instance)
+        : String(accountSelect.dataset.selected || "");
+      var known = Array.prototype.some.call(accountSelect.options, function (option) {
+        return option.value === wanted;
+      });
+      if (wanted && !known) {
+        var missing = document.createElement("option");
+        missing.value = wanted;
+        missing.textContent = wanted + "（不存在）";
+        accountSelect.appendChild(missing);
+      }
+      accountSelect.value = wanted;
+      // 反向上游没有"接收哪些实例"的语义，隐藏账号选择。
+      document.getElementById("profile-account").closest("label").hidden = kind === "ws_client";
+      modal.hidden = false;
+    }
+
+    function closeModal() { modal.hidden = true; }
+
+    document.querySelectorAll("[data-new]").forEach(function (button) {
+      button.addEventListener("click", function () { openModal(button.dataset.new, null); });
+    });
+    document.querySelectorAll("[data-edit]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var profile = byId(button.dataset.edit);
+        if (profile) openModal(profile.kind, profile);
+      });
+    });
+    document.getElementById("profile-close").addEventListener("click", closeModal);
+    document.getElementById("profile-cancel").addEventListener("click", closeModal);
+    // Clicking outside the dialog deliberately does NOT close it.
+    //
+    // A mis-click next to the window used to discard everything typed -- address, token, protocol, port. The
+    // only ways out are the two buttons, and the dialog is dismissed on purpose.
+    //
+    // Escape stays: it is an explicit key, not a stray click, and it is what people reach for when they want
+    // out of a dialog without touching the mouse.
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !modal.hidden) closeModal();
+    });
+
+    async function call(payload) {
+      var response = await fetch("/api/network/profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      var body = await response.json();
+      if (!response.ok || body.ok === false) throw new Error(body.error || response.statusText);
+      return body;
+    }
+
+    form.addEventListener("submit", async function (event) {
+      event.preventDefault();
+      var kind = document.getElementById("profile-kind").value;
+      var payload = {
+        action: "upsert",
+        id: document.getElementById("profile-id").value,
+        kind: kind,
+        name: document.getElementById("profile-name").value,
+        protocol: document.getElementById("profile-protocol").value,
+        enabled: document.getElementById("profile-enabled").checked,
+        // Ownership is set for every kind. It used to be set only in the server branch, so a ws client
+        // config was saved without an account and silently belonged to none of them.
+        instance: document.getElementById("profile-account").value,
+        report_self_message: document.getElementById("profile-report-self").checked
+      };
+      if (kind === "ws_client") {
+        payload.url = document.getElementById("profile-url").value;
+        payload.reconnect_interval_ms = Number(document.getElementById("profile-reconnect").value || 0);
+      } else {
+        payload.host = document.getElementById("profile-host").value;
+        payload.port = Number(document.getElementById("profile-port").value || 0);
+        payload.path = document.getElementById("profile-path").value;
+        payload.token = document.getElementById("profile-token").value;
+        var maxPayload = Number(document.getElementById("profile-max-payload").value || 0);
+        if (maxPayload > 0) payload.max_payload_bytes = maxPayload;
+        if (kind === "http") {
+          payload.enable_websocket = document.getElementById("profile-enable-ws").checked;
+          payload.enable_sse = document.getElementById("profile-enable-sse").checked;
+        }
+      }
+      try {
+        var body = await call(payload);
+        if (body.warnings && body.warnings.length) alert(body.warnings.join("\n"));
+        location.reload();
+      } catch (error) { alert("保存失败：" + error.message); }
+    });
+
+    document.querySelectorAll("[data-toggle]").forEach(function (input) {
+      input.addEventListener("change", async function () {
+        try {
+          var body = await call({ action: "toggle", id: input.dataset.toggle, enabled: input.checked });
+          if (body.warnings && body.warnings.length) alert(body.warnings.join("\n"));
+          location.reload();
+        } catch (error) { alert("切换失败：" + error.message); input.checked = !input.checked; }
+      });
+    });
+
+    var params = new URLSearchParams(location.search);
+    if (params.get("edit")) {
+      var initial = byId(params.get("edit"));
+      if (initial) openModal(initial.kind, initial);
+    } else if (params.get("new")) {
+      openModal(params.get("new"), null);
+    }
+
+    document.querySelectorAll("[data-delete]").forEach(function (button) {
+      button.addEventListener("click", async function () {
+        if (!confirm("删除这个网络配置？")) return;
+        try {
+          var body = await call({ action: "delete", id: button.dataset.delete });
+          if (body.warnings && body.warnings.length) alert(body.warnings.join("\n"));
+          location.reload();
+        } catch (error) { alert("删除失败：" + error.message); }
+      });
+    });
+  })();
+</script>
+{% endblock %}

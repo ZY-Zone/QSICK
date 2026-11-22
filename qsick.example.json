@@ -1,0 +1,74 @@
+{
+  "data_dir": "data",
+  "forward_noise": false,
+  "account_hint": "",
+  "onebot": {
+    "host": "127.0.0.1",
+    "port": 3000,
+    "access_token": "",
+    "http_path": "/",
+    "ws_path": "/ws",
+    "ws_reverse_path": "/ws/reverse",
+    "sse_path": "/sse",
+    "enable_http": true,
+    "enable_ws": true,
+    "enable_sse": true,
+    "reverse_ws_urls": [],
+    "reverse_reconnect_seconds": 5.0,
+    "dedupe_seconds": 120,
+    "dedupe_max": 4096,
+    "serialize_sends": true,
+    "cache_seconds": 30,
+    "throttle": true
+  },
+  "webui": {
+    "host": "127.0.0.1",
+    "port": 5754,
+    "access_token": "",
+    "log_buffer": 2000,
+    "chat_enabled": false
+  },
+  "transport": {
+    "mode": "mock",
+    "pipe_prefix": "\\\\.\\pipe\\qsick",
+    "payload_path": "",
+    "connect_timeout": 5.0,
+    "reply_timeout": 30.0,
+    "ack_timeout": 5.0,
+    "attach_only": false,
+    "pipe_auth": "random",
+    "pipe_token": "",
+    "session_dir": "",
+    "headless_port": 9100
+  },
+  "plugins": {
+    "dirs": [
+      "plugins"
+    ],
+    "enabled": true,
+    "max_tier": "core",
+    "watch": true,
+    "market_url": "http://sickcc.online/QSICK/plugins-market",
+    "market_timeout": 8.0,
+    "allow_remote_install": true
+  },
+  "log": {
+    "level": "INFO",
+    "file": "",
+    "json": false,
+    "always_show": [
+      "Core",
+      "OneBot"
+    ]
+  },
+  "rotation": {
+    "max_messages": 0,
+    "max_days": 0
+  },
+  "storage": {
+    "backend": "sqlite",
+    "path": ""
+  },
+  "headless_root": "headlessClient",
+  "headless_auto_start": false
+}

@@ -1,0 +1,49 @@
+[project]
+name = "qsick"
+version = "0.3.0"
+description = "QSICK — an injectable OneBot v11 runtime for QQ NT, Python core + native payload"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "AGPL-3.0-or-later" }
+authors = [{ name = "QSICK contributors" }]
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "jinja2>=3.1",
+    "pydantic>=2.7",
+    "python-multipart>=0.0.9",
+    "websockets>=12",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+qsick = "qsick.__main__:main"
+qsick-launcher = "qsick.launcher:main"
+qsick-desktop = "qsick.desktop.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/qsick"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    # Tests that need a real QQ client copy under headlessClient/. They start a
+    # process, inject a DLL and measure it, so they are slow and environment-dependent.
+    # Deselected by default; run with: pytest -m pipe_e2e
+    "pipe_e2e: needs a live QQ instance (slow, Windows-only)",
+]
+
+[tool.uv]
+package = true

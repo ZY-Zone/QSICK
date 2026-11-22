@@ -1,0 +1,895 @@
+{
+  "services": {
+    "getVasGroupService": {
+      "total": 8,
+      "fileMethods": []
+    },
+    "getBatchUploadService": {
+      "total": 20,
+      "fileMethods": []
+    },
+    "getFlashTransferService": {
+      "total": 122,
+      "fileMethods": [
+        "getFileSetList",
+        "getFileSetListCount",
+        "renewFileSet",
+        "getLongTermFileSetList",
+        "getFileSet",
+        "getFileList",
+        "getDeletedFileList",
+        "syncDeletedFiles",
+        "getDownloadedFileCount",
+        "getLocalFileList",
+        "batchRemoveUserFileSetHistory",
+        "getFileSetIdByCode",
+        "batchRemoveFile",
+        "appendFolder",
+        "removeFolderFiles",
+        "cleanFailedFiles",
+        "addFileSetUploadListener",
+        "removeFileSetUploadListener",
+        "startFileSetUpload",
+        "stopFileSetUpload",
+        "pauseFileSetUpload",
+        "resumeFileSetUpload",
+        "pauseFileUpload",
+        "resumeFileUpload",
+        "stopFileUpload",
+        "setDownLoadDefaultFileDir",
+        "setFileSetDownloadDir",
+        "getFileSetDownloadDir",
+        "updateFileSetMsgToFileAssistant",
+        "addFileSetDownloadListener",
+        "removeFileSetDownloadListener",
+        "startFileSetDownload",
+        "stopFileSetDownload",
+        "pauseFileSetDownload",
+        "resumeFileSetDownload",
+        "startFileListDownLoad",
+        "pauseFileListDownLoad",
+        "resumeFileListDownLoad",
+        "stopFileListDownLoad",
+        "startFileTransferUrl",
+        "startFileListDownLoadBySessionId",
+        "addFileSetSimpleStatusListener",
+        "addFileSetSimpleStatusMonitoring",
+        "addFileSetSimpleStatusMonitoringWithForcePoll",
+        "removeFileSetSimpleStatusMonitoring",
+        "removeFileSetSimpleStatusListener",
+        "addDesktopFileSetSimpleStatusListener",
+        "addDesktopFileSetSimpleStatusMonitoring",
+        "addDesktopFileSetSimpleStatusMonitoringWithForcePoll",
+        "removeDesktopFileSetSimpleStatusMonitoring",
+        "removeDesktopFileSetSimpleStatusListener",
+        "addFileSetSimpleUploadInfoListener",
+        "addFileSetSimpleUploadInfoMonitoring",
+        "removeFileSetSimpleUploadInfoMonitoring",
+        "removeFileSetSimpleUploadInfoListener",
+        "getFailedFileList",
+        "getLocalFileListByStatuses",
+        "getFileSetFirstClusteringList",
+        "getFileSetClusteringList",
+        "addFileSetClusteringListListener",
+        "removeFileSetClusteringListListener",
+        "getFileSetClusteringDetail",
+        "getFilesTransferProgress",
+        "pollFilesTransferProgress",
+        "cancelPollFilesTransferProgress",
+        "checkDownloadStatusBeforeLocalFileOper",
+        "getCompressedFileFolder",
+        "addFolderListener",
+        "removeFolderListener",
+        "addCompressedFileListener",
+        "removeCompressedFileListener",
+        "getFileCategoryList",
+        "getFileThumbnailUrl",
+        "getFileMetas",
+        "checkBatchFilesDownloadStatus",
+        "checkBatchFilesUploadStatus",
+        "addFileAlbumStorageListener",
+        "removeFileAlbumStorageListener",
+        "refreshFolderStatus",
+        "markFileSetAsRead",
+        "markFolderAsRead"
+      ]
+    },
+    "getVasSystemUpdateService": {
+      "total": 11,
+      "fileMethods": []
+    },
+    "getQQEmailService": {
+      "total": 6,
+      "fileMethods": []
+    },
+    "getShareToWechatService": {
+      "total": 5,
+      "fileMethods": []
+    },
+    "getPersonalAlbumService": {
+      "missing": true
+    },
+    "getAlbumService": {
+      "total": 43,
+      "fileMethods": []
+    },
+    "getTianShuService": {
+      "total": 5,
+      "fileMethods": []
+    },
+    "getUnitedConfigService": {
+      "total": 8,
+      "fileMethods": []
+    },
+    "getTicketService": {
+      "total": 4,
+      "fileMethods": []
+    },
+    "getTipOffService": {
+      "total": 7,
+      "fileMethods": []
+    },
+    "getProfileService": {
+      "total": 44,
+      "fileMethods": [
+        "addKernelProfileListener",
+        "addKernelProfileListenerForUICache",
+        "removeKernelProfileListener",
+        "modifySelfProfile",
+        "modifyDesktopMiniProfile",
+        "getProfileQzonePicInfo",
+        "updateProfileData"
+      ]
+    },
+    "getProfileLikeService": {
+      "total": 6,
+      "fileMethods": [
+        "addKernelProfileLikeListener",
+        "removeKernelProfileLikeListener",
+        "setBuddyProfileLike",
+        "getBuddyProfileLike",
+        "getProfileLikeScidResourceInfo"
+      ]
+    },
+    "getBuddyService": {
+      "total": 57,
+      "fileMethods": []
+    },
+    "getAddBuddyService": {
+      "total": 7,
+      "fileMethods": []
+    },
+    "getSearchService": {
+      "total": 88,
+      "fileMethods": [
+        "searchFileWithKeywords",
+        "searchMoreFileWithKeywords",
+        "cancelSearchFileWithKeywords",
+        "searchFileInFileCenterForPC",
+        "searchFileInFileCenter",
+        "searchMoreFileInFileCenter",
+        "cancelSearchFileInFileCenter",
+        "deleteGroupHistoryFile"
+      ]
+    },
+    "getGroupService": {
+      "total": 243,
+      "fileMethods": [
+        "createGroupProfileShare",
+        "getGroupProfileCardInfo"
+      ]
+    },
+    "getMsgService": {
+      "total": 299,
+      "fileMethods": [
+        "getOnlineStatusSmallIconFileNameByUrl",
+        "getOnlineStatusCommonFileNameByUrl",
+        "cancelSendOnlineFileMsgByFlash",
+        "refuseReceiveOnlineFileMsg",
+        "forwardFile",
+        "getOnlineFileMsgs",
+        "getAllOnlineFileMsgs",
+        "queryFileMsgsDesktop",
+        "cancelQueryFileMsgsDesktop",
+        "queryFileDownloadList",
+        "queryMoreFileDownloadList",
+        "getRichMediaFilePathForMobileQQSend",
+        "getRichMediaFilePathForGuild",
+        "assembleMobileQQRichMediaFilePath",
+        "getFileThumbSavePathForSend",
+        "getFileThumbSavePath",
+        "copyFileWithDelExifInfo",
+        "fetchMarketEmotionJsonFile",
+        "setSubscribeFolderUsingSmallRedPoint",
+        "getNewOfflineFileList",
+        "removeNewOfflineFileList",
+        "addNewOfflineFileList"
+      ]
+    },
+    "getRichMediaService": {
+      "total": 51,
+      "fileMethods": [
+        "getRichMediaFileDir",
+        "downloadFileForModelId",
+        "downloadFileForFileUuid",
+        "downloadFileByUrlList",
+        "downloadFileByUrl",
+        "downloadFileForFileInfo",
+        "downloadFile",
+        "createGroupFolder",
+        "downloadGroupFolder",
+        "renameGroupFolder",
+        "deleteGroupFolder",
+        "getGroupFileInfo",
+        "getGroupFileList",
+        "renameGroupFile",
+        "moveGroupFile",
+        "transGroupFile",
+        "searchGroupFileByWord",
+        "deleteGroupFile",
+        "batchGetGroupFileCount",
+        "searchGroupFile",
+        "searchMoreGroupFile",
+        "cancelSearcheGroupFile",
+        "onlyDownloadFile",
+        "onlyUploadFile",
+        "uploadRMFileWithoutMsg",
+        "getFileTmpPath"
+      ]
+    },
+    "getRecentContactService": {
+      "total": 36,
+      "fileMethods": []
+    },
+    "getConfigMgrService": {
+      "total": 9,
+      "fileMethods": []
+    },
+    "getRDeliveryService": {
+      "missing": true
+    },
+    "getAvatarService": {
+      "total": 15,
+      "fileMethods": []
+    },
+    "getYellowFaceService": {
+      "missing": true
+    },
+    "getCollectionService": {
+      "total": 29,
+      "fileMethods": [
+        "collectionFileForward",
+        "downloadCollectionFile",
+        "downloadCollectionFileThumbPic",
+        "cancelDownloadCollectionFile",
+        "setFileSavePath"
+      ]
+    },
+    "getSettingService": {
+      "total": 30,
+      "fileMethods": []
+    },
+    "getStorageCleanService": {
+      "total": 19,
+      "fileMethods": [
+        "addFilesScanedPaths",
+        "getFileCacheInfo",
+        "clearAllFiles",
+        "getAllFilesSize",
+        "addNewDownloadOrUploadFile"
+      ]
+    },
+    "getHandOffService": {
+      "total": 9,
+      "fileMethods": []
+    },
+    "getQiDianService": {
+      "total": 10,
+      "fileMethods": []
+    },
+    "getMiniAppService": {
+      "total": 5,
+      "fileMethods": []
+    },
+    "getFileAssistantService": {
+      "total": 32,
+      "fileMethods": [
+        "addKernelFileAssistantListener",
+        "removeKernelFileAssistantListener",
+        "getFileAssistantList",
+        "getMoreFileAssistantList",
+        "downloadAllFileBySession",
+        "cancelAllFileActionBySession",
+        "getFileSessionList",
+        "searchFile",
+        "resetSearchFileSortType",
+        "searchMoreFile",
+        "cancelSearchFile",
+        "downloadFile",
+        "forwardFile",
+        "cancelFileAction",
+        "retryFileAction",
+        "deleteFile",
+        "modifyFileInfo",
+        "getFullFileAssistantList",
+        "getFileSearchBaseInfo",
+        "updateTencentDocFileName",
+        "getFilePathCount",
+        "genericQueryFileAssistant"
+      ]
+    },
+    "getSkinService": {
+      "total": 15,
+      "fileMethods": []
+    },
+    "getTestPerformanceService": {
+      "total": 3,
+      "fileMethods": []
+    },
+    "getQQPlayService": {
+      "total": 12,
+      "fileMethods": []
+    },
+    "getDbToolsService": {
+      "total": 4,
+      "fileMethods": []
+    },
+    "getUixConvertService": {
+      "total": 3,
+      "fileMethods": []
+    },
+    "getFileBridgeHostService": {
+      "total": 12,
+      "fileMethods": [
+        "addKernelFileBridgeHostListener",
+        "removeKernelFileBridgeHostListener",
+        "isTransferingFile"
+      ]
+    },
+    "getWiFiPhotoClientService": {
+      "total": 26,
+      "fileMethods": [
+        "getAlbumFileSavePath",
+        "getWiFiPhotoDownFileInfos"
+      ]
+    },
+    "getPerfService": {
+      "total": 3,
+      "fileMethods": [
+        "saveTraceFile",
+        "clearAllPerfFileCache"
+      ]
+    },
+    "getOnlineStatusService": {
+      "total": 16,
+      "fileMethods": []
+    },
+    "getRemotingService": {
+      "total": 8,
+      "fileMethods": []
+    },
+    "getRobotService": {
+      "total": 85,
+      "fileMethods": [
+        "fetchGroupRobotProfile",
+        "getGroupRobotProfile",
+        "fetchGroupRobotProfileWithReq",
+        "updateGroupRobotProfile"
+      ]
+    },
+    "getAIService": {
+      "total": 7,
+      "fileMethods": [
+        "forwardAttachFile"
+      ]
+    },
+    "getGroupTabService": {
+      "missing": true
+    },
+    "getGroupSchoolService": {
+      "missing": true
+    },
+    "getLiteBusinessService": {
+      "missing": true
+    },
+    "getBdhUploadService": {
+      "total": 8,
+      "fileMethods": [
+        "uploadFile"
+      ]
+    },
+    "getGuildMsgService": {
+      "total": 34,
+      "fileMethods": []
+    },
+    "getLockService": {
+      "total": 5,
+      "fileMethods": []
+    },
+    "getEmojiService": {
+      "missing": true
+    },
+    "getBaseEmojiService": {
+      "total": 12,
+      "fileMethods": []
+    },
+    "getUnifySearchService": {
+      "total": 12,
+      "fileMethods": []
+    },
+    "getPublicAccountService": {
+      "total": 8,
+      "fileMethods": []
+    },
+    "getBizKitService": {
+      "total": 2,
+      "fileMethods": []
+    },
+    "getPYMKService": {
+      "total": 4,
+      "fileMethods": []
+    },
+    "getBatchTransferService": {
+      "total": 6,
+      "fileMethods": []
+    },
+    "getApiSixService": {
+      "total": 3,
+      "fileMethods": []
+    },
+    "getVasClubService": {
+      "total": 4,
+      "fileMethods": []
+    },
+    "getMSFService": {
+      "total": 12,
+      "fileMethods": []
+    },
+    "getNodeMiscService": {
+      "total": 156,
+      "fileMethods": [
+        "deleteShareFile",
+        "openFileAndDirSelectDlg"
+      ]
+    },
+    "getMsgBackupService": {
+      "total": 22,
+      "fileMethods": []
+    },
+    "getAVSDKService": {
+      "total": 8,
+      "fileMethods": []
+    }
+  },
+  "fileMethods": {
+    "getFlashTransferService": [
+      "getFileSetList",
+      "getFileSetListCount",
+      "renewFileSet",
+      "getLongTermFileSetList",
+      "getFileSet",
+      "getFileList",
+      "getDeletedFileList",
+      "syncDeletedFiles",
+      "getDownloadedFileCount",
+      "getLocalFileList",
+      "batchRemoveUserFileSetHistory",
+      "getFileSetIdByCode",
+      "batchRemoveFile",
+      "appendFolder",
+      "removeFolderFiles",
+      "cleanFailedFiles",
+      "addFileSetUploadListener",
+      "removeFileSetUploadListener",
+      "startFileSetUpload",
+      "stopFileSetUpload",
+      "pauseFileSetUpload",
+      "resumeFileSetUpload",
+      "pauseFileUpload",
+      "resumeFileUpload",
+      "stopFileUpload",
+      "setDownLoadDefaultFileDir",
+      "setFileSetDownloadDir",
+      "getFileSetDownloadDir",
+      "updateFileSetMsgToFileAssistant",
+      "addFileSetDownloadListener",
+      "removeFileSetDownloadListener",
+      "startFileSetDownload",
+      "stopFileSetDownload",
+      "pauseFileSetDownload",
+      "resumeFileSetDownload",
+      "startFileListDownLoad",
+      "pauseFileListDownLoad",
+      "resumeFileListDownLoad",
+      "stopFileListDownLoad",
+      "startFileTransferUrl",
+      "startFileListDownLoadBySessionId",
+      "addFileSetSimpleStatusListener",
+      "addFileSetSimpleStatusMonitoring",
+      "addFileSetSimpleStatusMonitoringWithForcePoll",
+      "removeFileSetSimpleStatusMonitoring",
+      "removeFileSetSimpleStatusListener",
+      "addDesktopFileSetSimpleStatusListener",
+      "addDesktopFileSetSimpleStatusMonitoring",
+      "addDesktopFileSetSimpleStatusMonitoringWithForcePoll",
+      "removeDesktopFileSetSimpleStatusMonitoring",
+      "removeDesktopFileSetSimpleStatusListener",
+      "addFileSetSimpleUploadInfoListener",
+      "addFileSetSimpleUploadInfoMonitoring",
+      "removeFileSetSimpleUploadInfoMonitoring",
+      "removeFileSetSimpleUploadInfoListener",
+      "getFailedFileList",
+      "getLocalFileListByStatuses",
+      "getFileSetFirstClusteringList",
+      "getFileSetClusteringList",
+      "addFileSetClusteringListListener",
+      "removeFileSetClusteringListListener",
+      "getFileSetClusteringDetail",
+      "getFilesTransferProgress",
+      "pollFilesTransferProgress",
+      "cancelPollFilesTransferProgress",
+      "checkDownloadStatusBeforeLocalFileOper",
+      "getCompressedFileFolder",
+      "addFolderListener",
+      "removeFolderListener",
+      "addCompressedFileListener",
+      "removeCompressedFileListener",
+      "getFileCategoryList",
+      "getFileThumbnailUrl",
+      "getFileMetas",
+      "checkBatchFilesDownloadStatus",
+      "checkBatchFilesUploadStatus",
+      "addFileAlbumStorageListener",
+      "removeFileAlbumStorageListener",
+      "refreshFolderStatus",
+      "markFileSetAsRead",
+      "markFolderAsRead"
+    ],
+    "getProfileService": [
+      "addKernelProfileListener",
+      "addKernelProfileListenerForUICache",
+      "removeKernelProfileListener",
+      "modifySelfProfile",
+      "modifyDesktopMiniProfile",
+      "getProfileQzonePicInfo",
+      "updateProfileData"
+    ],
+    "getProfileLikeService": [
+      "addKernelProfileLikeListener",
+      "removeKernelProfileLikeListener",
+      "setBuddyProfileLike",
+      "getBuddyProfileLike",
+      "getProfileLikeScidResourceInfo"
+    ],
+    "getSearchService": [
+      "searchFileWithKeywords",
+      "searchMoreFileWithKeywords",
+      "cancelSearchFileWithKeywords",
+      "searchFileInFileCenterForPC",
+      "searchFileInFileCenter",
+      "searchMoreFileInFileCenter",
+      "cancelSearchFileInFileCenter",
+      "deleteGroupHistoryFile"
+    ],
+    "getGroupService": [
+      "createGroupProfileShare",
+      "getGroupProfileCardInfo"
+    ],
+    "getMsgService": [
+      "getOnlineStatusSmallIconFileNameByUrl",
+      "getOnlineStatusCommonFileNameByUrl",
+      "cancelSendOnlineFileMsgByFlash",
+      "refuseReceiveOnlineFileMsg",
+      "forwardFile",
+      "getOnlineFileMsgs",
+      "getAllOnlineFileMsgs",
+      "queryFileMsgsDesktop",
+      "cancelQueryFileMsgsDesktop",
+      "queryFileDownloadList",
+      "queryMoreFileDownloadList",
+      "getRichMediaFilePathForMobileQQSend",
+      "getRichMediaFilePathForGuild",
+      "assembleMobileQQRichMediaFilePath",
+      "getFileThumbSavePathForSend",
+      "getFileThumbSavePath",
+      "copyFileWithDelExifInfo",
+      "fetchMarketEmotionJsonFile",
+      "setSubscribeFolderUsingSmallRedPoint",
+      "getNewOfflineFileList",
+      "removeNewOfflineFileList",
+      "addNewOfflineFileList"
+    ],
+    "getRichMediaService": [
+      "getRichMediaFileDir",
+      "downloadFileForModelId",
+      "downloadFileForFileUuid",
+      "downloadFileByUrlList",
+      "downloadFileByUrl",
+      "downloadFileForFileInfo",
+      "downloadFile",
+      "createGroupFolder",
+      "downloadGroupFolder",
+      "renameGroupFolder",
+      "deleteGroupFolder",
+      "getGroupFileInfo",
+      "getGroupFileList",
+      "renameGroupFile",
+      "moveGroupFile",
+      "transGroupFile",
+      "searchGroupFileByWord",
+      "deleteGroupFile",
+      "batchGetGroupFileCount",
+      "searchGroupFile",
+      "searchMoreGroupFile",
+      "cancelSearcheGroupFile",
+      "onlyDownloadFile",
+      "onlyUploadFile",
+      "uploadRMFileWithoutMsg",
+      "getFileTmpPath"
+    ],
+    "getCollectionService": [
+      "collectionFileForward",
+      "downloadCollectionFile",
+      "downloadCollectionFileThumbPic",
+      "cancelDownloadCollectionFile",
+      "setFileSavePath"
+    ],
+    "getStorageCleanService": [
+      "addFilesScanedPaths",
+      "getFileCacheInfo",
+      "clearAllFiles",
+      "getAllFilesSize",
+      "addNewDownloadOrUploadFile"
+    ],
+    "getFileAssistantService": [
+      "addKernelFileAssistantListener",
+      "removeKernelFileAssistantListener",
+      "getFileAssistantList",
+      "getMoreFileAssistantList",
+      "downloadAllFileBySession",
+      "cancelAllFileActionBySession",
+      "getFileSessionList",
+      "searchFile",
+      "resetSearchFileSortType",
+      "searchMoreFile",
+      "cancelSearchFile",
+      "downloadFile",
+      "forwardFile",
+      "cancelFileAction",
+      "retryFileAction",
+      "deleteFile",
+      "modifyFileInfo",
+      "getFullFileAssistantList",
+      "getFileSearchBaseInfo",
+      "updateTencentDocFileName",
+      "getFilePathCount",
+      "genericQueryFileAssistant"
+    ],
+    "getFileBridgeHostService": [
+      "addKernelFileBridgeHostListener",
+      "removeKernelFileBridgeHostListener",
+      "isTransferingFile"
+    ],
+    "getWiFiPhotoClientService": [
+      "getAlbumFileSavePath",
+      "getWiFiPhotoDownFileInfos"
+    ],
+    "getPerfService": [
+      "saveTraceFile",
+      "clearAllPerfFileCache"
+    ],
+    "getRobotService": [
+      "fetchGroupRobotProfile",
+      "getGroupRobotProfile",
+      "fetchGroupRobotProfileWithReq",
+      "updateGroupRobotProfile"
+    ],
+    "getAIService": [
+      "forwardAttachFile"
+    ],
+    "getBdhUploadService": [
+      "uploadFile"
+    ],
+    "getNodeMiscService": [
+      "deleteShareFile",
+      "openFileAndDirSelectDlg"
+    ]
+  },
+  "asserts": {
+    "getFlashTransferService.getFileSetList": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getFileSetList needs 1 arguments",
+    "getFlashTransferService.getFileSetListCount": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getFileSetListCount needs 1 arguments",
+    "getFlashTransferService.renewFileSet": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::renewFileSet needs 1 arguments",
+    "getFlashTransferService.getLongTermFileSetList": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getLongTermFileSetList needs 1 arguments",
+    "getFlashTransferService.getFileSet": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getFileSet needs 1 arguments",
+    "getFlashTransferService.getFileList": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getFileList needs 1 arguments",
+    "getFlashTransferService.getDeletedFileList": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getDeletedFileList needs 1 arguments",
+    "getFlashTransferService.syncDeletedFiles": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::syncDeletedFiles needs 1 arguments",
+    "getFlashTransferService.getDownloadedFileCount": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getDownloadedFileCount needs 1 arguments",
+    "getFlashTransferService.getLocalFileList": "assertion (argc == 3) failed: NodeIKernelFlashTransferService::getLocalFileList needs 3 arguments",
+    "getFlashTransferService.batchRemoveUserFileSetHistory": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::batchRemoveUserFileSetHistory needs 1 arguments",
+    "getFlashTransferService.getFileSetIdByCode": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getFileSetIdByCode needs 1 arguments",
+    "getFlashTransferService.batchRemoveFile": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::batchRemoveFile needs 1 arguments",
+    "getFlashTransferService.appendFolder": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::appendFolder needs 2 arguments",
+    "getFlashTransferService.removeFolderFiles": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::removeFolderFiles needs 2 arguments",
+    "getFlashTransferService.cleanFailedFiles": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::cleanFailedFiles needs 2 arguments",
+    "getFlashTransferService.addFileSetUploadListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::addFileSetUploadListener needs 1 arguments",
+    "getFlashTransferService.removeFileSetUploadListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::removeFileSetUploadListener needs 1 arguments",
+    "getFlashTransferService.startFileSetUpload": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::startFileSetUpload needs 1 arguments",
+    "getFlashTransferService.stopFileSetUpload": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::stopFileSetUpload needs 1 arguments",
+    "getFlashTransferService.pauseFileSetUpload": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::pauseFileSetUpload needs 1 arguments",
+    "getFlashTransferService.resumeFileSetUpload": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::resumeFileSetUpload needs 1 arguments",
+    "getFlashTransferService.pauseFileUpload": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::pauseFileUpload needs 1 arguments",
+    "getFlashTransferService.resumeFileUpload": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::resumeFileUpload needs 2 arguments",
+    "getFlashTransferService.stopFileUpload": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::stopFileUpload needs 1 arguments",
+    "getFlashTransferService.setDownLoadDefaultFileDir": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::setDownLoadDefaultFileDir needs 1 arguments",
+    "getFlashTransferService.setFileSetDownloadDir": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::setFileSetDownloadDir needs 2 arguments",
+    "getFlashTransferService.getFileSetDownloadDir": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getFileSetDownloadDir needs 1 arguments",
+    "getFlashTransferService.updateFileSetMsgToFileAssistant": "assertion (argc == 4) failed: NodeIKernelFlashTransferService::updateFileSetMsgToFileAssistant needs 4 arguments",
+    "getFlashTransferService.addFileSetDownloadListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::addFileSetDownloadListener needs 1 arguments",
+    "getFlashTransferService.removeFileSetDownloadListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::removeFileSetDownloadListener needs 1 arguments",
+    "getFlashTransferService.startFileSetDownload": "assertion (argc == 3) failed: NodeIKernelFlashTransferService::startFileSetDownload needs 3 arguments",
+    "getFlashTransferService.stopFileSetDownload": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::stopFileSetDownload needs 2 arguments",
+    "getFlashTransferService.pauseFileSetDownload": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::pauseFileSetDownload needs 2 arguments",
+    "getFlashTransferService.resumeFileSetDownload": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::resumeFileSetDownload needs 2 arguments",
+    "getFlashTransferService.startFileListDownLoad": "assertion (argc == 4) failed: NodeIKernelFlashTransferService::startFileListDownLoad needs 4 arguments",
+    "getFlashTransferService.pauseFileListDownLoad": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::pauseFileListDownLoad needs 2 arguments",
+    "getFlashTransferService.resumeFileListDownLoad": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::resumeFileListDownLoad needs 2 arguments",
+    "getFlashTransferService.stopFileListDownLoad": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::stopFileListDownLoad needs 2 arguments",
+    "getFlashTransferService.startFileTransferUrl": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::startFileTransferUrl needs 1 arguments",
+    "getFlashTransferService.startFileListDownLoadBySessionId": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::startFileListDownLoadBySessionId needs 2 arguments",
+    "getFlashTransferService.addFileSetSimpleStatusListener": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::addFileSetSimpleStatusListener needs 2 arguments",
+    "getFlashTransferService.addFileSetSimpleStatusMonitoring": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::addFileSetSimpleStatusMonitoring needs 2 arguments",
+    "getFlashTransferService.addFileSetSimpleStatusMonitoringWithForcePoll": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::addFileSetSimpleStatusMonitoringWithForcePoll needs 2 arguments",
+    "getFlashTransferService.removeFileSetSimpleStatusMonitoring": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::removeFileSetSimpleStatusMonitoring needs 2 arguments",
+    "getFlashTransferService.removeFileSetSimpleStatusListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::removeFileSetSimpleStatusListener needs 1 arguments",
+    "getFlashTransferService.addDesktopFileSetSimpleStatusListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::addDesktopFileSetSimpleStatusListener needs 1 arguments",
+    "getFlashTransferService.addDesktopFileSetSimpleStatusMonitoring": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::addDesktopFileSetSimpleStatusMonitoring needs 1 arguments",
+    "getFlashTransferService.addDesktopFileSetSimpleStatusMonitoringWithForcePoll": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::addDesktopFileSetSimpleStatusMonitoringWithForcePoll needs 1 arguments",
+    "getFlashTransferService.removeDesktopFileSetSimpleStatusMonitoring": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::removeDesktopFileSetSimpleStatusMonitoring needs 1 arguments",
+    "getFlashTransferService.removeDesktopFileSetSimpleStatusListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::removeDesktopFileSetSimpleStatusListener needs 1 arguments",
+    "getFlashTransferService.addFileSetSimpleUploadInfoListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::addFileSetSimpleUploadInfoListener needs 1 arguments",
+    "getFlashTransferService.addFileSetSimpleUploadInfoMonitoring": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::addFileSetSimpleUploadInfoMonitoring needs 1 arguments",
+    "getFlashTransferService.removeFileSetSimpleUploadInfoMonitoring": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::removeFileSetSimpleUploadInfoMonitoring needs 1 arguments",
+    "getFlashTransferService.removeFileSetSimpleUploadInfoListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::removeFileSetSimpleUploadInfoListener needs 1 arguments",
+    "getFlashTransferService.getFailedFileList": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getFailedFileList needs 1 arguments",
+    "getFlashTransferService.getLocalFileListByStatuses": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getLocalFileListByStatuses needs 1 arguments",
+    "getFlashTransferService.getFileSetFirstClusteringList": "assertion (argc == 3) failed: NodeIKernelFlashTransferService::getFileSetFirstClusteringList needs 3 arguments",
+    "getFlashTransferService.getFileSetClusteringList": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getFileSetClusteringList needs 1 arguments",
+    "getFlashTransferService.addFileSetClusteringListListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::addFileSetClusteringListListener needs 1 arguments",
+    "getFlashTransferService.removeFileSetClusteringListListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::removeFileSetClusteringListListener needs 1 arguments",
+    "getFlashTransferService.getFileSetClusteringDetail": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getFileSetClusteringDetail needs 1 arguments",
+    "getFlashTransferService.getFilesTransferProgress": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getFilesTransferProgress needs 1 arguments",
+    "getFlashTransferService.pollFilesTransferProgress": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::pollFilesTransferProgress needs 1 arguments",
+    "getFlashTransferService.cancelPollFilesTransferProgress": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::cancelPollFilesTransferProgress needs 1 arguments",
+    "getFlashTransferService.checkDownloadStatusBeforeLocalFileOper": "assertion (argc == 3) failed: NodeIKernelFlashTransferService::checkDownloadStatusBeforeLocalFileOper needs 3 arguments",
+    "getFlashTransferService.getCompressedFileFolder": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getCompressedFileFolder needs 1 arguments",
+    "getFlashTransferService.addFolderListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::addFolderListener needs 1 arguments",
+    "getFlashTransferService.removeFolderListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::removeFolderListener needs 1 arguments",
+    "getFlashTransferService.addCompressedFileListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::addCompressedFileListener needs 1 arguments",
+    "getFlashTransferService.removeCompressedFileListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::removeCompressedFileListener needs 1 arguments",
+    "getFlashTransferService.getFileCategoryList": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getFileCategoryList needs 1 arguments",
+    "getFlashTransferService.getFileThumbnailUrl": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getFileThumbnailUrl needs 1 arguments",
+    "getFlashTransferService.getFileMetas": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::getFileMetas needs 1 arguments",
+    "getFlashTransferService.checkBatchFilesDownloadStatus": "assertion (argc == 3) failed: NodeIKernelFlashTransferService::checkBatchFilesDownloadStatus needs 3 arguments",
+    "getFlashTransferService.checkBatchFilesUploadStatus": "assertion (argc == 3) failed: NodeIKernelFlashTransferService::checkBatchFilesUploadStatus needs 3 arguments",
+    "getFlashTransferService.addFileAlbumStorageListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::addFileAlbumStorageListener needs 1 arguments",
+    "getFlashTransferService.removeFileAlbumStorageListener": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::removeFileAlbumStorageListener needs 1 arguments",
+    "getFlashTransferService.refreshFolderStatus": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::refreshFolderStatus needs 2 arguments",
+    "getFlashTransferService.markFileSetAsRead": "assertion (argc == 1) failed: NodeIKernelFlashTransferService::markFileSetAsRead needs 1 arguments",
+    "getFlashTransferService.markFolderAsRead": "assertion (argc == 2) failed: NodeIKernelFlashTransferService::markFolderAsRead needs 2 arguments",
+    "getProfileService.addKernelProfileListener": "assertion (argc == 1) failed: NodeIKernelProfileService::addKernelProfileListener needs 1 arguments",
+    "getProfileService.addKernelProfileListenerForUICache": "assertion (argc == 1) failed: NodeIKernelProfileService::addKernelProfileListenerForUICache needs 1 arguments",
+    "getProfileService.removeKernelProfileListener": "assertion (argc == 1) failed: NodeIKernelProfileService::removeKernelProfileListener needs 1 arguments",
+    "getProfileService.modifySelfProfile": "assertion (argc == 1) failed: NodeIKernelProfileService::modifySelfProfile needs 1 arguments",
+    "getProfileService.modifyDesktopMiniProfile": "assertion (argc == 1) failed: NodeIKernelProfileService::modifyDesktopMiniProfile needs 1 arguments",
+    "getProfileService.getProfileQzonePicInfo": "assertion (argc == 3) failed: NodeIKernelProfileService::getProfileQzonePicInfo needs 3 arguments",
+    "getProfileService.updateProfileData": "assertion (argc == 2) failed: NodeIKernelProfileService::updateProfileData needs 2 arguments",
+    "getProfileLikeService.addKernelProfileLikeListener": "assertion (argc == 1) failed: NodeIKernelProfileLikeService::addKernelProfileLikeListener needs 1 arguments",
+    "getProfileLikeService.removeKernelProfileLikeListener": "assertion (argc == 1) failed: NodeIKernelProfileLikeService::removeKernelProfileLikeListener needs 1 arguments",
+    "getProfileLikeService.setBuddyProfileLike": "assertion (argc == 1) failed: NodeIKernelProfileLikeService::setBuddyProfileLike needs 1 arguments",
+    "getProfileLikeService.getBuddyProfileLike": "assertion (argc == 1) failed: NodeIKernelProfileLikeService::getBuddyProfileLike needs 1 arguments",
+    "getProfileLikeService.getProfileLikeScidResourceInfo": "assertion (argc == 1) failed: NodeIKernelProfileLikeService::getProfileLikeScidResourceInfo needs 1 arguments",
+    "getSearchService.searchFileWithKeywords": "assertion (argc == 2) failed: NodeIKernelSearchService::searchFileWithKeywords needs 2 arguments",
+    "getSearchService.searchMoreFileWithKeywords": "assertion (argc == 1) failed: NodeIKernelSearchService::searchMoreFileWithKeywords needs 1 arguments",
+    "getSearchService.cancelSearchFileWithKeywords": "assertion (argc == 3) failed: NodeIKernelSearchService::cancelSearchFileWithKeywords needs 3 arguments",
+    "getSearchService.searchFileInFileCenterForPC": "assertion (argc == 2) failed: NodeIKernelSearchService::searchFileInFileCenterForPC needs 2 arguments",
+    "getSearchService.searchFileInFileCenter": "assertion (argc == 1) failed: NodeIKernelSearchService::searchFileInFileCenter needs 1 arguments",
+    "getSearchService.searchMoreFileInFileCenter": "assertion (argc == 1) failed: NodeIKernelSearchService::searchMoreFileInFileCenter needs 1 arguments",
+    "getSearchService.cancelSearchFileInFileCenter": "assertion (argc == 3) failed: NodeIKernelSearchService::cancelSearchFileInFileCenter needs 3 arguments",
+    "getSearchService.deleteGroupHistoryFile": "assertion (argc == 1) failed: NodeIKernelSearchService::deleteGroupHistoryFile needs 1 arguments",
+    "getGroupService.createGroupProfileShare": "assertion (argc == 1) failed: NodeIKernelGroupService::createGroupProfileShare needs 1 arguments",
+    "getGroupService.getGroupProfileCardInfo": "assertion (argc == 1) failed: NodeIKernelGroupService::getGroupProfileCardInfo needs 1 arguments",
+    "getMsgService.getOnlineStatusSmallIconFileNameByUrl": "assertion (argc == 1) failed: NodeIKernelMsgService::getOnlineStatusSmallIconFileNameByUrl needs 1 arguments",
+    "getMsgService.getOnlineStatusCommonFileNameByUrl": "assertion (argc == 1) failed: NodeIKernelMsgService::getOnlineStatusCommonFileNameByUrl needs 1 arguments",
+    "getMsgService.cancelSendOnlineFileMsgByFlash": "assertion (argc == 2) failed: NodeIKernelMsgService::cancelSendOnlineFileMsgByFlash needs 2 arguments",
+    "getMsgService.refuseReceiveOnlineFileMsg": "assertion (argc == 2) failed: NodeIKernelMsgService::refuseReceiveOnlineFileMsg needs 2 arguments",
+    "getMsgService.forwardFile": "assertion (argc == 2) failed: NodeIKernelMsgService::forwardFile needs 2 arguments",
+    "getMsgService.getOnlineFileMsgs": "assertion (argc == 1) failed: NodeIKernelMsgService::getOnlineFileMsgs needs 1 arguments",
+    "getMsgService.queryFileMsgsDesktop": "assertion (argc == 4) failed: NodeIKernelMsgService::queryFileMsgsDesktop needs 4 arguments",
+    "getMsgService.cancelQueryFileMsgsDesktop": "assertion (argc == 3) failed: NodeIKernelMsgService::cancelQueryFileMsgsDesktop needs 3 arguments",
+    "getMsgService.queryFileDownloadList": "assertion (argc == 1) failed: NodeIKernelMsgService::queryFileDownloadList needs 1 arguments",
+    "getMsgService.queryMoreFileDownloadList": "assertion (argc == 1) failed: NodeIKernelMsgService::queryMoreFileDownloadList needs 1 arguments",
+    "getMsgService.getRichMediaFilePathForMobileQQSend": "assertion (argc == 1) failed: NodeIKernelMsgService::getRichMediaFilePathForMobileQQSend needs 1 arguments",
+    "getMsgService.getRichMediaFilePathForGuild": "assertion (argc == 1) failed: NodeIKernelMsgService::getRichMediaFilePathForGuild needs 1 arguments",
+    "getMsgService.assembleMobileQQRichMediaFilePath": "assertion (argc == 1) failed: NodeIKernelMsgService::assembleMobileQQRichMediaFilePath needs 1 arguments",
+    "getMsgService.getFileThumbSavePathForSend": "assertion (argc == 2) failed: NodeIKernelMsgService::getFileThumbSavePathForSend needs 2 arguments",
+    "getMsgService.getFileThumbSavePath": "assertion (argc == 3) failed: NodeIKernelMsgService::getFileThumbSavePath needs 3 arguments",
+    "getMsgService.copyFileWithDelExifInfo": "assertion (argc == 2) failed: NodeIKernelMsgService::copyFileWithDelExifInfo needs 2 arguments",
+    "getMsgService.fetchMarketEmotionJsonFile": "assertion (argc == 1) failed: NodeIKernelMsgService::fetchMarketEmotionJsonFile needs 1 arguments",
+    "getMsgService.setSubscribeFolderUsingSmallRedPoint": "assertion (argc == 1) failed: NodeIKernelMsgService::setSubscribeFolderUsingSmallRedPoint needs 1 arguments",
+    "getMsgService.getNewOfflineFileList": "assertion (argc == 1) failed: NodeIKernelMsgService::getNewOfflineFileList needs 1 arguments",
+    "getMsgService.removeNewOfflineFileList": "assertion (argc == 2) failed: NodeIKernelMsgService::removeNewOfflineFileList needs 2 arguments",
+    "getMsgService.addNewOfflineFileList": "assertion (argc == 2) failed: NodeIKernelMsgService::addNewOfflineFileList needs 2 arguments",
+    "getRichMediaService.getRichMediaFileDir": "assertion (argc == 3) failed: NodeIKernelRichMediaService::getRichMediaFileDir needs 3 arguments",
+    "getRichMediaService.downloadFileForModelId": "assertion (argc == 3) failed: NodeIKernelRichMediaService::downloadFileForModelId needs 3 arguments",
+    "getRichMediaService.downloadFileForFileUuid": "assertion (argc == 3) failed: NodeIKernelRichMediaService::downloadFileForFileUuid needs 3 arguments",
+    "getRichMediaService.downloadFileByUrlList": "assertion (argc == 2) failed: NodeIKernelRichMediaService::downloadFileByUrlList needs 2 arguments",
+    "getRichMediaService.downloadFileByUrl": "assertion (argc == 3) failed: NodeIKernelRichMediaService::downloadFileByUrl needs 3 arguments",
+    "getRichMediaService.downloadFileForFileInfo": "assertion (argc == 2) failed: NodeIKernelRichMediaService::downloadFileForFileInfo needs 2 arguments",
+    "getRichMediaService.downloadFile": "assertion (argc == 4) failed: NodeIKernelRichMediaService::downloadFile needs 4 arguments",
+    "getRichMediaService.createGroupFolder": "assertion (argc == 2) failed: NodeIKernelRichMediaService::createGroupFolder needs 2 arguments",
+    "getRichMediaService.downloadGroupFolder": "assertion (argc == 3) failed: NodeIKernelRichMediaService::downloadGroupFolder needs 3 arguments",
+    "getRichMediaService.renameGroupFolder": "assertion (argc == 3) failed: NodeIKernelRichMediaService::renameGroupFolder needs 3 arguments",
+    "getRichMediaService.deleteGroupFolder": "assertion (argc == 2) failed: NodeIKernelRichMediaService::deleteGroupFolder needs 2 arguments",
+    "getRichMediaService.getGroupFileInfo": "assertion (argc == 2) failed: NodeIKernelRichMediaService::getGroupFileInfo needs 2 arguments",
+    "getRichMediaService.getGroupFileList": "assertion (argc == 2) failed: NodeIKernelRichMediaService::getGroupFileList needs 2 arguments",
+    "getRichMediaService.renameGroupFile": "assertion (argc == 5) failed: NodeIKernelRichMediaService::renameGroupFile needs 5 arguments",
+    "getRichMediaService.moveGroupFile": "assertion (argc == 5) failed: NodeIKernelRichMediaService::moveGroupFile needs 5 arguments",
+    "getRichMediaService.transGroupFile": "assertion (argc == 2) failed: NodeIKernelRichMediaService::transGroupFile needs 2 arguments",
+    "getRichMediaService.searchGroupFileByWord": "assertion (argc == 5) failed: NodeIKernelRichMediaService::searchGroupFileByWord needs 5 arguments",
+    "getRichMediaService.deleteGroupFile": "assertion (argc == 3) failed: NodeIKernelRichMediaService::deleteGroupFile needs 3 arguments",
+    "getRichMediaService.batchGetGroupFileCount": "assertion (argc == 1) failed: NodeIKernelRichMediaService::batchGetGroupFileCount needs 1 arguments",
+    "getRichMediaService.searchGroupFile": "assertion (argc == 2) failed: NodeIKernelRichMediaService::searchGroupFile needs 2 arguments",
+    "getRichMediaService.searchMoreGroupFile": "assertion (argc == 1) failed: NodeIKernelRichMediaService::searchMoreGroupFile needs 1 arguments",
+    "getRichMediaService.cancelSearcheGroupFile": "assertion (argc == 3) failed: NodeIKernelRichMediaService::cancelSearcheGroupFile needs 3 arguments",
+    "getRichMediaService.onlyDownloadFile": "assertion (argc == 3) failed: NodeIKernelRichMediaService::onlyDownloadFile needs 3 arguments",
+    "getRichMediaService.onlyUploadFile": "assertion (argc == 2) failed: NodeIKernelRichMediaService::onlyUploadFile needs 2 arguments",
+    "getRichMediaService.uploadRMFileWithoutMsg": "assertion (argc == 1) failed: NodeIKernelRichMediaService::uploadRMFileWithoutMsg needs 1 arguments",
+    "getCollectionService.collectionFileForward": "assertion (argc == 3) failed: NodeIKernelCollectionService::collectionFileForward needs 3 arguments",
+    "getCollectionService.downloadCollectionFile": "assertion (argc == 4) failed: NodeIKernelCollectionService::downloadCollectionFile needs 4 arguments",
+    "getCollectionService.downloadCollectionFileThumbPic": "assertion (argc == 4) failed: NodeIKernelCollectionService::downloadCollectionFileThumbPic needs 4 arguments",
+    "getCollectionService.cancelDownloadCollectionFile": "assertion (argc == 1) failed: NodeIKernelCollectionService::cancelDownloadCollectionFile needs 1 arguments",
+    "getCollectionService.setFileSavePath": "assertion (argc == 3) failed: NodeIKernelCollectionService::setFileSavePath needs 3 arguments",
+    "getStorageCleanService.addFilesScanedPaths": "assertion (argc == 1) failed: NodeIKernelStorageCleanService::addFilesScanedPaths needs 1 arguments",
+    "getStorageCleanService.getFileCacheInfo": "assertion (argc == 5) failed: NodeIKernelStorageCleanService::getFileCacheInfo needs 5 arguments",
+    "getStorageCleanService.clearAllFiles": "assertion (argc == 1) failed: NodeIKernelStorageCleanService::clearAllFiles needs 1 arguments",
+    "getStorageCleanService.getAllFilesSize": "assertion (argc == 4) failed: NodeIKernelStorageCleanService::getAllFilesSize needs 4 arguments",
+    "getStorageCleanService.addNewDownloadOrUploadFile": "assertion (argc == 1) failed: NodeIKernelStorageCleanService::addNewDownloadOrUploadFile needs 1 arguments",
+    "getFileAssistantService.addKernelFileAssistantListener": "assertion (argc == 1) failed: NodeIKernelFileAssistantService::addKernelFileAssistantListener needs 1 arguments",
+    "getFileAssistantService.removeKernelFileAssistantListener": "assertion (argc == 1) failed: NodeIKernelFileAssistantService::removeKernelFileAssistantListener needs 1 arguments",
+    "getFileAssistantService.getFileAssistantList": "assertion (argc == 1) failed: NodeIKernelFileAssistantService::getFileAssistantList needs 1 arguments",
+    "getFileAssistantService.getMoreFileAssistantList": "assertion (argc == 1) failed: NodeIKernelFileAssistantService::getMoreFileAssistantList needs 1 arguments",
+    "getFileAssistantService.downloadAllFileBySession": "assertion (argc == 2) failed: NodeIKernelFileAssistantService::downloadAllFileBySession needs 2 arguments",
+    "getFileAssistantService.cancelAllFileActionBySession": "assertion (argc == 1) failed: NodeIKernelFileAssistantService::cancelAllFileActionBySession needs 1 arguments",
+    "getFileAssistantService.searchFile": "assertion (argc == 3) failed: NodeIKernelFileAssistantService::searchFile needs 3 arguments",
+    "getFileAssistantService.resetSearchFileSortType": "assertion (argc == 3) failed: NodeIKernelFileAssistantService::resetSearchFileSortType needs 3 arguments",
+    "getFileAssistantService.searchMoreFile": "assertion (argc == 1) failed: NodeIKernelFileAssistantService::searchMoreFile needs 1 arguments",
+    "getFileAssistantService.cancelSearchFile": "assertion (argc == 3) failed: NodeIKernelFileAssistantService::cancelSearchFile needs 3 arguments",
+    "getFileAssistantService.downloadFile": "assertion (argc == 1) failed: NodeIKernelFileAssistantService::downloadFile needs 1 arguments",
+    "getFileAssistantService.forwardFile": "assertion (argc == 3) failed: NodeIKernelFileAssistantService::forwardFile needs 3 arguments",
+    "getFileAssistantService.cancelFileAction": "assertion (argc == 1) failed: NodeIKernelFileAssistantService::cancelFileAction needs 1 arguments",
+    "getFileAssistantService.retryFileAction": "assertion (argc == 1) failed: NodeIKernelFileAssistantService::retryFileAction needs 1 arguments",
+    "getFileAssistantService.deleteFile": "assertion (argc == 1) failed: NodeIKernelFileAssistantService::deleteFile needs 1 arguments",
+    "getFileAssistantService.modifyFileInfo": "assertion (argc == 1) failed: NodeIKernelFileAssistantService::modifyFileInfo needs 1 arguments",
+    "getFileAssistantService.getFullFileAssistantList": "assertion (argc == 1) failed: NodeIKernelFileAssistantService::getFullFileAssistantList needs 1 arguments",
+    "getFileAssistantService.getFileSearchBaseInfo": "assertion (argc == 1) failed: NodeIKernelFileAssistantService::getFileSearchBaseInfo needs 1 arguments",
+    "getFileAssistantService.updateTencentDocFileName": "assertion (argc == 2) failed: NodeIKernelFileAssistantService::updateTencentDocFileName needs 2 arguments",
+    "getFileAssistantService.getFilePathCount": "assertion (argc == 1) failed: NodeIKernelFileAssistantService::getFilePathCount needs 1 arguments",
+    "getFileAssistantService.genericQueryFileAssistant": "assertion (argc == 1) failed: NodeIKernelFileAssistantService::genericQueryFileAssistant needs 1 arguments",
+    "getFileBridgeHostService.addKernelFileBridgeHostListener": "assertion (argc == 1) failed: NodeIKernelFileBridgeHostService::addKernelFileBridgeHostListener needs 1 arguments",
+    "getFileBridgeHostService.removeKernelFileBridgeHostListener": "assertion (argc == 1) failed: NodeIKernelFileBridgeHostService::removeKernelFileBridgeHostListener needs 1 arguments",
+    "getWiFiPhotoClientService.getAlbumFileSavePath": "assertion (argc == 1) failed: NodeIKernelWiFiPhotoClientService::getAlbumFileSavePath needs 1 arguments",
+    "getWiFiPhotoClientService.getWiFiPhotoDownFileInfos": "assertion (argc == 2) failed: NodeIKernelWiFiPhotoClientService::getWiFiPhotoDownFileInfos needs 2 arguments",
+    "getPerfService.saveTraceFile": "assertion (argc == 1) failed: NodeIKernelPerfService::saveTraceFile needs 1 arguments",
+    "getRobotService.fetchGroupRobotProfile": "assertion (argc == 1) failed: NodeIKernelRobotService::fetchGroupRobotProfile needs 1 arguments",
+    "getRobotService.getGroupRobotProfile": "assertion (argc == 1) failed: NodeIKernelRobotService::getGroupRobotProfile needs 1 arguments",
+    "getRobotService.fetchGroupRobotProfileWithReq": "assertion (argc == 1) failed: NodeIKernelRobotService::fetchGroupRobotProfileWithReq needs 1 arguments",
+    "getRobotService.updateGroupRobotProfile": "assertion (argc == 2) failed: NodeIKernelRobotService::updateGroupRobotProfile needs 2 arguments",
+    "getAIService.forwardAttachFile": "assertion (argc == 1) failed: NodeIKernelAIService::forwardAttachFile needs 1 arguments",
+    "getBdhUploadService.uploadFile": "assertion (argc == 1) failed: NodeIKernelBdhUploadService::uploadFile needs 1 arguments",
+    "getNodeMiscService.deleteShareFile": "assertion (argc == 1) failed: NodeIKernelNodeMiscService::deleteShareFile needs 1 arguments",
+    "getNodeMiscService.openFileAndDirSelectDlg": "assertion (argc == 1) failed: NodeIKernelNodeMiscService::openFileAndDirSelectDlg needs 1 arguments"
+  },
+  "key": "nt_2",
+  "serviceCount": 63
+}

@@ -1,0 +1,25 @@
+{
+  "schema": "QSICK.protocols",
+  "version": 1,
+  "note": "可用的聊天协议注册表。maxStore 是存储协议，不在此列，也不可被选作聊天协议。",
+  "chat": [
+    {
+      "id": "onebotv11",
+      "name": "OneBot v11",
+      "description": "基于 OneBot v11 拓展的、兼容 NapCat / SnowLuma 调用格式的私有协议",
+      "emotions": "basic",
+      "default": true
+    },
+    {
+      "id": "onebotv11-EXTemotions",
+      "name": "OneBot v11 + EXTemotions",
+      "description": "OneBot v11 承载消息，表情改用 EXTemotions 对象：支持小黄脸、超级表情、emoji 与自定义表情，并显式声明动态性与文件类型。",
+      "emotions": "extemotions",
+      "default": false
+    }
+  ],
+  "store": {
+    "id": "maxStore",
+    "note": "存储协议固定为 maxStore，保留原始信息，不作为可选项。"
+  }
+}

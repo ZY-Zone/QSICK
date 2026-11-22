@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}聊天{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/chat.css?v=qqnt-29" />
+{% if chat_enabled %}<script src="/static/vendor/lottie.min.js?v=5.12.2" defer></script>
+<script src="/static/chat.js?v=qqnt-30" defer></script>{% endif %}
+{% endblock %}
+{% block content %}
+{% if not chat_enabled %}
+<div class="page-head"><div><h1>聊天</h1><p>在 WebUI 中查看会话和发送消息。</p></div></div>
+<div class="modal-backdrop">
+  <section class="modal" role="dialog" aria-modal="true" aria-labelledby="chat-enable-title">
+    <h2 id="chat-enable-title">启用 GUI 操作层？</h2>
+    <p class="danger-text">如果这是在公网服务器上运行的程序，可能会导致您的 QQ 号处于危险中。</p>
+    <p class="muted">启用后，能访问本 WebUI 的人可操作账号。请设置访问 token，并仅在可信环境使用。</p>
+    <form method="post" action="/chat/enable" class="inline">
+      <button type="submit" id="chat-enable-btn" class="btn" disabled>确认启用 (3)</button>
+      <a class="btn ghost" href="/">取消</a>
+    </form>
+  </section>
+</div>
+<script>
+(function () {
+  var button = document.getElementById("chat-enable-btn"), left = 3;
+  var timer = setInterval(function () {
+    left -= 1;
+    button.textContent = left > 0 ? "确认启用 (" + left + ")" : "确认启用";
+    if (left <= 0) { clearInterval(timer); button.disabled = false; }
+  }, 1000);
+})();
+</script>
+{% else %}
+<section class="nt-chat" id="nt-chat" aria-label="聊天工作区">
+  <aside class="nt-sidebar">
+    <div class="nt-sidebar-heading"><h1>消息</h1><span id="chat-count" class="nt-count">0</span><button type="button" id="chat-refresh" class="nt-icon" title="刷新会话" aria-label="刷新会话">↻</button></div>
+    <label class="nt-search"><span aria-hidden="true">⌕</span><input id="conversation-search" type="search" placeholder="搜索会话、QQ 或消息" aria-label="搜索会话" autocomplete="off" /></label>
+    <div class="nt-tabs" role="group" aria-label="会话类型">
+      <button type="button" data-filter="all" class="active" aria-pressed="true">全部</button>
+      <button type="button" data-filter="group" aria-pressed="false">群聊</button>
+      <button type="button" data-filter="private" aria-pressed="false">私聊</button>
+    </div>
+    <div id="chat-groups" class="nt-conversations" role="list" aria-label="会话列表"><p class="nt-empty-list">正在加载账号…</p></div>
+    <div class="nt-sidebar-foot">按本地消息记录展示会话</div>
+  </aside>
+
+  <section class="nt-main">
+    <header class="nt-header">
+      <button type="button" id="chat-back" class="nt-icon nt-back" aria-label="返回会话列表">‹</button>
+      <div id="chat-peer-avatar" class="nt-avatar nt-peer-avatar" aria-hidden="true">聊</div>
+      <div class="nt-peer"><h2 id="chat-title">选择一个会话</h2><span id="chat-subtitle">从左侧继续聊天</span></div>
+      <div class="nt-account-wrap">
+        <button type="button" id="account-toggle" class="nt-account" aria-expanded="false" aria-controls="account-menu"><span class="nt-avatar nt-avatar-small" id="account-avatar">?</span><span id="account-label">加载账号…</span><span aria-hidden="true">⌄</span></button>
+        <div id="account-menu" class="nt-account-menu" hidden></div>
+      </div>
+      <details class="nt-more"><summary class="nt-icon" aria-label="聊天选项" title="聊天选项">···</summary><div><a href="/accounts">账户管理</a><a href="/messages">消息记录</a><form method="post" action="/chat/disable" onsubmit="return confirm('停用聊天操作层？');"><button type="submit">停用聊天</button></form></div></details>
+    </header>
+    <div id="chat-notice" class="nt-notice" role="status" hidden></div>
+    <div class="nt-timeline-wrap">
+      <div id="chat-log" class="nt-timeline" role="log" aria-label="聊天记录" tabindex="0">
+        <div class="nt-welcome"><span class="nt-welcome-icon" aria-hidden="true">☏</span><h3>从一条消息开始</h3><p>选择账号与会话，继续你的聊天。</p></div>
+      </div>
+      <button type="button" id="chat-latest" class="nt-latest" hidden>↓ 回到最新消息</button>
+    </div>
+    <form id="chat-form" class="nt-composer">
+      <div id="chat-reply" class="nt-reply-strip" hidden></div>
+      <div id="chat-attachments" class="nt-attachments" hidden></div>
+      <div id="chat-drop" class="nt-drop" hidden>松开即可添加图片或文件</div>
+      <div class="nt-tools">
+        <button type="button" id="emoji-toggle" class="nt-icon" title="表情" aria-label="插入表情" aria-expanded="false">☺</button>
+        <span class="nt-text-only">文本消息</span>
+        <div id="emoji-panel" class="nt-emoji-panel" role="dialog" aria-label="表情面板" hidden>
+          <div class="nt-emoji-tabs" role="tablist" id="emoji-tabs"></div>
+          <div class="nt-emoji-grid" id="emoji-grid" role="tabpanel"></div>
+        </div>
+      </div>
+      <label class="nt-sr-only" for="chat-input">输入消息</label>
+      <textarea id="chat-input" placeholder="选择一个会话后开始聊天" rows="3" maxlength="10000" disabled spellcheck="false"></textarea>
+      <div class="nt-compose-foot">
+        <span id="chat-status" role="status" aria-live="polite"></span><span id="chat-length">0 / 10000</span>
+        <span class="nt-key-hint">Enter 发送 · Shift + Enter 换行</span>
+        <div class="nt-send-group">
+          <button id="chat-send" type="submit" disabled>发送 <span aria-hidden="true">↵</span></button>
+          <button id="chat-send-mode" type="button" class="nt-send-caret" aria-haspopup="menu" aria-expanded="false" aria-label="发送方式" title="发送方式">▾</button>
+          <div id="chat-send-menu" class="nt-send-menu" role="menu" hidden>
+            <button type="button" role="menuitemradio" data-mode="enter">按 Enter 键发送消息</button>
+            <button type="button" role="menuitemradio" data-mode="ctrl-enter">按 Ctrl + Enter 键发送消息</button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </section>
+</section>
+{% endif %}
+{% endblock %}

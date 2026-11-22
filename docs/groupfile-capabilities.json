@@ -1,0 +1,193 @@
+{
+  "verified_against": "QQ NT 9.9.33-52230, account 3905548034, group 2169010946",
+  "request_format_source": "NapCatQQ-4.18.42 packages/napcat-core/packet/transformer/proto/oidb/Oidb.0x6D6.ts and the transformer classes that use it. Sub-service and envelope-field numbers are asserted offline by tools/test_groupfile_full.py.",
+  "oidb_table": {
+    "command": "OidbSvcTrpcTcp.0x6D6_<sub>",
+    "envelope": "D6D6ReqBody { 1: upload, 3: download, 4: delete, 5: rename, 6: move }",
+    "operations": {
+      "upload": {
+        "sub": 0,
+        "field": 1,
+        "appId": 4,
+        "status": "blocked"
+      },
+      "download": {
+        "sub": 2,
+        "field": 3,
+        "appId": 7,
+        "status": "working"
+      },
+      "delete": {
+        "sub": 3,
+        "field": 4,
+        "appId": null,
+        "status": "working"
+      },
+      "rename": {
+        "sub": 4,
+        "field": 5,
+        "appId": null,
+        "status": "working"
+      },
+      "move": {
+        "sub": 5,
+        "field": 6,
+        "appId": 5,
+        "status": "working"
+      }
+    },
+    "upload_note": "The 0x6D6_0 slot request is implemented and works, but upload does not go through it: the op sends a message with a FILE element and the client does the transfer. See group.file.upload."
+  },
+  "operations": [
+    {
+      "op": "group.file.info",
+      "transport": "kernel",
+      "call": "RichMediaService.getGroupFileInfo(group, fileId)",
+      "status": "unverified",
+      "note": "Times out. getGroupFileInfo exists on the service (argc 2) but no reply arrives for the two-argument form, and no file-metadata event fires. NapCat does not use this method -- it reads metadata from the listing -- so there is no reference to copy. Left as unverified rather than claimed working: a timeout is not a success, and tools/probe_info_shape.py records the shapes already tried."
+    },
+    {
+      "op": "group.file.search",
+      "transport": "kernel + msg listener",
+      "call": "RichMediaService.searchGroupFile",
+      "status": "unverified",
+      "note": "The method exists but search does not deliver results through onGroupFileInfoUpdate the way listing does, so the wait times out. Fixed one real defect on the way: the REQUIREMENTS entry listed a 'Msg' method under RichMedia, which made the service check fail before any call was made."
+    },
+    {
+      "op": "group.file.list",
+      "transport": "kernel + msg listener",
+      "call": "RichMediaService.getGroupFileList + onGroupFileInfoUpdate",
+      "root_folder": "/",
+      "note": "An empty folderId returns retCode 0 with an empty list, so root must be '/'.",
+      "status": "working"
+    },
+    {
+      "op": "group.file.count",
+      "transport": "kernel",
+      "call": "RichMediaService.batchGetGroupFileCount",
+      "status": "working"
+    },
+    {
+      "op": "group.file.download",
+      "transport": "oidb",
+      "call": "0x6D6_2 -> https://<dns>/ftn_handler/<hex(url)>/?fname=",
+      "needs_hook": true,
+      "status": "working",
+      "evidence": "HTTP 200, 94765 bytes, md5 matched the client's own digest"
+    },
+    {
+      "op": "group.file.delete",
+      "transport": "kernel",
+      "call": "RichMediaService.deleteGroupFile(group, fileId, busId)",
+      "status": "working"
+    },
+    {
+      "op": "group.file.delete.oidb",
+      "transport": "oidb",
+      "call": "0x6D6_3, file id at field 5 of the delete sub-message",
+      "needs_hook": true,
+      "status": "working"
+    },
+    {
+      "op": "group.file.rename",
+      "transport": "kernel",
+      "call": "RichMediaService.renameGroupFile",
+      "status": "working"
+    },
+    {
+      "op": "group.file.rename.oidb",
+      "transport": "oidb",
+      "call": "0x6D6_4, {1:group, 3:busId, 4:fileId, 5:parentFolder, 6:newName}",
+      "needs_hook": true,
+      "status": "working"
+    },
+    {
+      "op": "group.file.move",
+      "transport": "kernel",
+      "call": "RichMediaService.moveGroupFile",
+      "status": "working"
+    },
+    {
+      "op": "group.file.move.oidb",
+      "transport": "oidb",
+      "call": "0x6D6_5, appId 5, {5:parentDirectory, 6:targetDirectory}",
+      "needs_hook": true,
+      "status": "working"
+    },
+    {
+      "op": "group.file.trans",
+      "transport": "kernel",
+      "call": "RichMediaService.transGroupFile(group, fileId)",
+      "aliases": [
+        "trans_group_file",
+        "transfer_group_file"
+      ],
+      "note": "NapCat's TransGroupFile action. Asks the client to fetch the file into its own transfer pipeline, distinct from group.file.download which yields a URL. Reply nests { transGroupFileResult: { result: { retCode } } }, so retCode is read out of that shape rather than treating a returned object as success.",
+      "status": "working"
+    },
+    {
+      "op": "group.folder.create",
+      "transport": "kernel",
+      "call": "RichMediaService.createGroupFolder",
+      "status": "working"
+    },
+    {
+      "op": "group.folder.delete",
+      "transport": "kernel",
+      "call": "RichMediaService.deleteGroupFolder",
+      "status": "working"
+    },
+    {
+      "op": "group.folder.rename",
+      "transport": "kernel",
+      "call": "RichMediaService.renameGroupFolder",
+      "status": "working"
+    },
+    {
+      "op": "group.file.upload",
+      "transport": "oidb + highway",
+      "call": "sendMsg('0', peer, [fileElement], new Map()) -- the client uploads the bytes",
+      "status": "working",
+      "how_it_works": "Creates a group file by sending a FILE message element. The client performs the BDH highway transfer itself, so the ticket, the chunk framing, the retries and the progress reporting all stay inside it. The element needs exactly four fields: { fileName, folderId, filePath, fileSize }. This is the route NapCat's own upload_group_file action takes.",
+      "verified": "4 consecutive uploads, each returning a server-assigned file_id, with the group's file count rising 16 -> 20 and returning to 16 after deleting them.",
+      "note_on_file_id": "The file id arrives on a message the client reports after the send. It usually arrives in time; when it does not, the op still reports success with file_id_pending, because the upload itself has happened. Treating a missing id as failure once reported roughly one run in three as a timeout even though the file had uploaded.",
+      "why_not_the_hand_built_transfer": "Building the highway transfer directly is possible and was made to work: HttpConn.0x6ff_501 returns a 104-byte sigSession once `ver` is encoded at field 15 *and* the client's BDH config has refreshed, and with that ticket the POST returns errorCode 0 instead of 199. But it still needs a second step to create the group entry, and the client already does the whole job when asked to send a file element. Fewer moving parts, and no credential handling to drift out of date."
+    }
+  ],
+  "napcat_coverage": {
+    "total": 10,
+    "covered": 10,
+    "actions": {
+      "UploadGroupFile": "group.file.upload",
+      "DeleteGroupFile": "group.file.delete / .delete.oidb",
+      "DeleteGroupFileFolder": "group.folder.delete",
+      "CreateGroupFileFolder": "group.folder.create",
+      "GetGroupFilesByFolder": "group.file.list",
+      "GetGroupFileSystemInfo": "group.file.count",
+      "MoveGroupFile": "group.file.move / .move.oidb",
+      "RenameGroupFile": "group.file.rename / .rename.oidb",
+      "TransGroupFile": "group.file.trans",
+      "GetGroupFileUrl": "group.file.download"
+    }
+  },
+  "hook": {
+    "module": "napcat-native/napi2native/napi2native.win32.x64.node",
+    "initHook": "initHook(sendRva, recvRva) with hex strings",
+    "rva_9_9_33_52230_x64": {
+      "send": "BF2B5F",
+      "recv": "23BB4DD"
+    },
+    "why_needed": "Without it the reply arrives as a UTF-8 string and every byte above 0x7F collapses to U+FFFD. With it, rspbuffer carries the real bytes.",
+    "once_per_process": true,
+    "override_path_via": "QSICK_NAPI2NATIVE"
+  },
+  "verification": {
+    "tool": "tools/test_groupfile_full.py",
+    "covers": [
+      "envelope field and sub-service numbers for all five OIDB operations, offline",
+      "list / count / download against the live server",
+      "OIDB rename and move with no net change to the group",
+      "folder create / rename / delete full cycle"
+    ]
+  }
+}

@@ -1,0 +1,224 @@
+# QSICK — tracked surface
+
+# ---------------------------------------------------------------- Python / uv
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# ------------------------------------------------------------- runtime state
+data/
+logs/
+qsick.json
+*.log
+*.pid
+
+# ------------------------------------------------- QQ 客户端副本（runtime/）
+# 完整客户端约 1.1 GB（~1900 个文件，其中 wrapper.node 单个 110 MB），远超声
+# 仓库能承受的范围，也不属于本项目源码。
+#
+# 首次运行时会自动下载锁定版本（src/qsick/runtime_fetch.py），来源是
+# http://49.235.134.245/qq_got/QQNT-9.9.33-52230。目录已存在时直接跳过，
+# 不会覆盖用户手工放入的版本。可用 QSICK_RUNTIME_URL 指向镜像，
+# QSICK_SKIP_RUNTIME_DOWNLOAD=1 关闭自动下载。
+runtime/
+runtime.download.tar.gz
+runtime.staging/
+
+# --------------------------------------------------------- local cache/scratch
+.uv-cache/
+.env
+/tmp*/
+# 项目内临时目录：所有临时产物（上传中转、解包暂存、截图、审计输出、探针脚本）
+# 都放这里，不再散落到系统 %TEMP%。src/qsick/tempdir.py 是唯一的入口，
+# 可以用 QSICK_TEMP_DIR 指到别处（并行测试时每个 worker 各一份）。
+/temp/
+
+# pytest tmp dirs when the base temp is the project root
+pytest-of-*/
+pytest-cache-files-*/
+.ptmp*/
+
+# Short-lived pytest --basetemp directories used while verifying a change.
+#
+# These are created ad hoc (`.w1`, `.v8`, `.pte3` …) and deleted when the run finishes -- but a run that
+# is interrupted leaves one behind, and `git add -A` then commits thousands of test artifacts.
+#
+# gitignore has no `{n,m}` quantifier, so this matches "a dot followed by lowercase letters/digits, as a
+# directory at the repo root". `.venv`, `.idea` and `.vscode` are already ignored by their own rules, and
+# matching them here again is harmless.
+/.[a-z]*/
+
+# Node
+node_modules/
+
+# ============================ injected DLLs: binaries ship, sources do not.
+#
+# The compiled DLLs are part of the distribution -- the project cannot run without them, and a clone
+# that is missing them is not usable. What stays private is how they are built: the C++, headers,
+# build scripts, offsets and the notes that describe the internals.
+#
+# This keeps the earlier arrangement for `qsick_payload` (binary only) and applies the same split to
+# `qsick_pipe` and the QQNT shim, which previously shipped with full sources.
+#
+# Ignore the sources first, then re-include the binaries. Order matters: git applies rules in sequence
+# and the last matching rule wins, so the negations have to come after the broad patterns.
+
+# --- C++ sources and headers
+native/**/*.cpp
+native/**/*.cc
+native/**/*.c
+native/**/*.h
+native/**/*.hpp
+native/**/*.asm
+
+# --- build inputs and scripts
+native/**/*.bat
+native/**/*.def
+native/**/*.rc
+native/**/*.res
+native/**/*.sln
+native/**/*.vcxproj
+native/**/*.props
+native/**/*.py
+
+# --- link intermediates and test hosts
+native/**/*.obj
+native/**/*.lib
+native/**/*.exp
+native/**/*.pdb
+native/**/*.ilk
+native/**/*.exe
+native/**/__pycache__/
+
+# --- notes that describe the internals, and the per-build offset table
+native/qsick-payload/README.md
+native/qsick-payload/NATIVE-NOTICE.md
+native/qsick-payload/BUILD.txt
+native/qsick-payload/offsets.json
+native/**/build/
+
+# --- the DLLs themselves stay tracked
+!native/**/*.dll
+
+# --- QQNT host shim: same split. Sources private, QQNT.dll shipped.
+build/*.cpp
+build/*.asm
+build/*.def
+build/*.bat
+!build/QQNT.dll
+
+build/*.pdb
+build/*.ilk
+build/*.tlog
+
+# ==================================================== local test / probe scripts
+#
+# The probes and one-off verifiers written while reverse-engineering are scaffolding, not product: they
+# encode a question that was worth asking once ("does uploadFile take one argument?") and their value
+# expires as soon as the answer is known. They stay on disk and out of the repository.
+#
+# `tests/` is NOT covered by anything here. That is the project's real suite -- the one `pytest` runs
+# and the one that has been catching regressions all along. Excluding it would leave every future change
+# unverified, which is the opposite of what these rules are for.
+#
+# The patterns below are matched against the file name inside tools/, so a genuine utility survives even
+# if its name happens to contain one of these words in the middle.
+tools/probe_*
+tools/*_probe.js
+tools/check_*
+tools/record_*
+tools/inspect_*
+tools/fix_*
+tools/debug_*
+tools/inventory_*
+tools/capture*
+tools/decode_*
+tools/dump_*
+tools/download_*
+tools/extract_*
+tools/test_*
+tools/verify_*
+tools/watch_*
+tools/measure_*
+tools/diagnose_*
+tools/diag_*
+tools/show_*
+tools/search_*
+tools/serve_for_verify.py
+tools/build_purge_list.py
+tools/compat_test_fix.py
+# Reverse-engineering helpers whose names do not start with one of the prefixes above. Listed
+# individually because each was written to answer one question and none is used by the product.
+tools/compare_session_lookup.py
+tools/export_fake_forward.py
+tools/find_forward_params.py
+tools/get_session_via_engine.py
+tools/install_rspbuffer_hook.py
+tools/payload_diag.py
+tools/pe_probe.py
+tools/remote_exec.py
+tools/remote_push.py
+tools/inventory_tracked.py
+
+# Anything dropped here by a scratch run rather than by a person.
+temp/
+scratch/
+
+# ------------------------------------------------------- market runtime data
+market/market.db*
+market/.staging-*
+
+# ------------------------------------------------ pipe 实例模板（不入库）
+# 从官方客户端生成的完整 QQNT 副本，约 1.1 GB。建 pipe 实例时用硬链接铺进去，
+# 所以磁盘上只占一份。用 QSICK_QQ_SOURCE 指向客户端即可重新生成。
+instanceTemplates/
+
+# --------------------------------------------------- headless client instances
+# QQ account data, the copied QQ runtime and host.log all live here.
+headlessClient/
+
+# ------------------------------------------------------------- QQ face assets
+# 表情资源随仓库分发（525 张图 + Lottie 动效，共 731 个文件、约 58 MB，
+# 最大单文件 1.28 MB）。这样克隆下来就是完整的，不需要额外导入步骤。
+#
+# 代价是仓库变大，且这类二进制进了 Git 历史后很难再清理——如果将来要缩小
+# 仓库，只能靠 history rewrite。tools/import_from_client.py 与
+# tools/import_emotions.py 仍保留：前者能从本机 QQ 补图，后者能从语料完整
+# 重建（见 docs/PROTOCOLS.md「表情素材」）。
+
+
+# ------------------------------------------------------------ editor / OS noise
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时提交信息文件
+.git-msg.tmp
+
+.pth/
+
+# qqnt_get.py / 获取QQnt.bat 下载的 QQ 安装包（约 300MB，不入库）
+QQ_9.9.33_*.exe
+
+# 以下脚本写死了开发机绝对路径（D:\projects\...），换机器无法运行，已从仓库移除。
+# 它们仍留在本地，供复核当时的分析过程。
+tools/audit_api_coverage.py
+tools/audit_native_arity.py
+tools/bridge_size.py
+tools/compare_actions.py
+tools/compare_napcat_actions.py
+tools/export_actions.py
+tools/login_qrcode.py
+tools/regression_actions.py
+tools/update_action_wire_status.py

@@ -1,0 +1,44 @@
+{
+  "reachable": false,
+  "summary": "Qzone RPC answers HTTP 200 but rejects every request with retcode 4001 'not authorized', including requests with no credentials at all",
+  "measurements": {
+    "pskey_qzone_qq_com": {
+      "result": 0,
+      "length": 44,
+      "available": true
+    },
+    "pskey_h5_qzone_qq_com": {
+      "result": 1003,
+      "available": false
+    },
+    "pskey_user_qzone_qq_com": {
+      "result": 1003,
+      "available": false
+    },
+    "getSKey": {
+      "exists": false
+    },
+    "rpc_with_pskey": {
+      "status": 200,
+      "retcode": 4001
+    },
+    "rpc_with_empty_cookie": {
+      "status": 200,
+      "retcode": 4001
+    },
+    "rpc_with_uin_only": {
+      "status": 200,
+      "retcode": 4001
+    },
+    "rpc_on_qzone_host": {
+      "status": 404
+    },
+    "gtk_algorithms_agree": true,
+    "gtk_value": 1565357935
+  },
+  "reasoning": "The empty-cookie control is what settles it. Removing credentials entirely produces the same retcode as presenting a valid p_skey, so the endpoint is not evaluating the cookie at all -- it refuses before authentication. g_tk was ruled out separately: three different accumulation strategies produced an identical value.",
+  "not_attempted": [
+    "Implementing the 17 request builders from NapCat's route table -- the transport is refused before any body is read, so they would be unverifiable dead code"
+  ],
+  "how_to_recheck": "Re-run tools/probe_qzone_auth.py. If 'empty cookie' and 'p_skey' start differing, authentication is being evaluated and the route table becomes worth implementing."
+}

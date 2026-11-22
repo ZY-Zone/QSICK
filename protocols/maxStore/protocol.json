@@ -1,0 +1,20 @@
+{
+  "name": "maxStore",
+  "package": "maxstore",
+  "kind": "store",
+  "version": "1.0.0",
+  "description": "无损原始消息存储协议：整包快照 + 按 JSON 指针摊平，未知字段与未识别元素一律保留",
+  "entry": "maxstore:SqliteMaxStore",
+  "interfaces": [
+    "append(message_dict_or_message) -> None",
+    "get(message_id) -> dict | None",
+    "query(chat_type, chat_id, limit, before) -> list[dict]",
+    "raw_field(message_id, json_path) -> Any"
+  ],
+  "schema_version": 1,
+  "tables": {
+    "messages": "一条消息一行：索引列 + raw_json 整包原文 + meta_json 协议无关元数据",
+    "raw_frames": "一条消息的原始 payload 按 JSON 指针逐行摊平，任意深层字段可查",
+    "meta": "库级元信息（schema_version）"
+  }
+}

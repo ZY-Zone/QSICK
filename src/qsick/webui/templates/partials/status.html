@@ -1,0 +1,57 @@
+﻿<div class="stats">
+  <div class="stat">
+    <span class="label">连接</span>
+    <span class="value">{{ "在线" if info.online else "离线" }}</span>
+    <span class="sub">transport {{ info.transport }} / {{ info.transport_mode }}</span>
+  </div>
+  <div class="stat">
+    <span class="label">账号</span>
+    <span class="value sm">{{ info.nickname or "—" }}</span>
+    <span class="sub"><code>{{ info.uin }}</code></span>
+  </div>
+  <div class="stat">
+    <span class="label">运行时长</span>
+    <span class="value sm">{{ info.uptime_human }}</span>
+    <span class="sub">已处理 {{ info.events_seen }} 个事件</span>
+  </div>
+  <div class="stat">
+    <span class="label">插件过滤</span>
+    <span class="value">{{ info.events_dropped }}</span>
+    <span class="sub">重复丢弃 {{ info.events_duplicate }}</span>
+  </div>
+</div>
+
+<div class="mini">
+  <div class="stat">
+    <span class="label">消息缓存</span>
+    <span class="value">{{ info.messages_stored }}</span>
+    <span class="sub">{{ info.storage.backend }}</span>
+  </div>
+  {% if info.transport_info and info.transport_info.pid %}
+  <div class="stat">
+    <span class="label">载荷</span>
+    <span class="value">{{ info.transport_info.payload.version or "?" }}</span>
+    <span class="sub">hooks {{ "on" if info.transport_info.payload.hooks else "off" }} · pid {{ info.transport_info.pid }}</span>
+  </div>
+  {% endif %}
+  <div class="stat">
+    <span class="label">Reverse WS</span>
+    <span class="value sm">{{ "已连接" if info.reverse_ws.connected else "未连接" }}</span>
+    <span class="sub">{{ info.reverse_ws.urls|length }} 个目标</span>
+  </div>
+  <div class="stat">
+    <span class="label">插件</span>
+    <span class="value">{{ info.plugins }}</span>
+    <span class="sub">已加载</span>
+  </div>
+  <a class="stat stat-link" href="/logs" title="{{ info.last_error.message if info.last_error else '暂无报错' }}">
+    <span class="label">最后报错</span>
+    {% if info.last_error %}
+    <span class="value sm">{{ info.last_error.time }}</span>
+    <span class="sub">{{ info.last_error.category }} · {{ info.last_error.message[:32] }}</span>
+    {% else %}
+    <span class="value sm">—</span>
+    <span class="sub">暂无报错</span>
+    {% endif %}
+  </a>
+</div>

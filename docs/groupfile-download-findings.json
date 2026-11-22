@@ -1,0 +1,85 @@
+{
+  "reachable": true,
+  "summary": "Group file download works: OIDB 0x6D6_2 via sendSsoCmdReqByContend, with NapCat's napi2native hook installed so the reply arrives as a Buffer instead of a lossy string",
+  "request": {
+    "command": "OidbSvcTrpcTcp.0x6D6_2",
+    "wrong_command": "OidbSvc.0x6D6_2",
+    "body_envelope": "D6D6ReqBody field 3 = DownloadFileReq",
+    "download_req_fields": {
+      "1": "uint64 groupCode",
+      "2": "uint32 appId (7)",
+      "3": "uint32 busId (102)",
+      "4": "string fileId"
+    },
+    "note": "Only the first four fields are needed; NapCat fills the same four and leaves the rest at defaults.",
+    "response_envelope": "D6D6RspBody field 3 = DownloadFileRsp",
+    "download_rsp_fields": {
+      "1": "int32 retCode",
+      "2": "string retMsg",
+      "4": "string downloadIp",
+      "5": "string downloadDns",
+      "6": "bytes downloadUrl",
+      "7": "bytes sha1",
+      "9": "bytes md5",
+      "10": "bytes cookieVal (FTN5K, not enforced)",
+      "11": "string saveFileName (may be empty)"
+    },
+    "url_formula": "https://<dns>/ftn_handler/<hex(downloadUrl)>/?fname=",
+    "source": "Lagrange.Core Oidb_0x6D6.cs + NapCat DownloadGroupFile.ts + report 15; all agree"
+  },
+  "hook": {
+    "module": "NapCatQQ-4.18.42/packages/napcat-native/napi2native/napi2native.win32.x64.node",
+    "entries": [
+      "initHook",
+      "enableAllBypasses",
+      "setVerbose"
+    ],
+    "call": "initHook(sendRva, recvRva) -- hex strings, not pipe names",
+    "offsets_source": "NapCat napi2native.json, key '<qqVersion>-<arch>'",
+    "offsets_9_9_33_52230_x64": {
+      "send": "BF2B5F",
+      "recv": "23BB4DD"
+    },
+    "mechanism": "Resolves GetModuleHandle('wrapper.node') itself and adds the RVA, then replaces the function through Frida's interceptor. Passing empty strings fails with 'Failed to parse hex string addresses', which is how the argument type was established.",
+    "once_per_process": "A second initHook call fails with 'Failed to initialize send hook'. The hook persists in the process, so later calls return rspbuffer without re-installing."
+  },
+  "the_latin1_mistake": {
+    "what_happened": "One probe found rsp lossy (115 bytes -> 113 chars, U+FFFD present). A later probe round-tripped [0x08,0xfd,0x01] and found it lossless, which appeared to contradict the first. Exhaustive testing showed 0xFD is the single byte that survives.",
+    "conclusion": "The string form destroys every high byte except 0xFD. Never verify a lossless claim on one byte value -- 0xFD is a trap because U+FFFD's low byte is 0xFD."
+  },
+  "measured": {
+    "before_hook": {
+      "command": "OidbSvcTrpcTcp.0x6D6_2",
+      "result": 145,
+      "errMsg": "请求包解析失败",
+      "keys": [
+        "result",
+        "errMsg",
+        "rsp"
+      ]
+    },
+    "after_hook": {
+      "result": 0,
+      "errMsg": "ok",
+      "keys": [
+        "result",
+        "errMsg",
+        "rspbuffer",
+        "rsp"
+      ],
+      "rspbuffer_len": 906,
+      "http_get": {
+        "status": 200,
+        "bytes": 94765,
+        "md5_matched": true
+      }
+    },
+    "url_varies_per_request": true
+  },
+  "still_open": {
+    "upload": "Same command, sub-service 0, requires the highway upload flow (IP/port from the response, then the file bytes over a separate channel). Not attempted.",
+    "private_file": "Uses a different interface entirely (report 15 section 5.2).",
+    "saveFileName": "Frequently empty in the response; callers should fall back to the local name."
+  },
+  "recheck": "tools/test_groupfile_download_real.py downloads a real file and compares MD5 against what the client reported. tools/check_groupfile_oidb.js verifies the packet encoding offline."
+}

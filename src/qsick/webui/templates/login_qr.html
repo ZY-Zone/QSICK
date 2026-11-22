@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QQ 扫码登录 · {{ account.id }}</title>
+  <link rel="stylesheet" href="/static/app.css?v=20261114a" />
+</head>
+<body class="qr-window{{ ' embedded' if embedded else '' }}">
+<main class="qr-window-card">
+  <div class="qr-head">
+    <div class="inline" style="gap:8px">
+      <h1>QQ 扫码登录</h1>
+      <span class="badge accent">{{ account.id }}</span>
+    </div>
+  </div>
+
+  <p class="risk-note">
+    <strong>风险与免责：</strong>在公网或共享服务器上扫码登录，可能导致 QQ 账号被风控、冻结或封禁；
+    请仅在可信的本机环境使用。登录即表示你自行承担全部风险，本项目不承担任何责任。
+  </p>
+
+  <p class="qr-phase" id="phase">正在获取二维码…</p>
+  <div class="qr-box">
+  <img id="qr" alt="QQ 登录二维码" hidden />
+  <p id="qr-placeholder" class="qr-placeholder" hidden>正在获取二维码…</p>
+</div>
+  <p class="errmsg" id="error" hidden></p>
+
+  <div class="inline" style="justify-content:center;margin-top:10px">
+    <button type="button" id="refresh">刷新二维码</button>
+  </div>
+  <p class="faint" style="text-align:center;margin-top:8px">二维码由无头客户端生成，不会显示 QQ 窗口。</p>
+</main>
+
+<script>
+  (function () {
+    var id = {{ account.id|tojson }};
+    var image = document.getElementById("qr");
+    var phase = document.getElementById("phase");
+    var error = document.getElementById("error");
+    var refreshButton = document.getElementById("refresh");
+    var placeholder = document.getElementById("qr-placeholder");
+    var busyPhases = ["starting", "connected", "quick_login", "initializing"];
+
+    var labels = {
+      stopped: "客户端未运行",
+      starting: "正在启动无头宿主…",
+      waiting_qrcode: "等待扫码",
+      scanned: "已扫码，请在手机上确认",
+      connected: "登录服务已连接",
+      logged_in: "登录成功，正在初始化会话",
+      quick_login: "正在尝试登录上次账号…",
+      initializing: "正在初始化会话…",
+      ready: "已登录，会话就绪",
+      qrcode_failed: "二维码已失效，请刷新",
+      login_failed: "登录失败",
+      error: "登录异常"
+    };
+
+    function closeWindow() { window.close(); }
+    var closeTop = document.getElementById("close-top");
+    var closeBottom = document.getElementById("close-bottom");
+    if (closeTop) closeTop.addEventListener("click", closeWindow);
+    if (closeBottom) closeBottom.addEventListener("click", closeWindow);
+
+    async function load() {
+      try {
+        var response = await fetch("/api/accounts/" + encodeURIComponent(id) + "/qrcode", { cache: "no-store" });
+        var body = await response.json();
+        if (!body.account) return;
+        var account = body.account;
+        phase.textContent = labels[account.phase] || account.phase || "等待二维码";
+        if (account.qr) {
+          if (image.src !== account.qr) image.src = account.qr;
+          image.hidden = false;
+          placeholder.hidden = true;
+        } else {
+          image.hidden = true;
+          placeholder.hidden = false;
+          placeholder.textContent = busyPhases.indexOf(account.phase) >= 0
+            ? "正在获取二维码…"
+            : "暂无二维码，可点击下方按钮刷新";
+        }
+        error.textContent = account.error || "";
+        error.hidden = !account.error;
+        refreshButton.disabled = account.phase === "quick_login" || account.phase === "initializing" || account.phase === "ready";
+        if (account.phase === "logged_in" || account.phase === "ready") {
+          phase.textContent = account.phase === "ready" ? "登录成功，会话已就绪" : "登录成功，正在初始化会话";
+          refreshButton.disabled = true;
+        }
+        // Once the session is genuinely ready the QR window has served its
+        // purpose; tell the embedding page to close it.
+        if (account.phase === "ready") {
+          try {
+            window.parent.postMessage({ type: "qsick:login-ready", id: id }, window.location.origin);
+          } catch (_) {}
+        }
+      } catch (_) {
+        phase.textContent = "无法连接 QSICK";
+      }
+    }
+
+    refreshButton.addEventListener("click", async function () {
+      refreshButton.disabled = true;
+      phase.textContent = "正在刷新二维码…";
+      error.hidden = true;
+      try {
+        var response = await fetch("/api/accounts/" + encodeURIComponent(id) + "/refresh", { method: "POST" });
+        var body = await response.json();
+        if (!response.ok || body.ok === false) throw new Error(body.error || response.statusText);
+      } catch (problem) {
+        error.textContent = String(problem.message || problem);
+        error.hidden = false;
+      }
+      refreshButton.disabled = false;
+      load();
+    });
+
+    load();
+    setInterval(load, 2000);
+  })();
+</script>
+</body>
+</html>
