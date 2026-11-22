@@ -48,24 +48,62 @@ const SUPPORTED_SEND_TYPES = Object.freeze(['text', 'at', 'face', 'json', 'xml',
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const text = value => typeof value === 'string' ? value : '';
 
-function toJsonSafe(value, seen = new WeakSet()) {
+//: How deep and how wide the raw snapshot goes. These objects reach into kernel state; the limits exist so a
+//: pathological element cannot turn into an unbounded walk on every received message.
+const RAW_MAX_DEPTH = 4;
+const RAW_MAX_KEYS = 64;
+
+/**
+ * Field names of `value`, including the ones a NAPI wrapper keeps on its prototype.
+ *
+ * QQ hands these decoders native objects whose values are getters on the prototype, so `Object.keys` reports
+ * nothing. Reading `id` off a picture element worked only because the decoder asked for it by name -- everything
+ * else was invisible, which is why an element's `raw` arrived empty and could not be inspected later.
+ */
+function rawKeys(value) {
+  const names = [];
+  let target = value;
+  for (let level = 0; level < RAW_MAX_DEPTH && target && target !== Object.prototype; level += 1) {
+    for (const name of Object.getOwnPropertyNames(target)) {
+      if (name === 'constructor' || names.includes(name)) continue;
+      names.push(name);
+      if (names.length >= RAW_MAX_KEYS) return names;
+    }
+    target = Object.getPrototypeOf(target);
+  }
+  return names;
+}
+
+function toJsonSafe(value, seen = new WeakSet(), depth = 0) {
   if (typeof value === 'bigint') return value.toString();
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'function') return undefined;
   if (typeof value !== 'object') return null;
   if (seen.has(value)) return { $circular: true };
+  if (depth >= RAW_MAX_DEPTH) return { $depth: true };
   seen.add(value);
   let result;
   if (value instanceof Map) {
-    result = { $map: Array.from(value, ([key, item]) => [toJsonSafe(key, seen), toJsonSafe(item, seen)]) };
+    result = { $map: Array.from(value, ([key, item]) => [toJsonSafe(key, seen, depth + 1), toJsonSafe(item, seen, depth + 1)]) };
   } else if (value instanceof Set) {
-    result = { $set: Array.from(value, item => toJsonSafe(item, seen)) };
+    result = { $set: Array.from(value, item => toJsonSafe(item, seen, depth + 1)) };
   } else if (Array.isArray(value)) {
-    result = Array.from(value, item => toJsonSafe(item, seen));
+    result = Array.from(value, item => toJsonSafe(item, seen, depth + 1));
   } else {
     result = {};
-    for (const key of Object.keys(value)) {
-      Object.defineProperty(result, key, { value: toJsonSafe(value[key], seen), enumerable: true, configurable: true, writable: true });
+    for (const key of rawKeys(value)) {
+      let item;
+      try {
+        item = value[key];
+      } catch (error) {
+        // A getter that throws is worth one marker, not the whole element.
+        result[key] = { $error: String((error && error.message) || error) };
+        continue;
+      }
+      if (typeof item === 'function') continue;
+      const safe = toJsonSafe(item, seen, depth + 1);
+      if (safe !== undefined) result[key] = safe;
     }
   }
   seen.delete(value);
@@ -214,7 +252,10 @@ function unknown(raw, reason) {
 }
 
 function normalized(type, data, raw) {
-  return { type, data: toJsonSafe(data), raw: toJsonSafe(raw) };
+  // Always present: an element with `raw: {}` says "QQ gave nothing", which is different from
+  // "nobody looked".
+  const snapshot = toJsonSafe(raw);
+  return { type, data: toJsonSafe(data), raw: snapshot && typeof snapshot === 'object' ? snapshot : {} };
 }
 
 function mediaData(body, raw, kind) {
