@@ -1,44 +1,74 @@
 {
-  "reachable": false,
-  "summary": "Qzone RPC answers HTTP 200 but rejects every request with retcode 4001 'not authorized', including requests with no credentials at all",
-  "measurements": {
-    "pskey_qzone_qq_com": {
-      "result": 0,
-      "length": 44,
-      "available": true
-    },
-    "pskey_h5_qzone_qq_com": {
-      "result": 1003,
-      "available": false
-    },
-    "pskey_user_qzone_qq_com": {
-      "result": 1003,
-      "available": false
-    },
-    "getSKey": {
-      "exists": false
-    },
-    "rpc_with_pskey": {
-      "status": 200,
-      "retcode": 4001
-    },
-    "rpc_with_empty_cookie": {
-      "status": 200,
-      "retcode": 4001
-    },
-    "rpc_with_uin_only": {
-      "status": 200,
-      "retcode": 4001
-    },
-    "rpc_on_qzone_host": {
-      "status": 404
-    },
-    "gtk_algorithms_agree": true,
-    "gtk_value": 1565357935
+  "reachable": true,
+  "summary": "Qzone RPC is reachable and authorized from this client. The 2026-11-18 'not authorized' finding was an artefact of a probe that omitted the x-oidb header: the gateway is addressed by that header, so without it there was no command to authorize.",
+  "superseded_finding": {
+    "date": "2026-11-18",
+    "conclusion": "every RPC -> retcode 4001 'not authorized', including with no cookie; endpoint refuses before checking credentials",
+    "why_it_was_wrong": "The empty-cookie control was valid but measured the wrong thing. The probe sent Content-Type / Origin / Referer / User-Agent / Cookie and no x-oidb, so the gateway had no uint32_command to route. 4001 answered 'which command is this?', not 'are you allowed?'."
   },
-  "reasoning": "The empty-cookie control is what settles it. Removing credentials entirely produces the same retcode as presenting a valid p_skey, so the endpoint is not evaluating the cookie at all -- it refuses before authentication. g_tk was ruled out separately: three different accumulation strategies produced an identical value.",
-  "not_attempted": [
-    "Implementing the 17 request builders from NapCat's route table -- the transport is refused before any body is read, so they would be unverifiable dead code"
+  "measurements": {
+    "date": "2026-11-23",
+    "session": "nt_2",
+    "account": "3905548034",
+    "pskey_lengths": {
+      "qzone.qq.com": 44,
+      "qun.qq.com": 44,
+      "h5.qzone.qq.com": 0,
+      "user.qzone.qq.com": 0
+    },
+    "header_is_the_difference": {
+      "no_x_oidb": {
+        "status": 200,
+        "retcode": 4001,
+        "body": "{\"retcode\":4001,\"msg\":\"not authorized!\",\"message\":\"not authorized!\",\"data\":{}}"
+      },
+      "with_x_oidb": {
+        "status": 200,
+        "retcode": 0,
+        "note": "EntranceCtrl/BatchEntranceWhitelist answered with real entrance data for the account"
+      },
+      "with_x_oidb_and_x_web_qua": {
+        "status": 200,
+        "retcode": 0
+      },
+      "with_numeric_service_type": {
+        "status": 200,
+        "retcode": 0
+      }
+    },
+    "business_calls": {
+      "GetFriendFeeds_0x97e5_0": {
+        "status": 200,
+        "retcode": 0,
+        "note": "returned a feed list with cell_* structures (cell_feed_deco, cell_media, cell_foward_info ...)",
+        "body_sent": "{}"
+      },
+      "GetShuoshuoList_0x9a97_1": {
+        "status": 200,
+        "retcode": 0,
+        "has_more": false,
+        "note": "returned this account's own posts plus an attach_info pagination cursor"
+      }
+    },
+    "gtk_algorithms_agree": true
+  },
+  "what_works": [
+    "p_skey for qzone.qq.com via TipOffService.getPskey(domains, true)",
+    "g_tk = hash33(p_skey) & 0x7fffffff",
+    "POST https://h5.qzone.qq.com/http2rpc/gotrpc/v1/{service}/{method}?g_tk=... with headers Cookie, x-oidb, x-web-qua",
+    "read calls: EntranceCtrl.BatchEntranceWhitelist, FeedsReader.GetFriendFeeds, FeedsReader.GetShuoshuoList"
   ],
-  "how_to_recheck": "Re-run tools/probe_qzone_auth.py. If 'empty cookie' and 'p_skey' start differing, authentication is being evaluated and the route table becomes worth implementing."
+  "open_questions": [
+    "p_skey is unavailable for h5.qzone.qq.com and user.qzone.qq.com (1003). Everything measured works with the qzone.qq.com key, but a call that requires the h5 key would fail.",
+    "Request bodies are guesses: GetFriendFeeds answered retcode 0 even with {}, so pagination/filter parameters are unverified.",
+    "Responses are raw cell_* structures; no normalisation exists yet.",
+    "The 14 'public qzone' (空友爱看) routes and the write routes (PublishFeed 0x9775, likes, comments) are untested.",
+    "Old CGI routes (taotao/profile via /proxy/domain/) are untested — they take no x-oidb, so the earlier 4001 may genuinely apply to them."
+  ],
+  "blocked_in_product_code": {
+    "where": "src/qsick/headless_actions.cjs, the qzone RPC op",
+    "behaviour": "answers UNSUPPORTED with 'Qzone RPC refuses every request with retcode 4001 before checking credentials'",
+    "status": "now known to be false; must be removed before QZone can be implemented"
+  },
+  "how_to_recheck": "uv run python tools/probe_qzone_auth.py — it queues a probe through the live pipe session and prints all four cases plus two business calls."
 }
