@@ -16,7 +16,7 @@
 <section class="card">
   {% if messages %}
     <table class="table">
-      <thead><tr><th>ID</th><th>账号</th><th>会话</th><th>发送者</th><th>内容</th><th class="right">时间</th></tr></thead>
+      <thead><tr><th>ID</th><th>账号</th><th>会话</th><th>发送者</th><th>内容</th><th>附件</th><th class="right">时间</th></tr></thead>
       <tbody>
       {% for m in messages %}
         <tr>
@@ -24,7 +24,8 @@
           <td class="nowrap"><code class="faint">{{ m.account or "—" }}</code></td>
           <td class="nowrap"><span class="chatpill">{{ "群" if m.is_group else "私" }} {{ m.chat_id }}</span></td>
           <td class="nowrap">{{ m.sender_name or m.sender_uin }}</td>
-          <td class="preview" title="{{ m.text }}">{{ m.text }}{% for a in attachments.get(m.message_id, []) %} <a class="btn ghost sm" href="{{ a.href }}" title="{{ a.title }}" download>{{ a.label }}</a>{% endfor %}</td>
+          <td class="preview" title="{{ m.text }}">{{ m.text }}</td>
+          <td class="nowrap">{% for a in attachments.get(m.message_id, []) %}<a class="btn ghost sm" href="{{ a.href }}" title="{{ a.title }}" download>{{ a.label }}</a> {% endfor %}</td>
           <td class="right faint nowrap">{{ fmt_time(m.time) }}</td>
         </tr>
       {% endfor %}
