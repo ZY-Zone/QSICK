@@ -1054,7 +1054,7 @@ def create_app(runtime: "Runtime") -> FastAPI:
     #: Element types whose content can be fetched on demand. `face` is QQ's sticker element.
     _MEDIA_ELEMENT_TYPES = ("image", "file", "video", "face", "mface", "record")
 
-    def _message_page(request: Request, q: str, page: int, limit: int, account: str = "") -> dict[str, Any]:
+    async def _message_page(request: Request, q: str, page: int, limit: int, account: str = "") -> dict[str, Any]:
         """The cache, straight from the store the cache writes to.
 
         It used to read `runtime.store` -- the default instance's database -- and later every instance store. Both
@@ -1098,19 +1098,39 @@ def create_app(runtime: "Runtime") -> FastAPI:
         page = min(page, pages)
         items = ordered[(page - 1) * limit: (page - 1) * limit + limit]
 
-        # Which records can be downloaded, and under what name. Only the index is baked in: the URL itself is
-        # built by the route when it is clicked, so an expired token is not baked into the page.
+        # What can be downloaded, as the URL the content actually lives at.
+        #
+        # The button used to point at `/messages/media/<id>/<n>` -- a route on this machine, which is not a download
+        # link anyone else can use. The real address is minted here instead, and it has to be minted *now*: the
+        # token in it expires, so storing it with the record would hand out dead links.
         attachments: dict[Any, list[dict[str, Any]]] = {}
         for item in items:
             links = []
-            for index, element in enumerate(getattr(item, "elements", []) or []):
-                kind = str(getattr(element, "type", "") or "")
+            for the_element in getattr(item, "elements", []) or []:
+                kind = str(getattr(the_element, "type", "") or "")
                 if kind not in _MEDIA_ELEMENT_TYPES:
                     continue
-                data = getattr(element, "data", {}) or {}
+                data = getattr(the_element, "data", {}) or {}
                 name = str(data.get("file_name") or data.get("name") or "")
+                href = ""
+                stored = data.get("url")
+                if isinstance(stored, str) and stored.startswith(("http://", "https://")) and "rkey=" in stored:
+                    href = stored
+                elif kind in ("image", "mface"):
+                    try:
+                        href = await runtime.media.url_for(
+                            the_element,
+                            scope="group" if item.is_group else "private",
+                            account=str(getattr(item, "account", "") or ""),
+                        ) or ""
+                    except Exception:  # noqa: BLE001 - a missing link hides the button, it does not fail the page
+                        href = ""
+                if not href:
+                    # A file element lands here: no element_id in the event, so `media.download` cannot be asked.
+                    # No button is honest; a button that answers 502 is not.
+                    continue
                 links.append({
-                    "href": f"/messages/media/{item.message_id}/{index}",
+                    "href": href,
                     "label": f"下载{'图片' if kind == 'image' else '文件' if kind == 'file' else kind}",
                     "title": name or kind,
                 })
@@ -2044,7 +2064,8 @@ def create_app(runtime: "Runtime") -> FastAPI:
         denied = guard(request)
         if denied:
             return denied
-        return templates.TemplateResponse(request, "messages.html", _message_page(request, q, page, 30, account))
+        return templates.TemplateResponse(request, "messages.html",
+                                              await _message_page(request, q, page, 30, account))
 
     @app.get("/api/messages")
     async def messages_api(request: Request, q: str = "", page: int = 1) -> JSONResponse:
@@ -2055,7 +2076,7 @@ def create_app(runtime: "Runtime") -> FastAPI:
         page = max(1, page)
         # Same store as the page, and the same merged-field search: two views of one cache must not disagree
         # about what it contains.
-        model = _message_page(request, q, page, limit)
+        model = await _message_page(request, q, page, limit)
         return JSONResponse(
             {
                 "total": model["total"],

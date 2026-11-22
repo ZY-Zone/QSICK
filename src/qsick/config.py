@@ -53,6 +53,24 @@ class OneBotConfig:
 class WebUIConfig:
     host: str = "127.0.0.1"
     port: int = DEFAULT_WEBUI_PORT
+    #: Full URL this WebUI is reachable at, when that differs from `host`/`port` -- behind a reverse proxy, or when
+    #: the browser must use a different name than the socket binds. Empty means "derive it from host and port".
+    public_url: str = ""
+
+    @property
+    def listen_url(self) -> str:
+        """The address of this WebUI, in one place.
+
+        It was assembled ad hoc wherever it was needed, which is how two views of the same server end up naming it
+        differently. Everything that needs to name this server asks here.
+        """
+        if self.public_url:
+            return self.public_url.rstrip("/")
+        host = str(self.host or "127.0.0.1")
+        if host in ("0.0.0.0", "::"):
+            # A wildcard bind is not an address a browser can open.
+            host = "127.0.0.1"
+        return f"http://{host}:{int(self.port)}"
     access_token: str = ""
     log_buffer: int = 2000
     # GUI chat layer; off by default because it exposes account actions.
