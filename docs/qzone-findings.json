@@ -119,10 +119,12 @@
       "send_qzone_msg": "ok, text-only returns tid; with an image the picture lands in cell_media and is readable back",
       "delete_qzone_msg": "ok, the post disappears from the listing",
       "get_qzone_public_capabilities": "ok, all public_qzone_* flags false",
-      "get_qzone_public_feeds": "ok but total 0 (account not whitelisted)"
+      "get_qzone_public_feeds": "ok but total 0 (account not whitelisted)",
+      "set_qzone_msg_right": "ok for ugc_right=1, but the call rewrites the whole post: it needs the current text ('con') or the server answers code -10005 '您未输入内容'. ugc_right=64 (仅自己可见) is refused with code -10083 '使用人数过多，请稍后再试' on every attempt, so that value is unverified rather than broken on our side."
     },
     "unverified": [
-      "set_qzone_profile / set_qzone_ban / set_qzone_msg_right: implemented, not exercised -- they change account state",
+      "set_qzone_profile / set_qzone_ban: implemented, not exercised -- they change account state",
+      "ugc_right 64/128 on set_qzone_msg_right: refused by the server (-10083), see verified_live",
       "the 12 public-qzone actions: implemented on the same gateway, unverifiable while the account is outside the whitelist",
       "get_qzone_share_ark: needs the Ark API, not implemented"
     ]

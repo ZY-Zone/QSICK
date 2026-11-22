@@ -625,11 +625,20 @@ class QzoneClient:
         answer = await self.cgi("set_profile", fields, post=True)
         return {"name": name, "description": description, "raw": answer}
 
-    async def set_msg_right(self, tid: str, ugc_right: int, *, target_uins: list[str] | None = None,
-                            uin: str = "") -> dict[str, Any]:
+    async def set_msg_right(self, tid: str, ugc_right: int, *, content: str = "",
+                            target_uins: list[str] | None = None, uin: str = "") -> dict[str, Any]:
+        """Change who can see one post.
+
+        `con` is required -- measured, the CGI answers `code -10005 您未输入内容，随便写点什么吧` without it, because
+        this endpoint rewrites the whole post rather than patching a field. So the current text has to be sent back
+        unchanged, which is also why NapCat reads the post first.
+        """
+        if not str(content or "").strip():
+            raise QzoneError("set_msg_right needs the post's current text (`con`); read the feed first and pass it")
         credentials = await self.credentials()
         fields: dict[str, Any] = {
-            "tid": tid, "ugc_right": str(ugc_right), "hostuin": uin or credentials.uin, "format": "json",
+            "tid": tid, "con": content, "ugc_right": str(ugc_right),
+            "hostuin": uin or credentials.uin, "format": "json",
         }
         if target_uins:
             fields["allow_uins"] = "|".join(target_uins)

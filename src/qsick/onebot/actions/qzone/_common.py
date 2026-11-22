@@ -69,6 +69,41 @@ class QzoneAction(Action):
         raise NotImplementedError
 
 
+async def find_feed(ctx: Any, params: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The `feed_ref` plus the normalised feed itself.
+
+    Writes need more than an identity -- changing a post's visibility rewrites it, so the current text has to come
+    along -- hence the pair rather than just the handle.
+    """
+    ref = params.get("feed_ref")
+    if isinstance(ref, dict) and isinstance(ref.get("union_id"), dict):
+        feed = params.get("feed") if isinstance(params.get("feed"), dict) else {}
+        if not feed:
+            # A handle alone says who the post is, not what it says; ask for the body so a rewriting call has it.
+            try:
+                feed = (await client(ctx).feed_detail(ref)).get("feed") or {}
+            except QzoneError:
+                feed = {}
+        return ref, feed
+    tid = str(params.get("tid") or "").strip()
+    if not tid:
+        raise ActionError("qzone: pass `feed_ref` (from a listing) or a `tid` the listings still have",
+                          models.BAD_REQUEST)
+    qzone = client(ctx)
+    pages = [await qzone.friend_feeds(count=20)]
+    try:
+        pages.append(await qzone.shuoshuo_list(count=20))
+    except QzoneError:
+        pass
+    for page in pages:
+        for feed in page.get("feeds") or []:
+            if feed.get("feed_id") == tid and isinstance(feed.get("feed_ref"), dict) and feed["feed_ref"]:
+                return feed["feed_ref"], feed
+    raise ActionError(
+        f"qzone: no handle for tid {tid} in the recent listings; read the feed again and pass its `feed_ref`",
+        models.NOT_FOUND)
+
+
 async def resolve_ref(ctx: Any, params: dict[str, Any]) -> dict[str, Any]:
     """A usable `feed_ref` for this request.
 
