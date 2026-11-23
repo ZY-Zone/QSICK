@@ -19,6 +19,19 @@
         // 默认不接管光标：自绘光标是选项，不是默认行为。
         var cursor = localStorage.getItem("qsick.cursor") || "default";
         document.documentElement.dataset.cursor = cursor;
+        var density = localStorage.getItem("qsick.density") || "comfortable";
+        document.documentElement.dataset.density = density;
+      } catch (_) {}
+
+      // 自己管滚动位置，不用浏览器的恢复。
+      //
+      // 实测（CDP，1440x900）：内容较高的设置页刷新后 Chrome 会把页面恢复到 scrollY=10，
+      // 而不是 0 —— 顶栏和二级菜单一起上移 10px，看起来就是"刷新时跳了一下"。
+      // 关掉入场动画、关掉首次引导横幅都复现，改成 manual 立刻归零，所以问题在恢复本身。
+      // 控制台每次刷新从顶部开始是可预期的；带 #锚点 时不干预。
+      try {
+        if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+        if (!location.hash) window.scrollTo(0, 0);
       } catch (_) {}
     })();
   </script>

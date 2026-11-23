@@ -15,6 +15,8 @@
     setTimeout(function () { node.remove(); }, 3200);
   }
   window.qsickToast = toast;
+  // 内联脚本要用转义函数，而它在本文件的作用域里，够不着 —— 导出一份。
+  window.qsickEscape = escapeHtml;
 
   window.qsickCopy = function (id) {
     var node = typeof id === "string" ? document.getElementById(id) : id;

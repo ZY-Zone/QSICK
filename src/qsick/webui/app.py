@@ -911,6 +911,73 @@ def create_app(runtime: "Runtime") -> FastAPI:
         _write_setting(runtime, {"plugins": {"watch": enabled}})
         return RedirectResponse("/settings?saved=1", status_code=303)
 
+    @app.get("/settings/config.json")
+    async def download_config(request: Request) -> Response:
+        """The sanitized config as a download.
+
+        之前设置页上挂的是 `/config`，而那个路由从来不存在 —— 一个 404 的"下载配置"。
+        这里用真实端点：内容和 `/api/status` 里的脱敏版本同源（`_config_json`），
+        所以不会出现"页面看到的和下载到的不是一份东西"。
+        """
+        denied = guard(request)
+        if denied:
+            return denied
+        # `_config_json` already returns encoded JSON text; dumping it again would hand back a quoted string.
+        return Response(
+            _config_json(runtime),
+            media_type="application/json; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="qsick-config.json"'},
+        )
+
+    @app.post("/settings/transport")
+    async def save_transport(
+        pipe_auto_start: str = Form("0"),
+        network_activation_delay: float = Form(15.0),
+        forward_noise: str = Form("0"),
+    ) -> RedirectResponse:
+        """启动与转发行为。
+
+        延迟限制在 0-600 秒：负数没有意义，而大到一个小时以上只会让"网络怎么还没起来"变成
+        一个查不明白的问题。
+        """
+        delay = max(0.0, min(float(network_activation_delay or 0), 600.0))
+        pipe = pipe_auto_start == "1"
+        noise = forward_noise == "1"
+        runtime.config.pipe_auto_start = pipe
+        runtime.config.network_activation_delay = delay
+        runtime.config.forward_noise = noise
+        _write_setting(runtime, {
+            "pipe_auto_start": pipe,
+            "network_activation_delay": delay,
+            "forward_noise": noise,
+        })
+        return RedirectResponse("/settings?saved=1&tab=general", status_code=303)
+
+    @app.post("/settings/plugins")
+    async def save_plugins(
+        allow_remote_install: str = Form("0"),
+        max_tier: str = Form("core"),
+    ) -> RedirectResponse:
+        tier = max_tier.strip().lower()
+        if tier not in ("core", "verified", "any"):
+            return RedirectResponse("/settings?saved=0&tab=advanced", status_code=303)
+        runtime.config.plugins.allow_remote_install = allow_remote_install == "1"
+        runtime.config.plugins.max_tier = tier
+        _write_setting(runtime, {"plugins": {
+            "allow_remote_install": runtime.config.plugins.allow_remote_install,
+            "max_tier": tier,
+        }})
+        return RedirectResponse("/settings?saved=1&tab=advanced", status_code=303)
+
+    @app.post("/settings/log-buffer")
+    async def save_log_buffer(log_buffer: int = Form(2000)) -> RedirectResponse:
+        """日志缓冲区行数。上限 20000：再多就只是把内存变成日志仓库，而不是便于排查的窗口。"""
+        size = max(200, min(int(log_buffer or 2000), 20000))
+        runtime.config.webui.log_buffer = size
+        _write_setting(runtime, {"webui": {"log_buffer": size}})
+        logmod.configure(capacity=size)
+        return RedirectResponse("/settings?saved=1&tab=display", status_code=303)
+
     @app.post("/settings/pipe-auth")
     async def save_pipe_auth(
         pipe_auth: str = Form("random"), pipe_token: str = Form("")
@@ -2591,7 +2658,12 @@ def _write_setting(runtime: "Runtime", updates: dict[str, Any]) -> None:
     from dataclasses import asdict
 
     recorded = str(getattr(runtime.config, "source_path", "") or "")
-    path = Path(recorded or os.environ.get("QSICK_CONFIG", "qsick.json"))
+    # 没有来源时写进**这个运行时自己的数据目录**，不要写当前工作目录。
+    #
+    # 原来回退到 "qsick.json"，于是测试（直接构造 RuntimeConfig、source_path 为空）每跑一遍
+    # 就会覆盖仓库根目录那份真实配置。消息保留的 1234/3 就是这么来的：tests/test_webui_ui.py
+    # 往 /settings/storage post 了这两个数字，落进了开发者的 qsick.json。
+    path = Path(recorded or os.environ.get("QSICK_CONFIG") or runtime.config.path("qsick.json"))
     if path.exists():
         try:
             data = json.loads(path.read_text(encoding="utf-8"))

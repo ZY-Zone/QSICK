@@ -50,6 +50,25 @@
   </section>
 
   <section class="card">
+    <div class="card-head"><h2>启动与转发</h2></div>
+    <form method="post" action="/settings/transport" class="stack narrow auto-form">
+      <label class="check">
+        <input type="checkbox" name="pipe_auto_start" value="1" {{ "checked" if config.pipe_auto_start else "" }} />
+        启动时自动附着到已登录的管道会话
+      </label>
+      <label class="check">
+        <input type="checkbox" name="forward_noise" value="1" {{ "checked" if config.forward_noise else "" }} />
+        转发消息缓存里的噪声事件
+      </label>
+      <label>登录后等待网络配置生效
+        <input name="network_activation_delay" type="number" min="0" max="600" step="1"
+               value="{{ config.network_activation_delay }}" />
+      </label>
+      <p class="faint autosave-note">秒。账号登录后等这么久再切换网络配置，等 QQ 自己把连接建起来。</p>
+    </form>
+  </section>
+
+  <section class="card">
     <div class="card-head"><h2>消息保留</h2><span class="sub">{{ info.storage.backend }}</span></div>
     <form method="post" action="/settings/storage" class="stack narrow auto-form">
       <label>最多保留条数 <input name="max_messages" type="number" min="0" max="1000000" value="{{ config.rotation.max_messages }}" /></label>
@@ -62,6 +81,32 @@
 
 {% if tab == "display" %}
 <div class="grid two">
+  <section class="card">
+    <div class="card-head"><h2>界面密度</h2><span class="sub">只影响当前浏览器</span></div>
+    <div class="cursor-picker" id="density-picker">
+      <button type="button" class="cursor-option" data-density="comfortable">
+        <strong>舒适</strong>
+        <small>默认间距，适合长时间看</small>
+      </button>
+      <button type="button" class="cursor-option" data-density="compact">
+        <strong>紧凑</strong>
+        <small>行高与内边距收紧，一屏多显示三成</small>
+      </button>
+    </div>
+    <p class="faint" style="margin-top:10px">表格、列表与卡片都会跟着变；图表尺寸不变。</p>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>日志缓冲</h2><span class="sub">行</span></div>
+    <form method="post" action="/settings/log-buffer" class="stack narrow auto-form">
+      <label>内存里保留的日志行数
+        <input name="log_buffer" type="number" min="200" max="20000" step="100"
+               value="{{ config.webui.log_buffer }}" />
+      </label>
+      <p class="faint autosave-note">200 - 20000。日志页只显示这些，再往前的已滚出内存。</p>
+    </form>
+  </section>
+
   <section class="card">
     <div class="card-head"><h2>外观</h2></div>
     <p class="muted">这些只影响当前浏览器，存在本地。</p>
@@ -212,6 +257,51 @@
         监听插件目录变化并自动重载
       </label>
     </form>
+    <hr class="sep" />
+    <form method="post" action="/settings/plugins" class="stack narrow auto-form">
+      <label class="check">
+        <input type="checkbox" name="allow_remote_install" value="1"
+               {{ "checked" if config.plugins.allow_remote_install else "" }} />
+        允许从市场安装远程插件
+      </label>
+      <label>可加载的最高信任级别
+        <select name="max_tier">
+          <option value="core" {{ "selected" if config.plugins.max_tier == "core" else "" }}>core —— 只信随程序分发的</option>
+          <option value="verified" {{ "selected" if config.plugins.max_tier == "verified" else "" }}>verified —— 加上已校验的</option>
+          <option value="any" {{ "selected" if config.plugins.max_tier == "any" else "" }}>any —— 任何来源</option>
+        </select>
+      </label>
+      <p class="faint autosave-note">调高这一项等于让更多代码在进程内运行。</p>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>日志级别</h2><span class="badge accent">{{ config.log.level }}</span></div>
+    <form method="post" action="/settings/log" class="stack narrow auto-form">
+      <label>实时日志级别
+        <select name="level">
+          {% for name in ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"] %}
+          <option value="{{ name }}" {{ "selected" if config.log.level == name else "" }}>{{ name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <p class="faint autosave-note">即时生效。DEBUG 以下会显著增加日志量。</p>
+    </form>
+  </section>
+
+  <section class="card wide-card">
+    <div class="card-head"><h2>数据</h2><span class="sub">{{ config.data_dir }}</span></div>
+    <dl class="kv">
+      <dt>数据目录</dt><dd>{{ config.data_dir }}</dd>
+      <dt>消息后端</dt><dd>{{ config.storage.backend }}</dd>
+      <dt>插件目录</dt><dd>{{ config.plugins.dirs|join(", ") if config.plugins.dirs else "（默认）" }}</dd>
+      <dt>市场地址</dt><dd>{{ config.plugins.market_url }}</dd>
+      <dt>配置文件</dt><dd>qsick.json</dd>
+    </dl>
+    <div class="row-actions" style="margin-top:14px">
+      <a class="btn ghost sm" href="/settings/config.json" download="qsick-config.json">下载脱敏配置</a>
+    </div>
+    <p class="faint" style="margin-top:8px">下载的是脱敏后的配置，口令与 token 已抹去，可以用来备份结构或排查差异。</p>
   </section>
 
   <section class="card">
@@ -231,6 +321,18 @@
 <script>
   (function () {
     var timers = new WeakMap();
+
+    /** 本地的转义函数。
+     *
+     * 这里用不了 app.js 里的那个：它在 IIFE 作用域内，内联脚本够不着。之前直接调用它，
+     * 于是登录记录每次渲染都抛 ReferenceError，被 catch 成"读取失败"，后面的当前会话
+     * 也再没执行到——页面上就永远停在"加载中…"。
+     */
+    function escapeHtml(text) {
+      return String(text == null ? "" : text)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    }
 
     function notify(message, kind) {
       if (typeof window.qsickToast === "function") {
@@ -366,6 +468,26 @@
       }
 
       refresh();
+    }
+
+    var densityPicker = document.getElementById("density-picker");
+    if (densityPicker) {
+      var currentDensity = document.documentElement.dataset.density || "comfortable";
+      function markDensity() {
+        densityPicker.querySelectorAll(".cursor-option").forEach(function (button) {
+          button.classList.toggle("active", button.dataset.density === currentDensity);
+        });
+      }
+      markDensity();
+      densityPicker.addEventListener("click", function (event) {
+        var button = event.target.closest(".cursor-option");
+        if (!button) return;
+        currentDensity = button.dataset.density;
+        document.documentElement.dataset.density = currentDensity;
+        try { localStorage.setItem("qsick.density", currentDensity); } catch (_) {}
+        markDensity();
+        notify(currentDensity === "compact" ? "已切换为紧凑" : "已切换为舒适", "ok");
+      });
     }
 
     // ---- 安全：密码 ----

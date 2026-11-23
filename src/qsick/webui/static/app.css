@@ -105,6 +105,15 @@
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6' fill='none' stroke='%239db0c8' stroke-width='2'/%3E%3C/svg%3E");
 }
 
+/* 永远预留滚动条的位置。
+ *
+ * 不预留的话，内容够高的页面（总览、消息、安全与隐私、高级）出现滚动条，可用宽度少 10px，
+ * 居中元素整体左移 5px —— 表现为"这几页的导航比别的页偏左一点"。实测：无滚动条时
+ * navLeft=296，有滚动条时 291。预留之后两者都是 291，跳变消失。
+ *
+ * 代价是短页右侧留 10px 空隙：比每次切页都横跳一下好。 */
+html { scrollbar-gutter: stable; }
+
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 
@@ -1300,3 +1309,16 @@ body:has(.kick-banner) .shell { padding-bottom: 104px; }
 .kick-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .kick-copy strong { font-size: 12.5px; color: var(--err); }
 .kick-copy span { color: var(--muted); font-size: 11px; }
+
+/* ============================================================== 界面密度 */
+/* 只调间距，不动字号：字号一变，所有按像素画的东西（图表刻度、饼图）都要重新校准，
+   而"一屏多看几行"靠收内边距就够了。 */
+:root[data-density="compact"] .card { padding: 12px 14px; }
+:root[data-density="compact"] .page-head { padding: 18px 2px 12px; }
+:root[data-density="compact"] .stats.tight .stat { padding: 8px 11px; }
+:root[data-density="compact"] .table td,
+:root[data-density="compact"] .table th { padding-top: 5px; padding-bottom: 5px; }
+:root[data-density="compact"] .cache-row { padding: 7px 2px; }
+:root[data-density="compact"] .netline { min-height: calc(150px / 3); }
+:root[data-density="compact"] .cursor-option { padding: 10px 12px; }
+:root[data-density="compact"] .shell { padding-bottom: 26px; }
