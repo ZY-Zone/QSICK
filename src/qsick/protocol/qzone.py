@@ -220,20 +220,27 @@ def feed_ref_of(feed: Any) -> dict[str, Any]:
 
 
 def normalize_feed(raw: Any) -> dict[str, Any]:
-    """Flatten one feed into something a caller can use, keeping the raw object for anything missed.
+    """One feed in NapCat's `native` shape (`QzoneFeedItem`).
 
-    The field names here were read off a live response rather than guessed, because the obvious guesses are all
-    wrong: the author is `cell_user_info.user.uin` / `.nick` (not `cell_user_info.uin`), the text is
-    `cell_summary.summary[].content`, the timestamp is `cell_common.time` (there is no `abstime`), and a like count
-    is `cell_like.num` (not `like_num`).
+    Field names follow `napcat-onebot/action/extends/qzone/common.ts` exactly, because a caller migrating from
+    NapCat reads these keys:
 
-    Nothing here may raise: a feed whose shape changed should come back with empty fields and its raw payload intact
-    rather than take the whole listing down.
+        tid · user_id · content · time · comment_num · like_num · images · feed_ref · feed
+
+    `images` is a list of bare URL strings there, not objects, and `feed` carries the untouched response. Anything
+    a caller might want beyond those lives in `feed` -- that is NapCat's own answer to the same question, and
+    inventing extra top-level keys would make the two disagree.
+
+    The source response does not use these names (its author is `cell_user_info.user.uin`, its timestamp
+    `cell_common.time`, its like count `cell_like.num`, and a picture's address `image.default_url.url`), so the
+    mapping is the whole job here. Getting it wrong does not raise -- it yields nulls -- which is why every name
+    below is pinned by a test.
     """
     if not isinstance(raw, dict):
-        return {"raw": raw}
+        return {"tid": None, "user_id": None, "content": None, "time": None, "comment_num": None,
+                "like_num": None, "images": None, "feed_ref": None, "feed": raw}
     feed = raw.get("feed") if isinstance(raw.get("feed"), dict) else raw
-    feed_id, app_id = _walk_id(feed)
+    feed_id, _app_id = _walk_id(feed)
     common = feed.get("cell_common") if isinstance(feed.get("cell_common"), dict) else {}
     user = (feed.get("cell_user_info") or {}).get("user") if isinstance(feed.get("cell_user_info"), dict) else {}
     if not isinstance(user, dict):
@@ -241,53 +248,44 @@ def normalize_feed(raw: Any) -> dict[str, Any]:
     like = feed.get("cell_like") if isinstance(feed.get("cell_like"), dict) else {}
     comment = feed.get("cell_comment") if isinstance(feed.get("cell_comment"), dict) else {}
 
-    # The body is a list of fragments; joining them is what the post reads as.
     summary = (feed.get("cell_summary") or {}).get("summary") if isinstance(feed.get("cell_summary"), dict) else None
     fragments = summary if isinstance(summary, list) else []
     content = "".join(str(part.get("content") or "") for part in fragments if isinstance(part, dict)).strip()
 
-    images: list[dict[str, Any]] = []
-    media_sources: list[Any] = []
+    urls: list[str] = []
+    sources: list[Any] = []
     media = feed.get("cell_media") if isinstance(feed.get("cell_media"), dict) else {}
-    media_sources.extend(media.get("media_items") or [])
+    sources.extend(media.get("media_items") or [])
     for part in fragments:
         if isinstance(part, dict):
-            media_sources.extend(part.get("media_items") or [])
-    for item in media_sources:
+            sources.extend(part.get("media_items") or [])
+    for item in sources:
         if not isinstance(item, dict):
             continue
         # A media entry carries *either* a picture or a clip, and the absent one is an explicit null rather than a
         # missing key -- so chaining `.get(...)` through it raises. Found by running this against a real feed.
         picture = item.get("image") if isinstance(item.get("image"), dict) else {}
         clip = item.get("video") if isinstance(item.get("video"), dict) else {}
-        # Measured shape: the address is nested one more level, under `default_url`, together with its size.
-        # `image.url` does not exist, which is why an attached picture first looked like no picture at all.
+        # Measured: the address is one level deeper, under `default_url`. `image.url` does not exist, which is why
+        # an attached picture first looked like no picture at all.
         best = picture.get("default_url") if isinstance(picture.get("default_url"), dict) else {}
         if not best:
             best = clip.get("default_url") if isinstance(clip.get("default_url"), dict) else {}
         url = best.get("url") or picture.get("url") or clip.get("url") or ""
-        if not url:
-            continue
-        images.append({
-            "url": url,
-            "width": best.get("width") or picture.get("width") or clip.get("width") or 0,
-            "height": best.get("height") or picture.get("height") or clip.get("height") or 0,
-            "raw": item,
-        })
+        if url:
+            urls.append(url)
 
+    ref = feed_ref_of(feed)
     return {
-        "feed_id": feed_id,
-        "feed_ref": feed_ref_of(feed),
-        "app_id": app_id,
-        "uin": str(user.get("uin") or ""),
-        "nickname": user.get("nick") or user.get("nickname") or "",
-        "content": content,
-        "create_time": _as_int(common.get("time")),
-        "like_count": _as_int(like.get("num")),
-        "comment_count": _as_int(comment.get("num")),
-        "liked": bool(like.get("liked")),
-        "images": images,
-        "raw": raw,
+        "tid": feed_id or None,
+        "user_id": str(user.get("uin") or "") or None,
+        "content": content or None,
+        "time": _as_int(common.get("time")) or None,
+        "comment_num": _as_int(comment.get("num")) or None,
+        "like_num": _as_int(like.get("num")) or None,
+        "images": urls or None,
+        "feed_ref": ref or None,
+        "feed": feed,
     }
 
 
@@ -429,20 +427,40 @@ class QzoneClient:
         results = data.get("results") if isinstance(data, dict) else None
         return (results[0] if results else {}) if isinstance(results, list) else data
 
-    async def friend_feeds(self, *, count: int = 10, pos: int = 0) -> dict[str, Any]:
-        """Friend feed page. The identifiers are harvested so a caller can act on a feed."""
-        data = await self.trpc("friend_feeds", {})
-        return _feed_page(data, count=count)
+    async def friend_feeds(self, *, count: int = 10, cursor: str = "") -> dict[str, Any]:
+        """Friend feed page in NapCat's `native` shape.
 
-    async def shuoshuo_list(self, *, uin: str = "", count: int = 10, pos: int = 0) -> dict[str, Any]:
+        `cursor` is whatever the previous page returned as `next_cursor`; H5 accepts it back as `attach_info`.
+        """
+        body: dict[str, Any] = {}
+        if cursor:
+            body["attach_info"] = cursor
+        data = await self.trpc("friend_feeds", body)
+        return _feed_page(data, count=count, key="feeds")
+
+    async def shuoshuo_list(self, *, uin: str = "", count: int = 10, pos: int = 0,
+                            cursor: str = "") -> dict[str, Any]:
+        """One account's posts. NapCat calls this listing `msglist`, not `feeds`, and so does this."""
         credentials = await self.credentials()
         host = uin or credentials.uin
         # `hostUin`/`uin` both appear in responses; sending both is harmless and covered the one measured shape.
-        data = await self.trpc("shuoshuo_list", {"hostUin": host, "uin": host, "pos": pos, "num": count})
-        return _feed_page(data, count=count)
+        body: dict[str, Any] = {"hostUin": host, "uin": host, "pos": pos, "num": count}
+        if cursor:
+            body["attach_info"] = cursor
+        data = await self.trpc("shuoshuo_list", body)
+        page = _feed_page(data, count=count, key="msglist")
+        seal = data.get("seal_off_memory") if isinstance(data, dict) else None
+        if isinstance(seal, dict):
+            # NapCat passes this through untouched; it says whether the space is sealed.
+            page["seal_off_memory"] = seal
+        return page
 
-    async def feed_detail(self, ref: dict[str, Any]) -> dict[str, Any]:
-        """One feed, by its action handle (`feed_ref`), not by tid."""
+    async def feed_detail(self, ref: dict[str, Any], *, cursor: str = "") -> dict[str, Any]:
+        """One feed plus its comments, in NapCat's `QzoneDetailReturnSchema` shape.
+
+        That schema is the feed item with `comments` / `comment_has_more` / `comment_next_cursor` added, not a
+        `{feed, raw}` pair, so the fields are spread at the top level here too.
+        """
         data = await self.trpc("feed_detail", {
             "union_id": ref.get("union_id"),
             "cell_feed_transfer": ref.get("cell_feed_transfer"),
@@ -451,10 +469,17 @@ class QzoneClient:
         })
         inner = data.get("feed") if isinstance(data.get("feed"), dict) else {}
         feed = inner.get("feed") if isinstance(inner.get("feed"), dict) else inner
-        return {"feed": normalize_feed({"feed": feed}), "raw": data}
+        item = normalize_feed({"feed": feed})
+        cell = feed.get("cell_comment") if isinstance(feed.get("cell_comment"), dict) else {}
+        raw_comments = cell.get("comments") if isinstance(cell.get("comments"), list) else []
+        item["comments"] = [_normalize_comment(entry) for entry in raw_comments]
+        item["comment_has_more"] = bool(data.get("has_more"))
+        attach = str(data.get("attach_info") or "") or None
+        item["comment_next_cursor"] = attach
+        return item
 
     async def comments(self, ref: dict[str, Any], *, attach_info: str = "") -> dict[str, Any]:
-        """Comments under a feed. `attach_info` continues a page."""
+        """Comment page for one feed, in NapCat's `QzoneCommentPage` shape."""
         body: dict[str, Any] = {
             "union_id": ref.get("union_id"),
             "cell_feed_transfer": ref.get("cell_feed_transfer"),
@@ -464,12 +489,17 @@ class QzoneClient:
         data = await self.trpc("comments", body)
         cell = data.get("cell_comment") if isinstance(data.get("cell_comment"), dict) else {}
         items = cell.get("comments") if isinstance(cell.get("comments"), list) else []
-        return {"comments": [_normalize_comment(item) for item in items],
-                "count": _as_int(cell.get("num")),
-                "has_more": bool(data.get("has_more")),
-                "attach_info": str(data.get("attach_info") or ""), "raw": data}
+        return {
+            "feed_ref": ref,
+            "comment_num": _as_int(cell.get("num")) or None,
+            "comments": [comment_item(entry) for entry in items],
+            "has_more": bool(data.get("has_more")),
+            "next_cursor": str(data.get("attach_info") or "") or None,
+            "raw": data,
+        }
 
     async def replies(self, ref: dict[str, Any], comment_id: str, **_: Any) -> dict[str, Any]:
+        """Replies under one comment, in NapCat's `QzoneReplyPage` shape."""
         data = await self.trpc("replies", {
             "union_id": ref.get("union_id"),
             "cell_feed_transfer": ref.get("cell_feed_transfer"),
@@ -477,8 +507,15 @@ class QzoneClient:
         })
         cell = data.get("cell_comment") if isinstance(data.get("cell_comment"), dict) else {}
         items = cell.get("replies") if isinstance(cell.get("replies"), list) else []
-        return {"replies": [_normalize_comment(item) for item in items],
-                "has_more": bool(data.get("has_more")), "raw": data}
+        return {
+            "feed_ref": ref,
+            "comment_id": str(comment_id),
+            "replies": [reply_item(entry) for entry in items],
+            "reply_num": _as_int(cell.get("reply_num") or cell.get("num")) or None,
+            "has_more": bool(data.get("has_more")),
+            "next_cursor": str(data.get("attach_info") or "") or None,
+            "raw": data,
+        }
 
     async def like(self, ref: dict[str, Any], *, remove: bool = False) -> dict[str, Any]:
         """Like or unlike. The like route insists on `like_key`, which only a fresh read of the feed carries."""
@@ -678,8 +715,11 @@ class QzoneClient:
     # ---------------------------------------------------------------- public qzone
     async def public_feeds(self, *, count: int = 10) -> dict[str, Any]:
         data = await self.trpc("public_feeds", {})
-        page = _feed_page(data, count=count)
-        page["available"] = bool(page["feeds"]) or page["total"] > 0
+        page = _feed_page(data, count=count, key="feeds")
+        # `total` only says whether the account is inside the public-qzone whitelist; NapCat does not expose it, so
+        # it is not part of the page shape -- `available` answers the same question in one key.
+        total = _as_int(data.get("total")) if isinstance(data, dict) else 0
+        page["available"] = bool(page["feeds"]) or total > 0
         return page
 
 
@@ -693,38 +733,84 @@ def richval_of(data: dict[str, Any]) -> str:
     return f",{album},{lloc},{lloc},{picture_type},{height},{width},,{height},{width}"
 
 
-def _feed_page(data: Any, *, count: int) -> dict[str, Any]:
+def _feed_page(data: Any, *, count: int, key: str = "feeds") -> dict[str, Any]:
+    """A page in NapCat's `native` wrapper: `{feeds | msglist, has_more, next_cursor}`."""
     if not isinstance(data, dict):
-        return {"feeds": [], "raw": data}
+        return {key: [], "has_more": False, "next_cursor": None}
     feeds = data.get("feeds") if isinstance(data.get("feeds"), list) else []
-    normalized = [normalize_feed(item) for item in feeds]
+    if count:
+        feeds = feeds[:count]
     return {
-        "feeds": normalized[:count] if count else normalized,
-        "total": _as_int(data.get("total")),
+        key: [normalize_feed(item) for item in feeds],
         "has_more": bool(data.get("has_more")),
-        "attach_info": data.get("attach_info") or "",
-        "raw": data,
+        # NapCat issues its own opaque cursor; the value H5 hands back is the same kind of thing, so it is passed
+        # through rather than re-encoded. A cursor is only meaningful for the same account and listing.
+        "next_cursor": str(data.get("attach_info") or "") or None,
     }
+
+
+def comment_item(item: Any) -> dict[str, Any]:
+    """A comment in NapCat's `QzoneCommentItem` shape -- the one `get_qzone_comment_list` returns.
+
+    Note this is a *different* shape from the `comments` inside a detail response, which NapCat leaves raw
+    (`{id, user, content[]}`). Both exist because the two actions answer different questions, and a caller reading
+    one gets what it expects from that action rather than a compromise.
+    """
+    raw = item if isinstance(item, dict) else {}
+    user = raw.get("user") if isinstance(raw.get("user"), dict) else {}
+    body = raw.get("content")
+    if isinstance(body, list):
+        text = "".join(str(part.get("content") or "") for part in body if isinstance(part, dict))
+    else:
+        text = str(body or "")
+    like = raw.get("like") if isinstance(raw.get("like"), dict) else {}
+    replies = raw.get("replys") if isinstance(raw.get("replys"), list) else []
+    images: list[str] = []
+    for media in raw.get("media_items") or []:
+        if isinstance(media, dict) and isinstance(media.get("url"), str) and media["url"]:
+            images.append(media["url"])
+    return {
+        "comment_id": str(raw.get("id") or raw.get("commentid") or "") or None,
+        "user_id": str(user.get("uin") or "") or None,
+        "uid": str(user.get("uid") or "") or None,
+        "nickname": user.get("nick") or user.get("nickname") or None,
+        "time": _as_int(raw.get("time")) or None,
+        "content": text or None,
+        "images": images or None,
+        "like_count": _as_int(like.get("count")) or None,
+        "liked": bool(like.get("status")) if like else None,
+        "reply_num": _as_int(raw.get("reply_num")) or None,
+        "has_more_replies": bool(raw.get("has_more_reply")) if raw.get("has_more_reply") is not None else None,
+        "replies": [reply_item(entry) for entry in replies],
+        "comment": raw,
+    }
+
+
+def reply_item(item: Any) -> dict[str, Any]:
+    """A reply in NapCat's `QzoneReplyItem` shape: the comment fields plus who it answers."""
+    raw = item if isinstance(item, dict) else {}
+    made = comment_item(raw)
+    target = raw.get("target") if isinstance(raw.get("target"), dict) else {}
+    if not target:
+        target = raw.get("reply_user") if isinstance(raw.get("reply_user"), dict) else {}
+    made["reply_id"] = made.pop("comment_id")
+    made["target_user_id"] = str(target.get("uin") or "") or None
+    made["target_uid"] = str(target.get("uid") or "") or None
+    made["target_nickname"] = target.get("nick") or target.get("nickname") or None
+    made["reply"] = raw
+    return made
 
 
 def _normalize_comment(item: Any) -> dict[str, Any]:
-    """One comment, flattened. Field names read off a live response: `id`, `user.nick`, and a content *list*."""
+    """One comment, in NapCat's `QzoneCommentSchema` shape: `id` / `user` / `content`, everything else kept.
+
+    `content` stays the rich segment list it arrives as -- flat-tening it to a string would lose the structure
+    NapCat hands back, and a caller that wants the text can join it.
+    """
     if not isinstance(item, dict):
         return {"raw": item}
-    user = item.get("user") if isinstance(item.get("user"), dict) else {}
-    raw_content = item.get("content")
-    if isinstance(raw_content, list):
-        # The body arrives as rich segments; joining them is what the comment reads as.
-        content = "".join(str(part.get("content") or "") for part in raw_content if isinstance(part, dict))
-    else:
-        content = str(raw_content or "")
-    return {
-        "comment_id": str(item.get("id") or item.get("commentid") or ""),
-        "uin": str(user.get("uin") or item.get("uin") or ""),
-        "nickname": user.get("nick") or user.get("nickname") or "",
-        "content": content.strip(),
-        "create_time": _as_int(item.get("time") or item.get("create_time")),
-        "reply_count": _as_int(item.get("reply_num")),
-        "user": user,
-        "raw": item,
-    }
+    out = dict(item)
+    out["id"] = item.get("id") or item.get("commentid") or ""
+    return out
+
+

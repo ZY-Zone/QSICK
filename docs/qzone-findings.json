@@ -167,5 +167,33 @@
     "upload_root": "https://up.qzone.qq.com/cgi-bin/upload/cgi_upload_image  (answers in jsonhtml, not jsonp)",
     "upload_without_skey": "works -- the session exposes no skey getter, and the upload took p_skey alone",
     "publish_tid": "at the top level of the answer; `data` is null"
+  },
+  "format_alignment": {
+    "status": "input parameters align; output shapes now align with NapCat's `native` format",
+    "was": "the first implementation used names that matched neither of NapCat's two formats (`feed_id`/`uin`/`create_time`/`like_count`/`images` as objects), so a caller migrating from NapCat would have read nothing",
+    "native_item_keys": [
+      "tid",
+      "user_id",
+      "content",
+      "time",
+      "comment_num",
+      "like_num",
+      "images (string[])",
+      "feed_ref",
+      "feed (raw)"
+    ],
+    "native_pages": {
+      "get_qzone_feeds": "{feeds, has_more, next_cursor}",
+      "get_qzone_msg_list": "{msglist, has_more, next_cursor, seal_off_memory?}",
+      "get_qzone_msg_detail": "FeedItem + {comments (raw), comment_has_more, comment_next_cursor}",
+      "get_qzone_comment_list": "{feed_ref, comment_num, comments (QzoneCommentItem), has_more, next_cursor, raw}",
+      "get_qzone_comment_replies": "{feed_ref, comment_id, replies (QzoneReplyItem), reply_num, has_more, next_cursor, raw}"
+    },
+    "two_comment_shapes": "NapCat deliberately has two: `comments` inside a detail are raw (`{id, user, content[]}`), while `get_qzone_comment_list` returns normalized `QzoneCommentItem` (`comment_id`/`user_id`/`nickname`/`content` as text/`like_count`/`replies`/`comment`). Both are implemented.",
+    "format_parameter": "`format` accepted on the list/detail actions. `native` is implemented; `snowluma` answers NOT_IMPLEMENTED with that reason -- NapCat's default is snowluma, which reads `ic2.qzone.qq.com/cgi-bin/feeds/feeds3_html_more` and parses HTML, and that route is still missing here.",
+    "remaining_gap": {
+      "snowluma": "not implemented: feed list via feeds3_html_more HTML, its stateful cursor (page positions), and the SnowLuma return schemas SlQzoneFeedSchema / SlQzoneMsgListReturnSchema / SlQzoneCommentSchema. NapCat defaults to it, so a caller relying on the default gets an explicit error rather than native data in disguise.",
+      "cursor_binding": "NapCat issues opaque account-bound cursors with a TTL; this passes H5's `attach_info` through as `next_cursor`. Same use, weaker guarantees."
+    }
   }
 }

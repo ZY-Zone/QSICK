@@ -1831,6 +1831,13 @@
           "required": false,
           "default": null,
           "desc": "条数，默认 20"
+        },
+        {
+          "name": "cursor",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "上一页的 next_cursor"
         }
       ],
       "op": "get_qzone_comment_list"
@@ -1939,6 +1946,13 @@
       "read_only": true,
       "params": [
         {
+          "name": "format",
+          "kind": "str",
+          "required": false,
+          "default": "native",
+          "desc": "native 已实现；snowluma（feeds3_html_more + HTML 解析）尚未实现"
+        },
+        {
           "name": "count",
           "kind": "int",
           "required": false,
@@ -1951,6 +1965,13 @@
           "required": false,
           "default": null,
           "desc": "页码，从 0 开始"
+        },
+        {
+          "name": "cursor",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "上一页的 next_cursor"
         }
       ],
       "op": "get_qzone_feeds"
@@ -1998,6 +2019,13 @@
       "read_only": true,
       "params": [
         {
+          "name": "format",
+          "kind": "str",
+          "required": false,
+          "default": "native",
+          "desc": "native 已实现；snowluma（feeds3_html_more + HTML 解析）尚未实现"
+        },
+        {
           "name": "tid",
           "kind": "str",
           "required": false,
@@ -2024,6 +2052,13 @@
           "required": false,
           "default": null,
           "desc": "说说的 appid，列表里带回来的"
+        },
+        {
+          "name": "cursor",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "上一页的 next_cursor"
         }
       ],
       "op": "get_qzone_msg_detail"
@@ -2037,6 +2072,13 @@
       "status": "implemented",
       "read_only": true,
       "params": [
+        {
+          "name": "format",
+          "kind": "str",
+          "required": false,
+          "default": "native",
+          "desc": "native 已实现；snowluma（feeds3_html_more + HTML 解析）尚未实现"
+        },
         {
           "name": "target_uin",
           "kind": "str",
@@ -2057,6 +2099,13 @@
           "required": false,
           "default": null,
           "desc": ""
+        },
+        {
+          "name": "cursor",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "上一页的 next_cursor"
         }
       ],
       "op": "get_qzone_msg_list"

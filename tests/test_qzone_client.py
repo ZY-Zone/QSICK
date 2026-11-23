@@ -50,32 +50,40 @@ def a_feed() -> dict:
 
 
 class TestShape:
-    def test_the_author_and_time_come_from_the_places_they_actually_live(self):
+    """The keys a caller sees, which are NapCat's `native` names -- not the response's own names."""
+
+    def test_the_item_carries_exactly_the_schema_keys(self):
         feed = qzone.normalize_feed(a_feed())
-        assert feed["uin"] == "1927676487"
-        assert feed["nickname"] == "。"
-        assert feed["create_time"] == 1795368979
+        assert set(feed) == {"tid", "user_id", "content", "time", "comment_num", "like_num",
+                             "images", "feed_ref", "feed"}
+
+    def test_the_author_is_user_id(self):
+        feed = qzone.normalize_feed(a_feed())
+        assert feed["user_id"] == "1927676487"
+
+    def test_the_time_is_common_time(self):
+        assert qzone.normalize_feed(a_feed())["time"] == 1795368979
 
     def test_the_body_is_the_joined_fragments(self):
         # The summary is a list of rich segments, not a string.
         assert qzone.normalize_feed(a_feed())["content"] == "test。"
 
-    def test_counts_come_from_num(self):
+    def test_the_counts_are_comment_num_and_like_num(self):
         feed = qzone.normalize_feed(a_feed())
-        assert feed["like_count"] == 52
-        assert feed["liked"] is True
-        assert feed["comment_count"] == 19
+        assert feed["like_num"] == 52
+        assert feed["comment_num"] == 19
 
-    def test_a_picture_url_is_nested_under_default_url(self):
+    def test_images_are_bare_urls(self):
+        # NapCat's schema is `string[]`, not objects.
         images = qzone.normalize_feed(a_feed())["images"]
-        assert len(images) == 1, "an entry with no image must not become an empty picture"
-        assert images[0]["url"] == "https://m.qpic.cn/pic"
-        assert (images[0]["width"], images[0]["height"]) == (240, 240)
+        assert images == ["https://m.qpic.cn/pic"]
 
-    def test_the_feed_id_is_found_one_level_down(self):
-        feed = qzone.normalize_feed(a_feed())
-        assert feed["feed_id"] == "4702e6721328036b35b90100"
-        assert feed["app_id"]
+    def test_the_feed_id_surfaces_as_tid(self):
+        assert qzone.normalize_feed(a_feed())["tid"] == "4702e6721328036b35b90100"
+
+    def test_the_raw_feed_is_kept_untouched(self):
+        raw = a_feed()
+        assert qzone.normalize_feed(raw)["feed"] is raw["feed"]
 
     def test_the_action_handle_is_exposed(self):
         # Writes and detail need this, not the tid: a bare tid is refused with retcode 10023.
@@ -84,13 +92,62 @@ class TestShape:
         assert ref["like_key"] == "like-key-1"
         assert ref["feed_action_domain_type"] == 1
 
-    def test_a_feed_without_a_union_id_yields_no_handle(self):
+    def test_a_feed_without_a_union_id_reports_no_handle(self):
         bare = {"feed": {"cell_common": {"time": 1}}}
-        assert qzone.normalize_feed(bare)["feed_ref"] == {}
+        assert qzone.normalize_feed(bare)["feed_ref"] is None
+
+    def test_unknown_values_are_null_rather_than_absent(self):
+        # NapCat's schema is all-nullable; a missing key and a null mean different things to a caller.
+        feed = qzone.normalize_feed({"feed": {"cell_common": {"time": 0}}})
+        assert feed["tid"] is None and feed["content"] is None and feed["images"] is None
 
     def test_a_broken_feed_does_not_raise(self):
-        assert qzone.normalize_feed(None) == {"raw": None}
-        assert qzone.normalize_feed({"feed": {"cell_media": {"media_items": [None, 3]}}})["images"] == []
+        assert qzone.normalize_feed(None)["feed"] is None
+        assert qzone.normalize_feed({"feed": {"cell_media": {"media_items": [None, 3]}}})["images"] is None
+
+
+class TestWrappers:
+    def test_a_friend_feed_page_speaks_next_cursor(self):
+        page = qzone._feed_page({"feeds": [a_feed()], "has_more": True, "attach_info": "abc"}, count=10)
+        assert set(page) == {"feeds", "has_more", "next_cursor"}
+        assert page["next_cursor"] == "abc"
+
+    def test_a_msg_list_page_is_named_msglist(self):
+        page = qzone._feed_page({"feeds": [a_feed()]}, count=10, key="msglist")
+        assert set(page) == {"msglist", "has_more", "next_cursor"}
+
+    def test_an_empty_page_still_names_its_list(self):
+        page = qzone._feed_page(None, count=10, key="msglist")
+        assert page == {"msglist": [], "has_more": False, "next_cursor": None}
+
+    def test_a_comment_inside_a_detail_stays_raw(self):
+        # The detail action's `comments` are raw in NapCat (`QzoneComment`), not normalized.
+        comment = {"id": "5", "user": {"uin": 1}, "content": [{"content": "hi"}], "time": "9"}
+        made = qzone._normalize_comment(comment)
+        assert made["id"] == "5"
+        assert made["content"] == [{"content": "hi"}]
+        assert made["time"] == "9"
+
+    def test_a_comment_listing_uses_the_item_shape(self):
+        # `get_qzone_comment_list` returns `QzoneCommentItem`, which flattens content and keeps the raw object.
+        comment = {"id": "5", "user": {"uin": 7, "nick": "n"}, "content": [{"content": "a"}, {"content": "b"}],
+                   "time": "9", "like": {"count": 3, "status": 1}, "reply_num": "2"}
+        made = qzone.comment_item(comment)
+        assert set(made) == {"comment_id", "user_id", "uid", "nickname", "time", "content", "images",
+                             "like_count", "liked", "reply_num", "has_more_replies", "replies", "comment"}
+        assert made["content"] == "ab"
+        assert made["user_id"] == "7"
+        assert made["like_count"] == 3 and made["liked"] is True
+        assert made["comment"] is comment
+
+    def test_a_reply_adds_who_it_answers(self):
+        reply = {"id": "9", "user": {"uin": 1}, "content": [{"content": "x"}],
+                 "target": {"uin": 2, "nick": "target"}}
+        made = qzone.reply_item(reply)
+        assert made["reply_id"] == "9"
+        assert made["target_user_id"] == "2"
+        assert made["target_nickname"] == "target"
+        assert "comment_id" not in made
 
 
 class TestTransports:

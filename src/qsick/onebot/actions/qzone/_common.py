@@ -69,6 +69,23 @@ class QzoneAction(Action):
         raise NotImplementedError
 
 
+async def _recent_feeds(qzone: QzoneClient) -> list[dict[str, Any]]:
+    """Both listings we can read, flattened.
+
+    A caller that only has a tid has to be looked up, and the post may be in either list -- the friend feed
+    (`feeds`) or this account's own posts (`msglist`). Reading both is what makes a `tid`-only call work at all.
+    """
+    found: list[dict[str, Any]] = []
+    for read in (lambda: qzone.friend_feeds(count=20), lambda: qzone.shuoshuo_list(count=20)):
+        try:
+            page = await read()
+        except QzoneError:
+            continue
+        for key in ("feeds", "msglist"):
+            found.extend(entry for entry in (page.get(key) or []) if isinstance(entry, dict))
+    return found
+
+
 async def find_feed(ctx: Any, params: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """The `feed_ref` plus the normalised feed itself.
 
@@ -89,16 +106,9 @@ async def find_feed(ctx: Any, params: dict[str, Any]) -> tuple[dict[str, Any], d
     if not tid:
         raise ActionError("qzone: pass `feed_ref` (from a listing) or a `tid` the listings still have",
                           models.BAD_REQUEST)
-    qzone = client(ctx)
-    pages = [await qzone.friend_feeds(count=20)]
-    try:
-        pages.append(await qzone.shuoshuo_list(count=20))
-    except QzoneError:
-        pass
-    for page in pages:
-        for feed in page.get("feeds") or []:
-            if feed.get("feed_id") == tid and isinstance(feed.get("feed_ref"), dict) and feed["feed_ref"]:
-                return feed["feed_ref"], feed
+    for feed in await _recent_feeds(client(ctx)):
+        if feed.get("tid") == tid and isinstance(feed.get("feed_ref"), dict) and feed["feed_ref"]:
+            return feed["feed_ref"], feed
     raise ActionError(
         f"qzone: no handle for tid {tid} in the recent listings; read the feed again and pass its `feed_ref`",
         models.NOT_FOUND)
@@ -120,16 +130,9 @@ async def resolve_ref(ctx: Any, params: dict[str, Any]) -> dict[str, Any]:
     if not tid:
         raise ActionError("qzone: pass `feed_ref` (from a listing) or a `tid` that a listing still has",
                           models.BAD_REQUEST)
-    qzone = client(ctx)
-    pages = [await qzone.friend_feeds(count=20)]
-    try:
-        pages.append(await qzone.shuoshuo_list(count=20))
-    except QzoneError:
-        pass
-    for page in pages:
-        for feed in page.get("feeds") or []:
-            if feed.get("feed_id") == tid and isinstance(feed.get("feed_ref"), dict) and feed["feed_ref"]:
-                return feed["feed_ref"]
+    for feed in await _recent_feeds(client(ctx)):
+        if feed.get("tid") == tid and isinstance(feed.get("feed_ref"), dict) and feed["feed_ref"]:
+            return feed["feed_ref"]
     raise ActionError(
         f"qzone: no handle for tid {tid} in the recent listings; read the feed again and pass its `feed_ref`",
         models.NOT_FOUND)
