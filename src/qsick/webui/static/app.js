@@ -505,7 +505,7 @@
       });
     });
     slices.push({ label: "其他", value: Number(memory.other || 0), color: "--faint" });
-    slices.push({ label: "空闲", value: Number(memory.available || 0), color: "--line" });
+    slices.push({ label: "空闲", value: Number(memory.available || 0), color: "--pie-free" });
 
     var usable = slices.filter(function (slice) { return slice.value > 0; });
     var centre = 90, radius = 74, thickness = 26;
@@ -846,11 +846,88 @@
     }, true);
   }
 
+  // ------------------------------------------------------------- theme & chrome
+  //
+  // 主题、光标、减少动效都存在 localStorage，并且由 base.html 里的一小段内联脚本
+  // 在首帧**之前**应用。这里只负责三件事：系统主题变化时跟随、设置页切换时生效、
+  // 以及首次引导条的显示。
+
+  /** 把 localStorage 里的选择应用到 <html> 上。
+   *
+   * 内联脚本已经做过一次（避免闪白），这里是可重复调用的版本：设置页切换主题时
+   * 直接调用它，不需要刷新。
+   */
+  function applyTheme() {
+    var choice = "system";
+    try { choice = localStorage.getItem("qsick.theme") || "system"; } catch (_) {}
+    var dark = choice === "dark" ||
+      (choice === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    document.documentElement.dataset.themeChoice = choice;
+  }
+  window.qsickApplyTheme = applyTheme;
+
+  function initSystemTheme() {
+    // 只在"跟随系统"时响应系统切换。选了明确的浅色/深色就该固定住，
+    // 否则用户的选择会被操作系统的日落切换悄悄推翻。
+    var media = window.matchMedia("(prefers-color-scheme: dark)");
+    var listener = function () {
+      if (document.documentElement.dataset.themeChoice === "system") applyTheme();
+    };
+    if (media.addEventListener) media.addEventListener("change", listener);
+    else if (media.addListener) media.addListener(listener);
+    // 设置页可能在别的标签页改过偏好
+    window.addEventListener("storage", function (event) {
+      if (event.key === "qsick.theme" || event.key === null) applyTheme();
+    });
+  }
+
+  function initSetupBanner() {
+    var banner = document.getElementById("setup-banner");
+    if (!banner) return;
+    // 模板按 cookie 决定要不要渲染；这里控制"这一刻是否显示"。
+    // 默认 hidden 而不是默认显示：脚本没跑起来时不该一直挡着内容。
+    banner.hidden = false;
+
+    var dismiss = document.getElementById("setup-dismiss");
+    if (!dismiss) return;
+    dismiss.addEventListener("click", function () {
+      banner.hidden = true;
+      fetch("/api/security/setup-dismissed", { method: "POST" }).catch(function () {});
+    });
+  }
+
+  /** 点当前所在的那一项，不刷新。
+   *
+   * 导航与二级导航里，当前页对应的链接是 `.active`。点它没有任何新东西可看，却会整页重载：
+   * 日志页的滚动位置、日志缓冲、图表的采样历史全部回到起点。跳过它比"刷新一下也没坏处"更对——
+   * 排查问题时最常做的动作就是不假思索地点一下当前页。
+   *
+   * 只拦纯左键、没有修饰键的点击：Ctrl+点击、中键新开标签页这些是用户明确要"再来一份"，
+   * 拦下来反而破坏了浏览器的常规行为。
+   */
+  function initNavNoop() {
+    document.addEventListener("click", function (event) {
+      if (event.defaultPrevented) return;
+      if (event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      var link = event.target.closest ? event.target.closest("a") : null;
+      if (!link) return;
+      // 只管家里的两个导航条，别把正文里的普通链接也管住。
+      if (!link.closest(".nav") && !link.closest(".subnav")) return;
+      if (!link.classList.contains("active")) return;
+      event.preventDefault();
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
+    initNavNoop();
     initLogs();
     initActions();
     initStatusFallback();
     initCharts();
     initSelectMenus();
+    initSystemTheme();
+    initSetupBanner();
   });
 })();

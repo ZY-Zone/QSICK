@@ -163,11 +163,13 @@ def test_the_footer_shows_the_kick_rather_than_a_bare_logged_out():
                                        kick_reason="登录被安全策略强制下线"), page="")
     assert "已被踢下线" in kicked
     assert "登录被安全策略强制下线" in kicked
-    assert "is-kicked" in kicked
+    # 横幅而不是页脚：它需要一个动作，页脚只能放一行灰字。
+    assert "kick-banner" in kicked
+    assert "/accounts" in kicked
 
     plain = template.render(info=dict(base_info, kicked=False, kick_reason=""), page="")
-    assert "未登录" in plain and "已被踢下线" not in plain
-    assert "is-kicked" not in plain
+    assert "已被踢下线" not in plain
+    assert "kick-banner" not in plain
 
     # The old top-bar pill is gone; nothing may put it back.
     assert 'class="pill' not in kicked and 'class="pill' not in plain

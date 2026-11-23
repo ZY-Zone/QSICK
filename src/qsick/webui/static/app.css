@@ -1,21 +1,42 @@
-/* QSICK console — sky blue on white, hairline geometry, no decoration. */
+/* QSICK console — 冷蓝为底，毛玻璃分层，圆角与轻微回弹。
+   一条规则贯穿全篇：颜色的深浅由变量决定，任何组件都不写死具体色值，
+   深色模式才可能只换变量就成立。 */
 :root {
-  color-scheme: light;
-  --bg: #f7fbff;
-  --panel: #ffffff;
-  --panel-2: #f3f9ff;
-  --line: #dbeafe;
-  --line-strong: #bfdbfe;
-  --text: #0f172a;
-  --muted: #5b6b82;
-  --faint: #8ba3ba;
+  color-scheme: light dark;
+  --bg: #f2f8ff;
+  --bg-tint-a: #dbeafe;
+  --bg-tint-b: #e0f2fe;
+  --panel: rgba(255, 255, 255, .78);
+  --panel-solid: #ffffff;
+  --panel-2: rgba(243, 249, 255, .82);
+  --glass: rgba(255, 255, 255, .62);
+  --glass-strong: rgba(255, 255, 255, .86);
+  /* 导航栏专用：60% 透明（不透明度 0.40）。比 --glass-strong 透得多，
+     所以模糊半径也跟着加大——透明度和模糊必须一起调，只加透明度会变成"看不清"。 */
+  --glass-nav: rgba(255, 255, 255, .40);
+  --line: rgba(148, 180, 214, .34);
+  --line-strong: rgba(96, 150, 200, .46);
+  --text: #0d1a2b;
+  --muted: #55677f;
+  --faint: #8496ac;
   --sky: #0ea5e9;
   --sky-strong: #0284c7;
-  --sky-soft: #e0f2fe;
+  --sky-soft: rgba(224, 242, 254, .8);
   --ok: #0f9f6e;
   --warn: #b45309;
   --err: #dc2626;
-  --radius: 10px;
+  --shadow-sm: 0 1px 2px rgba(15, 40, 70, .05), 0 4px 14px rgba(15, 40, 70, .05);
+  --shadow-md: 0 2px 6px rgba(15, 40, 70, .07), 0 14px 38px rgba(15, 40, 70, .09);
+  --shadow-lg: 0 8px 24px rgba(15, 40, 70, .10), 0 30px 70px rgba(15, 40, 70, .12);
+  /* 圆角分三档而不是一个值：小控件圆太多会显得软塌，大面板圆太少又像没做完。 */
+  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  /* 回弹曲线：起步快、收尾过一点再回来，这是"果冻感"的来源。
+     纯 ease-out 只会减速，不会显得有弹性。 */
+  --ease-jelly: cubic-bezier(.34, 1.56, .64, 1);
+  --ease-out: cubic-bezier(.22, .61, .36, 1);
+  --dur: .22s;
   /* 图表用的辅助色：账号分段和饼图切片要能互相区分，但都得留在同一
      个冷色调里，否则一块鲜艳的图会盖过整页的信息。 */
   --violet: #8b5cf6;
@@ -25,15 +46,98 @@
   --mono: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
 }
 
+/* 深色：只换变量，不改任何组件规则。
+   `[data-theme]` 由首帧脚本写在 <html> 上，所以不会先闪一下白底。 */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #070d16;
+  --bg-tint-a: #0b2033;
+  --bg-tint-b: #0a1a2b;
+  --panel: rgba(19, 30, 45, .72);
+  --panel-solid: #121d2b;
+  --panel-2: rgba(24, 37, 55, .78);
+  --glass: rgba(18, 29, 43, .58);
+  --glass-strong: rgba(22, 34, 50, .88);
+  --glass-nav: rgba(16, 27, 41, .40);
+  --line: rgba(120, 160, 205, .18);
+  --line-strong: rgba(130, 175, 225, .32);
+  --text: #e6eefb;
+  --muted: #9db0c8;
+  --faint: #6d829c;
+  --sky: #38bdf8;
+  --sky-strong: #7dd3fc;
+  --sky-soft: rgba(56, 189, 248, .16);
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --err: #f87171;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .35), 0 4px 14px rgba(0, 0, 0, .3);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, .4), 0 14px 38px rgba(0, 0, 0, .42);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, .48), 0 30px 70px rgba(0, 0, 0, .5);
+}
+
+
+/* 语义色的浅底与描边。原来每处都手写十六进制，深色模式下这些浅色块会亮得刺眼，
+   所以统一改成"主色 + 透明度"，由主色变量决定深浅。 */
+:root {
+  --ok-soft: rgba(15, 159, 110, .10);
+  --ok-line: rgba(15, 159, 110, .38);
+  --warn-soft: rgba(180, 83, 9, .10);
+  --warn-line: rgba(180, 83, 9, .34);
+  --err-soft: rgba(220, 38, 38, .09);
+  --err-line: rgba(220, 38, 38, .34);
+  --neutral-soft: rgba(148, 163, 184, .18);
+  --neutral-line: rgba(148, 163, 184, .42);
+  /* 饼图"空闲"片：它是"没被用掉的部分"，该浅而不是该深。
+     直接复用 --line 在深色模式下会变成一条几乎看不见的黑，看着像数据缺失。 */
+  --pie-free: #cfdff0;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6' fill='none' stroke='%2364758b' stroke-width='2'/%3E%3C/svg%3E");
+}
+:root[data-theme="dark"] {
+  --ok-soft: rgba(52, 211, 153, .14);
+  --ok-line: rgba(52, 211, 153, .34);
+  --warn-soft: rgba(251, 191, 36, .14);
+  --warn-line: rgba(251, 191, 36, .32);
+  --err-soft: rgba(248, 113, 113, .14);
+  --err-line: rgba(248, 113, 113, .34);
+  --neutral-soft: rgba(148, 163, 184, .16);
+  --neutral-line: rgba(148, 163, 184, .34);
+  --pie-free: #2a3d55;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6' fill='none' stroke='%239db0c8' stroke-width='2'/%3E%3C/svg%3E");
+}
+
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 
 body {
   margin: 0;
-  background: var(--bg);
   color: var(--text);
   font: 13.5px/1.65 -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
   -webkit-font-smoothing: antialiased;
+  min-height: 100%;
+  /* 两团柔光而不是纯色底：毛玻璃要有东西可"糊"，铺在纯色上等于没开。 */
+  background:
+    radial-gradient(1100px 620px at 12% -8%, var(--bg-tint-b) 0%, transparent 62%),
+    radial-gradient(900px 560px at 92% 4%, var(--bg-tint-a) 0%, transparent 58%),
+    var(--bg);
+  background-attachment: fixed;
+  transition: background-color var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+}
+
+/* 深浅切换平滑过渡：颜色突变会让整页闪一下，比没有过渡更刺眼。 */
+* { transition: background-color .28s var(--ease-out), border-color .28s var(--ease-out),
+                color .18s var(--ease-out), box-shadow .28s var(--ease-out); }
+
+/* 系统级「减少动态效果」偏好：这是操作系统的无障碍设置，不是本程序的选项，
+   所以它留在 CSS 里而没有对应的开关。用户在系统里关掉动画，这边就跟着关。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+:root[data-motion="reduce"] *,
+:root[data-motion="reduce"] *::before,
+:root[data-motion="reduce"] *::after {
+  transition-duration: .01ms !important;
+  animation-duration: .01ms !important;
+  transform: none !important;
 }
 
 a { color: var(--sky-strong); text-decoration: none; }
@@ -41,9 +145,12 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 code, pre, .mono { font-family: var(--mono); }
 ::selection { background: var(--sky-soft); }
 
-::-webkit-scrollbar { width: 9px; height: 9px; }
-::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 9px; }
-::-webkit-scrollbar-thumb:hover { background: #93c5fd; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong); border-radius: 999px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--sky); background-clip: content-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 
 .shell { max-width: 1440px; margin: 0 auto; padding: 0 22px 36px; }
@@ -52,9 +159,16 @@ code, pre, .mono { font-family: var(--mono); }
 .topbar {
   position: sticky; top: 0; z-index: 40;
   display: flex; align-items: center; gap: 22px;
-  padding: 12px 22px;
-  background: var(--panel);
+  padding: 11px 22px;
+  /* 半透明 + 模糊：滚动时下面的内容会从顶栏底下透出来，这是"玻璃"和"白条"的区别。
+     saturate 让透过来的颜色不发灰，否则深色模式下顶栏会显得脏。 */
+  background: var(--glass-nav);
+  /* 模糊半径比透明度更关键：0.70 的不透明度配 22px 模糊才看得出"玻璃"，
+     配 8px 就只是"一层浅色膜"。saturate 让透上来的颜色不发灰。 */
+  backdrop-filter: blur(28px) saturate(185%);
+  -webkit-backdrop-filter: blur(28px) saturate(185%);
   border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .45) inset, 0 8px 26px rgba(15, 40, 70, .05);
 }
 
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -67,17 +181,40 @@ code, pre, .mono { font-family: var(--mono); }
 .brand strong { display: block; font-size: 13.5px; letter-spacing: 0.2px; }
 .brand small { color: var(--faint); font-size: 11px; }
 
-.nav { display: flex; gap: 2px; flex: 1; overflow-x: auto; scrollbar-width: none; }
+.nav { display: flex; gap: 3px; flex: 1; overflow-x: auto; scrollbar-width: none; }
 .nav::-webkit-scrollbar { display: none; }
 .nav a {
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 8px 10px; color: var(--muted); font-size: 13px; white-space: nowrap;
-  border-bottom: 2px solid transparent;
+  padding: 7px 12px; color: var(--muted); font-size: 13px; white-space: nowrap;
+  border-radius: 999px;
+  transition: color var(--dur) var(--ease-out), background-color var(--dur) var(--ease-out),
+              transform var(--dur) var(--ease-jelly), box-shadow var(--dur) var(--ease-out);
 }
-.nav a svg { width: 14px; height: 14px; opacity: 0.75; }
-.nav a:hover { color: var(--sky-strong); background: transparent; text-decoration: none; }
-.nav a.active { color: var(--sky-strong); border-bottom-color: var(--sky); }
+.nav a svg { width: 14px; height: 14px; opacity: .75; transition: opacity var(--dur) var(--ease-out); }
+.nav a:hover {
+  color: var(--sky-strong); background: var(--sky-soft); text-decoration: none;
+  /* 悬停时轻微上浮再弹回：位移小（1px）但曲线带回弹，才像"果冻"而不是"移动"。 */
+  transform: translateY(-1px);
+}
+.nav a:active { transform: translateY(0) scale(.97); }
+.nav a.active {
+  color: var(--sky-strong); background: var(--sky-soft);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .6) inset, 0 4px 14px rgba(14, 165, 233, .16);
+  font-weight: 600;
+}
 .nav a.active svg { opacity: 1; }
+
+/* 主导航居中：绝对定位到视口中线。
+   用 flex:1 两端分配会让"居中"随两侧内容宽度漂移，那只是近似。 */
+.topbar { position: sticky; }
+.topbar .nav-center {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  flex: none; max-width: min(72vw, 900px);
+}
+@media (max-width: 1120px) {
+  /* 窄屏放不下就退回正常流：居中的绝对定位会盖住品牌与右侧按钮。 */
+  .topbar .nav-center { position: static; transform: none; flex: 1; max-width: none; }
+}
 
 .topbar .right { display: flex; align-items: center; gap: 8px; }
 
@@ -93,10 +230,10 @@ code, pre, .mono { font-family: var(--mono); }
 .dot.warn { background: var(--warn); }
 /* 被踢：红色圆点 + 红色描边，和"未登录"（灰）区分开。 */
 .dot.err { background: var(--err); }
-.pill.is-kicked { border-color: #fecaca; background: #fff1f2; color: #b42318; }
+.pill.is-kicked { border-color: var(--err-line); background: var(--err-soft); color: var(--err); }
 /* 被踢状态在页脚也要看得出来：顶栏那个状态控件删掉后，这里是唯一常驻的位置，
    而红色正是需要处理与只是还没登录的区别。 */
-.foot-account.is-kicked { color: #b42318; font-weight: 600; }
+.foot-account.is-kicked { color: var(--err); font-weight: 600; }
 
 .iconbtn {
   display: grid; place-items: center; width: 32px; height: 32px;
@@ -122,10 +259,27 @@ code, pre, .mono { font-family: var(--mono); }
 
 .card {
   background: var(--panel);
+  /* 半透明白 + 模糊。最上面那道 1px 内阴影是"玻璃边缘的高光"——
+     没有它，毛玻璃面板在浅色底上会糊成一片，看不出层次。 */
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   padding: 16px 18px;
+  box-shadow: var(--shadow-sm), 0 1px 0 rgba(255, 255, 255, .55) inset;
+  transition: transform var(--dur) var(--ease-jelly), box-shadow var(--dur) var(--ease-out),
+              border-color var(--dur) var(--ease-out), background-color var(--dur) var(--ease-out);
 }
+/* 悬停微浮：位移只有 2px，但曲线过冲，所以看起来像被轻轻托了一下。 */
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md), 0 1px 0 rgba(255, 255, 255, .6) inset;
+  border-color: var(--line-strong);
+}
+/* 表格、日志视图这类"内容很长"的卡片不该浮：鼠标划过时整块跟着动会很吵。 */
+.card:has(.table):hover,
+.card:has(.logview):hover,
+.card:has(.chart-svg):hover { transform: none; box-shadow: var(--shadow-sm), 0 1px 0 rgba(255,255,255,.55) inset; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .card-head h2 { margin: 0; font-size: 14px; font-weight: 650; }
 .card-head .sub { color: var(--faint); font-size: 11.5px; }
@@ -135,6 +289,34 @@ code, pre, .mono { font-family: var(--mono); }
 .stat {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 13px 15px; display: flex; flex-direction: column; gap: 2px;
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  box-shadow: var(--shadow-sm), 0 1px 0 rgba(255, 255, 255, .5) inset;
+  transition: transform var(--dur) var(--ease-jelly), box-shadow var(--dur) var(--ease-out),
+              border-color var(--dur) var(--ease-out);
+}
+a.stat.stat-link:hover {
+  transform: translateY(-2px); text-decoration: none;
+  box-shadow: var(--shadow-md), 0 1px 0 rgba(255, 255, 255, .6) inset;
+  border-color: var(--sky);
+}
+.stat .value.err { color: var(--err); }
+/* 有错误时整格描红，但不用背景色：红底会让这块在下一次渲染时抢走全部注意力。 */
+.stat.has-error { border-color: color-mix(in srgb, var(--err) 40%, var(--line)); }
+.stat.has-error .label { color: var(--err); }
+
+/* 名言格：两行错落——正文一行，署名缩进一级。不缩进的话，一句话和它的出处
+   会被读成两句话；缩进之后从属关系一眼就看出来了。 */
+.stat.quote {
+  justify-content: center; gap: 3px; min-width: 0;
+  background: linear-gradient(135deg, var(--sky-soft) 0%, var(--panel) 62%);
+}
+.stat.quote .quote-line {
+  font-size: 12.5px; line-height: 1.5; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.stat.quote .quote-from {
+  font-size: 10.5px; color: var(--faint); align-self: flex-end; font-style: italic;
 }
 .stat .label { color: var(--faint); font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase; }
 .stat .value { font-size: 21px; font-weight: 650; letter-spacing: -0.3px; }
@@ -163,8 +345,14 @@ code, pre, .mono { font-family: var(--mono); }
 }
 @media (max-width: 1180px) { .charts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 820px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+/* 图表卡片的纵向间距统一由这里管。
+   原来 `.charts` 有 margin-top: 14px 和 gap: 14px，而紧跟在它后面的消息卡片
+   margin-top 是 0 —— 于是"图表 → 消息数"的空隙只有 0px，看起来像是两块粘在一起。
+   把三类间隔写在一处，之后加卡片不会再漏。 */
 .chart-card { display: flex; flex-direction: column; }
 .chart-card.wide { grid-column: 1 / -1; }
+.charts + .chart-card { margin-top: 14px; }
+.stat-block + .charts { margin-top: 14px; }
 .chart-card .card-head { margin-bottom: 6px; }
 .chart-card .card-head h2 { font-size: 13px; }
 
@@ -270,15 +458,28 @@ code, pre, .mono { font-family: var(--mono); }
 .btn, button {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   padding: 7px 12px; border-radius: 8px; border: 1px solid var(--sky);
-  background: var(--sky); color: #ffffff; font-weight: 600; font-size: 12.5px;
+  background: var(--sky); color: #fff; font-weight: 600; font-size: 12.5px;
   cursor: pointer; text-decoration: none; line-height: 1.2; white-space: nowrap;
 }
 .btn:hover, button:hover { background: var(--sky-strong); border-color: var(--sky-strong); text-decoration: none; }
 .btn.ghost, button.ghost { background: var(--panel); color: var(--sky-strong); border-color: var(--line-strong); font-weight: 500; }
 .btn.ghost:hover, button.ghost:hover { background: var(--sky-soft); border-color: var(--sky); }
-.btn.danger, button.danger { background: var(--panel); color: var(--err); border-color: #fecaca; }
-.btn.danger:hover, button.danger:hover { background: #fef2f2; border-color: var(--err); }
-.btn.sm, button.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 7px; }
+.btn.danger, button.danger { background: var(--panel); color: var(--err); border-color: var(--err-line); }
+.btn.danger:hover, button.danger:hover { background: var(--err-soft); border-color: var(--err); }
+.btn.sm, button.sm { padding: 4px 11px; font-size: 11.5px; border-radius: 999px; }
+/* 主按钮与幽灵按钮都带一点按下回弹：`scale(.97)` 配回弹曲线，手感比单纯变色明确。 */
+button, .btn { transition: background-color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out),
+                            color var(--dur) var(--ease-out), transform var(--dur) var(--ease-jelly),
+                            box-shadow var(--dur) var(--ease-out); }
+button:active, .btn:active { transform: scale(.97); }
+button.primary, .btn.primary {
+  background: linear-gradient(180deg, var(--sky) 0%, var(--sky-strong) 100%);
+  border-color: transparent; color: #fff;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .35) inset, 0 6px 18px rgba(14, 165, 233, .28);
+}
+button.primary:hover, .btn.primary:hover {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .4) inset, 0 10px 26px rgba(14, 165, 233, .36);
+}
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
 
@@ -310,7 +511,7 @@ label > input, label > select, label > textarea { display: block; width: 100%; m
 .switch .track,
 .switch i {
   display: block; width: 36px; height: 20px; border-radius: 999px;
-  background: #cbd5e1; border: none; transition: background .15s ease;
+  background: var(--neutral-line); border: none; transition: background .15s ease;
 }
 .switch .track::after,
 .switch i::after {
@@ -339,14 +540,14 @@ label > input, label > select, label > textarea { display: block; width: 100%; m
   border: 1px solid var(--line-strong); color: var(--muted); letter-spacing: 0.2px;
   background: var(--panel);
 }
-.badge.ok { color: var(--ok); border-color: #bbf7d0; }
-.badge.warn { color: var(--warn); border-color: #fde68a; }
-.badge.err { color: var(--err); border-color: #fecaca; }
+.badge.ok { color: var(--ok); border-color: var(--ok-line); background: var(--ok-soft); }
+.badge.warn { color: var(--warn); border-color: var(--warn-line); background: var(--warn-soft); }
+.badge.err { color: var(--err); border-color: var(--err-line); background: var(--err-soft); }
 /* Stopped. Distinct from warn on purpose: "this session is over" and "this session needs attention"
    are different things, and colouring both yellow made a closed session look like a problem. */
 .badge.off { color: var(--muted); border-color: var(--line); }
 .badge.accent { color: var(--sky-strong); border-color: var(--line-strong); }
-.badge.tier-core { color: var(--err); border-color: #fecaca; }
+.badge.tier-core { color: var(--err); border-color: var(--err-line); }
 .badge.tier-standard { color: var(--sky-strong); }
 .badge.tier-sandbox { color: var(--muted); }
 
@@ -404,7 +605,7 @@ label > input, label > select, label > textarea { display: block; width: 100%; m
 .lvl-INFO .l { color: var(--sky-strong); }
 .lvl-WARN .l { color: var(--warn); }
 .lvl-ERROR .l { color: var(--err); }
-.logline.lvl-ERROR { background: #fff5f5; }
+.logline.lvl-ERROR { background: var(--err-soft); }
 
 /* ----------------------------------------------------------------- actions */
 .actions-layout { grid-template-columns: 1.5fr 1fr; align-items: start; }
@@ -435,8 +636,8 @@ label > input, label > select, label > textarea { display: block; width: 100%; m
   padding: 10px 12px; font-family: var(--mono); font-size: 11.5px;
   white-space: pre-wrap; word-break: break-word; min-height: 42px; max-height: 42vh; overflow: auto;
 }
-.result.ok { border-color: #bbf7d0; }
-.result.err { border-color: #fecaca; }
+.result.ok { border-color: var(--ok-line); }
+.result.err { border-color: var(--err-line); }
 
 /* ----------------------------------------------------------------- plugins */
 .plugins { display: flex; flex-direction: column; gap: 10px; }
@@ -479,11 +680,11 @@ label > input, label > select, label > textarea { display: block; width: 100%; m
 /* ------------------------------------------------------------------- misc */
 .okmsg {
   display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 8px;
-  border: 1px solid #bbf7d0; color: var(--ok); font-size: 12.5px; background: #f6fffb;
+  border: 1px solid var(--ok-line); color: var(--ok); font-size: 12.5px; background: var(--ok-soft);
 }
 .errmsg {
   display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 8px;
-  border: 1px solid #fecaca; color: var(--err); font-size: 12.5px; background: #fff7f7;
+  border: 1px solid var(--err-line); color: var(--err); font-size: 12.5px; background: var(--err-soft);
 }
 .muted { color: var(--muted); }
 .faint { color: var(--faint); }
@@ -511,18 +712,22 @@ label > input, label > select, label > textarea { display: block; width: 100%; m
   background: var(--panel); border: 1px solid var(--line-strong);
   color: var(--text); font-size: 12.5px;
 }
-.toast.ok { border-color: #bbf7d0; }
-.toast.err { border-color: #fecaca; }
+.toast.ok { border-color: var(--ok-line); }
+.toast.err { border-color: var(--err-line); }
 @keyframes toast-in { from { transform: translateY(4px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 footer.foot {
-  margin-top: 28px; padding: 14px 0 8px; border-top: 1px solid var(--line);
-  color: var(--faint); font-size: 11px; display: flex; gap: 14px; flex-wrap: wrap;
+  margin-top: 28px; padding: 16px 2px 8px; border-top: 1px solid var(--line);
+  color: var(--faint); font-size: 11.5px; display: flex; gap: 9px; flex-wrap: wrap; align-items: center;
 }
+.foot code { color: var(--muted); }
+.foot-sep { opacity: .5; }
 
 @media (max-width: 720px) {
   .topbar { flex-wrap: wrap; gap: 8px; padding: 10px 14px; }
   .nav { order: 3; width: 100%; }
+  /* 顶栏换行后高度不再固定，二级菜单不能在它下面 sticky 着——会盖住第一块卡片。 */
+  .subnav-center { position: static; top: auto; }
   .topbar .right { margin-left: auto; }
   .shell { padding: 0 14px 28px; }
   .page-head { padding-top: 18px; }
@@ -538,7 +743,7 @@ footer.foot {
 /* chat gate + chat layout */
 .nav-badge {
   margin-left: 4px; padding: 0 5px; border-radius: 999px;
-  border: 1px solid #fde68a; color: #b45309; font-size: 9px; font-weight: 600;
+  border: 1px solid var(--warn-line); color: var(--warn); background: var(--warn-soft); font-size: 9px; font-weight: 600;
 }
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 80; display: grid; place-items: center;
@@ -555,10 +760,10 @@ footer.foot {
   padding-left: 10px;
 }
 button:disabled, .btn:disabled {
-  background: #e8eef6; border-color: #dbe3ee; color: #93a2b5; cursor: not-allowed;
+  background: var(--neutral-soft); border-color: var(--line); color: var(--faint); cursor: not-allowed;
   opacity: 1;
 }
-button:disabled:hover { background: #e8eef6; border-color: #dbe3ee; }
+button:disabled:hover { background: var(--neutral-soft); border-color: var(--line); }
 
 .chat-layout {
   display: grid; grid-template-columns: 260px minmax(0, 1fr);
@@ -623,7 +828,7 @@ button:disabled:hover { background: #e8eef6; border-color: #dbe3ee; }
 
 .warnmsg {
   display: block; padding: 9px 12px; border-radius: 8px; font-size: 12.5px;
-  border: 1px solid #fde68a; color: #92400e; background: #fffbeb;
+  border: 1px solid var(--warn-line); color: var(--warn); background: var(--warn-soft);
 }
 
 .stat-link { text-decoration: none; color: inherit; }
@@ -634,7 +839,7 @@ button:disabled:hover { background: #e8eef6; border-color: #dbe3ee; }
 
 /* dashboard network status */
 .dot.green { background: var(--ok); }
-.dot.gray { background: #94a3b8; }
+.dot.gray { background: var(--faint); }
 .dot.red { background: var(--err); }
 .net-item {
   display: flex; align-items: center; gap: 10px; padding: 10px 2px;
@@ -657,7 +862,7 @@ button:disabled:hover { background: #e8eef6; border-color: #dbe3ee; }
 .qr-head h1 { font-size: 16px; margin: 0; }
 .risk-note {
   margin: 10px 0; padding: 8px 10px; border-radius: 6px;
-  border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c;
+  border: 1px solid var(--err-line); background: var(--err-soft); color: var(--err);
   font-size: 11px; line-height: 1.55;
 }
 .qr-phase { margin: 6px 0; font-size: 12px; color: var(--muted); text-align: center; }
@@ -706,7 +911,7 @@ body.qr-window.embedded .qr-window-card { padding: 12px; }
   gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--line);
   font-size: 12.5px;
 }
-.qr-dialog iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+.qr-dialog iframe { flex: 1; width: 100%; border: 0; background: var(--panel-solid); }
 
 /* network configuration */
 .net-form { display: flex; flex-direction: column; gap: 14px; }
@@ -717,7 +922,7 @@ body.qr-window.embedded .qr-window-card { padding: 12px; }
   border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2);
   cursor: pointer; min-width: 0;
 }
-.net-protocol:has(input:checked) { border-color: #7dd3fc; background: #f0f9ff; }
+.net-protocol:has(input:checked) { border-color: var(--sky); background: var(--sky-soft); }
 .net-proto-name {
   flex: none; display: grid; place-items: center; width: 36px; height: 30px;
   border-radius: 7px; background: #fff; border: 1px solid var(--line);
@@ -782,7 +987,7 @@ body.qr-window.embedded .qr-window-card { padding: 12px; }
   background: transparent; color: var(--muted); font-size: 12.5px; text-align: left;
 }
 .net-tab:hover { background: var(--panel-2); }
-.net-tab.active { background: #e0f2fe; color: #0369a1; font-weight: 600; }
+.net-tab.active { background: var(--sky-soft); color: var(--sky-strong); font-weight: 600; }
 .net-tab b { font-size: 10px; font-weight: 600; color: var(--faint); }
 .net-side-note { margin: 8px 4px 2px; font-size: 10.5px; line-height: 1.5; }
 .net-panel { display: none; }
@@ -812,7 +1017,7 @@ body.qr-window.embedded .qr-window-card { padding: 12px; }
 input[type="checkbox"]:not(.switch input) {
   appearance: none; -webkit-appearance: none;
   width: 36px; height: 20px; margin: 0; flex: none;
-  border-radius: 999px; background: #cbd5e1;
+  border-radius: 999px; background: var(--neutral-line);
   position: relative; cursor: pointer; vertical-align: middle;
   transition: background .15s ease;
 }
@@ -833,7 +1038,9 @@ input[type="checkbox"]:disabled { opacity: .5; cursor: not-allowed; }
 /* rounded custom selects */
 select {
   appearance: none; -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6' fill='none' stroke='%2364758b' stroke-width='2'/%3E%3C/svg%3E");
+  /* 箭头用 currentColor 画不出来（data URI 里拿不到），所以按主题给两套：
+     深色下换成浅色描边，否则那个灰色小箭头在深色背景上等于没有。 */
+  background-image: var(--select-chevron);
   background-repeat: no-repeat;
   background-position: right 10px center;
   padding-right: 32px;
@@ -843,8 +1050,14 @@ select:disabled { opacity: .55; cursor: not-allowed; }
 .dd-menu {
   position: fixed; z-index: 300; display: block; padding: 5px;
   max-height: 260px; overflow: auto;
-  background: #fff; border: 1px solid var(--line); border-radius: 10px;
-  box-shadow: 0 14px 38px rgba(15, 23, 42, .16);
+  /* 变量化：写死 #fff 的话深色模式下这块是整页最亮的东西。用 --glass-strong 而不是
+     --panel，是因为菜单浮在内容之上，需要更强的不透明度才压得住下面的文字。 */
+  background: var(--glass-strong);
+  backdrop-filter: blur(22px) saturate(170%);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  border: 1px solid var(--line-strong); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg), 0 1px 0 rgba(255, 255, 255, .5) inset;
+  scrollbar-width: thin;
 }
 /* hidden 必须真的不显示：`.dd-menu` 设了 display:block，属性选择器要压过它，
    否则菜单一创建就在页面上留一块空白盒子。 */
@@ -855,8 +1068,8 @@ select:disabled { opacity: .55; cursor: not-allowed; }
   font: inherit; font-size: 12px; text-align: left; cursor: pointer;
   position: relative;
 }
-.dd-option:hover { background: #f0f9ff; }
-.dd-option.active { background: #e0f2fe; color: #0369a1; font-weight: 600; }
+.dd-option:hover { background: var(--sky-soft); }
+.dd-option.active { background: var(--sky-soft); color: var(--sky-strong); font-weight: 600; }
 /* 当前项打勾，位置与聊天页发送方式菜单一致（chat.css 的 .nt-send-menu）。 */
 .dd-option.active::before {
   content: "✓"; position: absolute; left: 9px; top: 50%;
@@ -867,21 +1080,21 @@ select:disabled { opacity: .55; cursor: not-allowed; }
   opacity: .45; cursor: not-allowed; background: transparent;
 }
 
-.qr-placeholder { margin:0; padding:24px 12px; text-align:center; font-size:12px; color:#8a97a8; }
+.qr-placeholder { margin:0; padding:24px 12px; text-align:center; font-size:12px; color:var(--faint); }
 
 /* ------------------------------------------------- auto start / relogin switches */
 .auto-relogin, .auto-start { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:#5b6b7f; cursor:pointer; user-select:none; }
 .auto-relogin input, .auto-start input { margin:0; }
 .help-dot { display:inline-grid; place-items:center; width:14px; height:14px; border-radius:50%;
-  background:#e4ebf3; color:#7c8ea3; font-size:10px; font-weight:700; line-height:1; cursor:help; }
-.auto-relogin:hover .help-dot, .auto-start:hover .help-dot { background:#d3e3f3; color:#4b7ba6; }
+  background:var(--neutral-soft); color:var(--faint); font-size:10px; font-weight:700; line-height:1; cursor:help; }
+.auto-relogin:hover .help-dot, .auto-start:hover .help-dot { background:var(--sky-soft); color:var(--sky-strong); }
 /* 自动重登时延：只有开关打开时才可用；禁用态要看起来确实不可点。 */
 .relogin-delay { display:inline-flex; align-items:center; }
 .relogin-delay select {
   font-size:11.5px; padding:1px 4px; border-radius:5px;
-  border:1px solid var(--line-strong); background:#fff; color:#33465c;
+  border:1px solid var(--line-strong); background:var(--panel-solid); color:var(--text);
 }
-.relogin-delay select:disabled { opacity:.45; cursor:not-allowed; background:#f4f7fa; }
+.relogin-delay select:disabled { opacity:.45; cursor:not-allowed; background:var(--neutral-soft); }
 
 /* ------------------------------------------------------------ 弹窗（dialog） */
 /* 新建实例这类"必须先做选择"的动作走 <dialog>：浏览器自带焦点陷阱与 Esc 关闭，
@@ -910,7 +1123,7 @@ margin: auto;           /* showModal 默认不居中 */
 .dialog-field .hint { display: block; margin-top: 6px; font-size: 11px; color: var(--faint); line-height: 1.5; }
 .dialog-error {
 margin: 0 0 12px; padding: 8px 10px; border-radius: 8px;
-background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; font-size: 12px;
+background: var(--err-soft); border: 1px solid var(--err-line); color: var(--err); font-size: 12px;
 }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
@@ -928,8 +1141,162 @@ padding: 7px 10px;
 .pipe-autostart {
   display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
   padding: 10px 12px; margin-bottom: 10px;
-  border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2, #f8fafc);
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2);
 }
-.pipe-autostart-label { font-size: 13px; color: var(--text, #0f172a); }
+.pipe-autostart-label { font-size: 13px; color: var(--text); }
 .pipe-autostart-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
 .pipe-autostart-pick select { min-width: 190px; }
+
+
+/* ============================================================== 二级菜单 */
+/* 设置页的分组条，挂在主导航下方、同样居中。用胶囊而不是下划线：
+   下划线会和正上方的主导航下划线撞在一起，两层导航看起来像一条。
+   居中同样用绝对定位——flex 分配会让"居中"随两侧内容漂移。 */
+.subnav {
+  display: flex; gap: 4px; padding: 10px 22px 12px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.subnav::-webkit-scrollbar { display: none; }
+.subnav-center {
+  position: sticky; top: 57px; z-index: 39;
+  justify-content: center;
+  /* 一点玻璃底：二级菜单在滚动时会和下面的内容重叠，没有底会糊成一片。 */
+  background: var(--glass-nav);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+}
+.subnav a {
+  display: inline-flex; align-items: center;
+  padding: 6px 14px; border-radius: 999px;
+  font-size: 12.5px; color: var(--muted); white-space: nowrap;
+  border: 1px solid transparent;
+  transition: color var(--dur) var(--ease-out), background-color var(--dur) var(--ease-out),
+              transform var(--dur) var(--ease-jelly), border-color var(--dur) var(--ease-out);
+}
+.subnav a:hover {
+  color: var(--sky-strong); background: var(--sky-soft); text-decoration: none;
+  transform: translateY(-1px);
+}
+.subnav a.active {
+  color: var(--sky-strong); font-weight: 600;
+  background: var(--glass-strong); border-color: var(--sky);
+  box-shadow: var(--shadow-sm);
+}
+@media (max-width: 720px) {
+  .subnav-center { position: static; top: auto; justify-content: flex-start; }
+}
+
+/* ============================================================== 登录页 */
+.login-wrap {
+  min-height: calc(100vh - 200px); display: grid; place-items: center; padding: 40px 20px;
+}
+.login-card {
+  width: min(400px, 100%); padding: 30px 28px;
+  box-shadow: var(--shadow-lg), 0 1px 0 rgba(255, 255, 255, .6) inset;
+  animation: rise-in .42s var(--ease-jelly) both;
+}
+.login-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.login-brand .logo {
+  display: grid; place-items: center; width: 36px; height: 36px;
+  border-radius: 11px; background: linear-gradient(180deg, var(--sky) 0%, var(--sky-strong) 100%);
+  color: #fff; font-weight: 700; font-size: 13px; letter-spacing: .5px;
+  box-shadow: 0 6px 18px rgba(14, 165, 233, .3);
+}
+.login-brand strong { font-size: 15px; letter-spacing: -.2px; }
+.login-token { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.login-token summary {
+  cursor: pointer; font-size: 12px; color: var(--muted); list-style: none;
+  display: flex; align-items: center; gap: 6px;
+}
+.login-token summary::-webkit-details-marker { display: none; }
+.login-token summary::before { content: "▸"; font-size: 10px; color: var(--faint); }
+.login-token[open] summary::before { content: "▾"; }
+
+/* ============================================================== 首次引导 */
+/* 固定在底部，所以会把最后一块卡片盖住。给 body 加一个类，把内容抬起来——
+   靠调 `.shell` 的 padding-bottom，而不是猜一个固定的 margin。 */
+body:has(.setup-banner:not([hidden])) .shell,
+body:has(.kick-banner) .shell { padding-bottom: 104px; }
+
+.setup-banner {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+  z-index: 90; width: min(680px, calc(100vw - 32px));
+  animation: rise-in .38s var(--ease-jelly) both;
+}
+.setup-inner {
+  display: flex; align-items: center; gap: 14px; padding: 13px 16px;
+  background: var(--glass-strong);
+  backdrop-filter: blur(20px) saturate(170%);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  border: 1px solid var(--warn-line); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+.setup-icon {
+  display: grid; place-items: center; width: 34px; height: 34px; flex: none;
+  border-radius: 11px; background: var(--warn-soft); color: var(--warn);
+}
+.setup-icon svg { width: 17px; height: 17px; }
+.setup-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.setup-copy strong { font-size: 12.5px; }
+.setup-copy span { color: var(--muted); font-size: 11px; }
+@media (max-width: 620px) {
+  .setup-inner { flex-wrap: wrap; }
+  .setup-copy { flex-basis: 100%; }
+}
+
+/* ============================================================== 设置：安全页 */
+.login-history { max-height: 300px; overflow-y: auto; }
+.table.compact td, .table.compact th { padding: 6px 8px; }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.wide-card { grid-column: 1 / -1; }
+.quote-highlight { color: var(--sky-strong); font-weight: 600; }
+
+/* ============================================================== 入场动效 */
+/* 页面内容按 30ms 的间隔依次浮起。只对直接子块做，不递归——
+   递归会让几十个元素同时动画，看起来像卡顿而不是编排。 */
+.shell main > * {
+  animation: rise-in .34s var(--ease-out) both;
+}
+.shell main > *:nth-child(1) { animation-delay: 0s; }
+.shell main > *:nth-child(2) { animation-delay: .04s; }
+.shell main > *:nth-child(3) { animation-delay: .08s; }
+.shell main > *:nth-child(4) { animation-delay: .12s; }
+.shell main > *:nth-child(n+5) { animation-delay: .16s; }
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px) scale(.995); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* 图表分段悬停时轻微发光：这是唯一需要"点得动"的图形元素。 */
+.chart-seg { transition: opacity .12s var(--ease-out), filter .12s var(--ease-out); }
+.chart-seg:hover { filter: saturate(1.25) brightness(1.06); }
+
+/* 顶栏品牌在悬停时轻微放大。小到几乎察觉不到，但页面因此不是完全静止的。 */
+.brand:hover .logo { transform: rotate(-3deg) scale(1.05); }
+.brand .logo { transition: transform var(--dur) var(--ease-jelly); }
+
+/* 被踢横幅：固定在顶部内容区之上，红色描边。放在页脚会让人以为它只是个状态记录，
+   而它是"现在就得处理"的事。 */
+.kick-banner {
+  position: sticky; top: 0; z-index: 88;
+  padding: 8px 22px 0;
+  animation: rise-in .4s var(--ease-jelly) both;
+}
+.kick-inner {
+  display: flex; align-items: center; gap: 12px;
+  max-width: 1440px; margin: 0 auto; padding: 10px 14px;
+  background: var(--glass-strong);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid var(--err-line); border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+}
+.kick-icon {
+  display: grid; place-items: center; width: 24px; height: 24px; flex: none;
+  border-radius: 50%; background: var(--err-soft); color: var(--err);
+  font-weight: 700; font-size: 12px;
+}
+.kick-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.kick-copy strong { font-size: 12.5px; color: var(--err); }
+.kick-copy span { color: var(--muted); font-size: 11px; }

@@ -34,6 +34,26 @@ _LOCK = threading.RLock()
 #: can pick is not a filter.
 KNOWN_CATEGORIES: dict[str, dict[str, str]] = {}
 
+#: How many ERROR records this process has written, and how many WARN.
+#:
+#: Counted here rather than derived from the ring buffer because the buffer is trimmed: after a few thousand lines
+#: an old error has fallen out of it, and "本次运行累积 error 数" has to be the number that actually happened, not
+#: the number still visible. Warnings are counted alongside because the pair is what makes an error count readable
+#: -- forty errors means something different next to four warnings than next to four hundred.
+_COUNTS = {"ERROR": 0, "WARN": 0}
+
+
+def counts() -> dict[str, int]:
+    """Errors and warnings since this process started."""
+    with _LOCK:
+        return dict(_COUNTS)
+
+
+def reset_counts() -> None:
+    with _LOCK:
+        for key in _COUNTS:
+            _COUNTS[key] = 0
+
 
 def register_category(category: str, *, source: str = "core", group: str = "",
                       description: str = "") -> None:
@@ -232,6 +252,12 @@ class Logger:
             message=message,
             fields={**self.context, **fields},
         )
+        if level >= ERROR:
+            with _LOCK:
+                _COUNTS["ERROR"] += 1
+        elif level >= WARN:
+            with _LOCK:
+                _COUNTS["WARN"] += 1
         BUFFER.append(record)
 
         if _PRINT_TO_STDERR[0] and level >= max(_MIN_LEVEL[0], INFO):

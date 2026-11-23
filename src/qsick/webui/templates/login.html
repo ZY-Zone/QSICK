@@ -1,17 +1,40 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}登录{% endblock %}
 {% block content %}
 <div class="login-wrap">
   <section class="card login-card">
-    <h1>QSICK 控制台</h1>
-    <p class="muted">输入 WebUI 访问 token 以继续。</p>
+    <div class="login-brand"><span class="logo">QS</span><strong>QSICK 控制台</strong></div>
+
     {% if error %}<p class="errmsg">{{ error }}</p>{% endif %}
+
+    {% if needs_password %}
+    <p class="muted">输入 WebUI 密码以继续。会话有效期 {{ session_minutes }} 分钟，有操作会自动续期。</p>
     <form method="post" action="/login" class="stack">
       <input type="hidden" name="next" value="{{ next }}" />
-      <label>访问 token <input type="password" name="token" autofocus autocomplete="current-password" /></label>
-      <button type="submit">登录</button>
+      <label>密码
+        <input type="password" name="password" autofocus autocomplete="current-password" required />
+      </label>
+      <button type="submit" class="primary">登入</button>
     </form>
-    <p class="faint" style="margin-top:14px">token 在 <code>qsick.json</code> 的 <code>webui.access_token</code>。</p>
+    {% endif %}
+
+    {% if token_login %}
+    <details class="login-token" {% if not needs_password %}open{% endif %}>
+      <summary>改用访问 token</summary>
+      <p class="faint">token 在 <code>qsick.json</code> 的 <code>webui.access_token</code>，适合脚本与 API 客户端。</p>
+      <form method="post" action="/login" class="stack">
+        <input type="hidden" name="next" value="{{ next }}" />
+        <label>访问 token
+          <input type="password" name="token" autocomplete="off" {% if not needs_password %}autofocus{% endif %} />
+        </label>
+        <button type="submit">登入</button>
+      </form>
+    </details>
+    {% endif %}
+
+    {% if not needs_password and not token_login %}
+    <p class="muted">当前没有设置密码，也没有配置访问 token，控制台处于开放状态。</p>
+    {% endif %}
   </section>
 </div>
 {% endblock %}

@@ -1,18 +1,17 @@
-{# Two rows, everything that used to be four sections. 消息缓存 moved down to the message chart, and the
-   "最后报错" tile is gone -- it answered "when did something last break" which the log page answers properly,
-   and it cost a row's worth of width to say "—" most of the time.
+{# 第一行：原来五格压成三格，腾出两格给"本次运行累积错误"和"一句名言"。
 
-   网络端点原来是这里下面的一行 chip；现在是第二排的第三个面板，和 CPU / 内存平分那一行。 #}
+   错误计数与消息缓存一样，都是"这次运行发生了什么"的实时读数，所以留在第一行；
+   名言是这块面板上唯一不带数字的东西，放在最右边当收尾，不打断从左到右的"状态→指标"读序。 #}
 <div class="stats tight">
   <div class="stat">
     <span class="label">连接</span>
     <span class="value">{{ "在线" if info.online else "离线" }}</span>
-    <span class="sub">{{ info.transport }} / {{ info.transport_mode }}</span>
+    <span class="sub">{{ info.transport }} / {{ info.transport_mode }} · {{ info.uptime_human }}</span>
   </div>
   <div class="stat">
-    <span class="label">运行时长</span>
-    <span class="value sm">{{ info.uptime_human }}</span>
-    <span class="sub">{{ info.events_seen }} 事件 · {{ info.events_dropped }} 丢弃</span>
+    <span class="label">插件</span>
+    <span class="value">{{ info.plugins }}</span>
+    <span class="sub">{{ info.actions }} 个动作 · {{ info.events_seen }} 事件</span>
   </div>
   {% if info.transport_info and info.transport_info.pid %}
   <div class="stat">
@@ -21,9 +20,18 @@
     <span class="sub">hooks {{ "on" if info.transport_info.payload.hooks else "off" }} · pid {{ info.transport_info.pid }}</span>
   </div>
   {% endif %}
-  <div class="stat">
-    <span class="label">插件</span>
-    <span class="value">{{ info.plugins }}</span>
-    <span class="sub">{{ info.actions }} 个动作</span>
+  {# 累积错误：从启动至今，不是"日志缓冲区里还剩几条"。缓冲区会滚动，而"这次运行错了
+     几次"必须把已经滚出去的那些算进去。 #}
+  <a class="stat stat-link {{ 'has-error' if info.error_counts.ERROR else '' }}" href="/logs">
+    <span class="label">本次运行错误</span>
+    <span class="value {{ 'err' if info.error_counts.ERROR else '' }}">{{ info.error_counts.ERROR }}</span>
+    <span class="sub">{{ info.error_counts.WARN }} 条警告 · 点开日志</span>
+  </a>
+  {% if info.quote %}
+  <div class="stat quote">
+    {# 两行错落：第二行缩进，署名再缩进一层。不这样排的话，一句话和它的出处会读成两句话。 #}
+    <span class="quote-line">{{ info.quote.text }}</span>
+    {% if info.quote.source %}<span class="quote-from">{{ info.quote.source }}</span>{% endif %}
   </div>
+  {% endif %}
 </div>

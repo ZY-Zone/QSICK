@@ -1,0 +1,119 @@
+/* 光标：系统默认，或一套导入的光标包。
+ *
+ * 这里没有"内置箭头样式"了。内置样式要靠一个跟随指针的元素来画，而它没法覆盖每一个类型 ——
+ * 某些位置上自绘箭头会和系统光标同时出现，也就是两个指针叠着。光标包走 CSS `cursor`，
+ * 浏览器原生支持全部类型，不会再有第二个指针。
+ *
+ * 实际生效的规则由 cursor.js 注入到 #qsick-cursor-pack 里；这里只管设置页的展示。
+ */
+
+/* ============================================================== 选择器 */
+.cursor-picker {
+  display: grid;
+  /* min(160px, 100%)：最小值大于列宽时整列会溢出容器再被裁掉，那就是文字被切断的样子。 */
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  gap: 10px; margin-top: 4px;
+}
+.cursor-option {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  min-width: 0;
+  padding: 13px 14px; text-align: left; cursor: pointer;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--dur) var(--ease-jelly), border-color var(--dur) var(--ease-out),
+              box-shadow var(--dur) var(--ease-out);
+}
+.cursor-option:hover {
+  transform: translateY(-2px); border-color: var(--line-strong); box-shadow: var(--shadow-md);
+}
+.cursor-option.active {
+  border-color: var(--sky);
+  box-shadow: 0 0 0 3px var(--sky-soft), var(--shadow-md);
+}
+.cursor-option strong {
+  font-size: 12.5px; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cursor-option small {
+  color: var(--faint); font-size: 10.5px; line-height: 1.45;
+  overflow-wrap: anywhere; white-space: normal;
+}
+
+/* 预览位：系统默认是一个虚框（没有图可展示），光标包展示它的初始箭头。
+   两者尺寸一致，卡片高度才不会一高一低。 */
+.cursor-preview-slot {
+  width: 26px; height: 30px; margin-bottom: 4px;
+  display: grid; place-items: center;
+}
+.cursor-preview-slot.is-empty {
+  border-radius: 6px; border: 1px dashed var(--line-strong); background: var(--neutral-soft);
+}
+.cursor-pack-preview {
+  max-width: 26px; max-height: 30px; object-fit: contain;
+  /* 浅色的箭头放在浅色卡片上会看不见，加一点点投影兜底。 */
+  filter: drop-shadow(0 1px 2px rgba(8, 30, 55, .25));
+}
+
+/* ============================================================== 折叠区 */
+/* 类型表与包格式默认收起：设置页的主任务是"选一个光标"，这两块是参考信息，
+   展开着会把选择器挤到首屏之外。用 <details> 而不是自己写开关——键盘可达、
+   Ctrl+F 展开内文、打印时自动展开，都是白拿的。 */
+.cursor-fold {
+  margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px;
+}
+.cursor-fold > summary {
+  cursor: pointer; list-style: none;
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: var(--muted); font-weight: 600;
+  padding: 3px 0; border-radius: var(--radius-sm);
+  transition: color var(--dur) var(--ease-out);
+}
+.cursor-fold > summary::-webkit-details-marker { display: none; }
+.cursor-fold > summary:hover { color: var(--sky-strong); }
+/* 三角：收起时朝右，展开时朝下。用 CSS 画，不依赖字体里的 ▶ 字形。 */
+.cursor-fold > summary::before {
+  content: ""; width: 0; height: 0;
+  border-left: 4.5px solid currentColor;
+  border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  transition: transform var(--dur) var(--ease-jelly);
+  flex: none;
+}
+.cursor-fold[open] > summary::before { transform: rotate(90deg) translateX(1px); }
+.cursor-fold[open] > summary { color: var(--text); }
+.cursor-fold .fold-body { padding-top: 8px; animation: rise-in .24s var(--ease-out) both; }
+
+/* ============================================================== 类型一览 */
+.cursor-types {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+  /* 22 行在折叠区里不该把页面撑开，超出就自己滚。 */
+  display: block; max-height: 300px; overflow-y: auto;
+}
+.cursor-types thead, .cursor-types tbody, .cursor-types tr { display: table; width: 100%; table-layout: fixed; }
+.cursor-types thead { position: sticky; top: 0; background: var(--panel-solid); z-index: 1; }
+.cursor-types th, .cursor-types td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+.cursor-types th {
+  color: var(--faint); font-size: 10.5px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: .4px;
+}
+.cursor-types tr:last-child td { border-bottom: none; }
+.cursor-types code { font-size: 11px; color: var(--sky-strong); }
+.cursor-types .type-where { color: var(--muted); font-size: 11px; }
+.cursor-types .type-provided { font-size: 11px; color: var(--ok); }
+.cursor-types .type-inherited { font-size: 11px; color: var(--faint); }
+
+/* ============================================================== 导入 */
+.cursor-import-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);
+}
+.cursor-import-row input[type="file"] { display: none; }
+.cursor-import-note { color: var(--faint); font-size: 10.5px; }
+
+.cursor-manifest {
+  padding: 11px 13px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  font-family: var(--mono); font-size: 10.5px; line-height: 1.6; color: var(--muted);
+  white-space: pre-wrap; overflow-x: auto;
+}
+.cursor-manifest strong { color: var(--text); font-family: inherit; }

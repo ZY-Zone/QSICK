@@ -1,5 +1,22 @@
 {% extends "base.html" %}
 {% block title %}设置{% endblock %}
+
+{# 二级菜单：挂在主导航下方、同样居中。四个分组按"改这个需要想什么"划分——
+   想连接方式（通用）、想看起来怎样（显示）、想谁能进来（安全）、想动内核行为（高级）。 #}
+{% block subnav %}
+{% set tabs = [
+  ("general", "通用"),
+  ("display", "显示"),
+  ("security", "安全与隐私"),
+  ("advanced", "高级")
+] %}
+<nav class="subnav subnav-center">
+  {% for key, label in tabs %}
+  <a href="/settings?tab={{ key }}" class="{{ 'active' if tab == key else '' }}">{{ label }}</a>
+  {% endfor %}
+</nav>
+{% endblock %}
+
 {% block content %}
 <div class="page-head">
   <div>
@@ -11,6 +28,7 @@
 
 {% if saved %}<p class="okmsg">已保存。</p>{% endif %}
 
+{% if tab == "general" %}
 <div class="grid two">
   <section class="card">
     <div class="card-head"><h2>管道鉴权</h2><span class="badge accent">{{ config.transport.pipe_auth }}</span></div>
@@ -38,24 +56,177 @@
       <p class="faint autosave-note">0 表示不限制，启动时清理超额消息</p>
     </form>
   </section>
+</div>
+{% endif %}
+
+{% if tab == "display" %}
+<div class="grid two">
+  <section class="card">
+    <div class="card-head"><h2>外观</h2></div>
+    <p class="muted">这些只影响当前浏览器，存在本地。</p>
+    <div class="stack narrow">
+      <label>配色
+        <select id="theme-select">
+          <option value="system">跟随系统</option>
+          <option value="light">浅色</option>
+          <option value="dark">深色</option>
+        </select>
+      </label>
+      <p class="faint">跟随系统时会随操作系统的深色模式切换，不需要刷新。</p>
+    </div>
+  </section>
 
   <section class="card">
-    <div class="card-head"><h2>运行时</h2></div>
+    <div class="card-head"><h2>光标</h2><span class="sub" id="cursor-pack-label">未导入光标包</span></div>
+
+    <div class="cursor-picker" id="cursor-picker">
+      <button type="button" class="cursor-option" data-cursor="default">
+        <span class="cursor-preview-slot is-empty"></span>
+        <strong>系统默认</strong>
+        <small>不接管指针，用系统的箭头</small>
+      </button>
+    </div>
+
+    <div class="cursor-import-row">
+      <button type="button" class="ghost sm" id="cursor-import-button">
+        <svg aria-hidden="true" style="width:13px;height:13px;vertical-align:-2px"><use href="#i-upload"/></svg>
+        导入光标包
+      </button>
+      <input type="file" id="cursor-import-input" accept=".zip,application/zip" />
+      <button type="button" class="ghost sm" id="cursor-import-clear">移除光标包</button>
+      <span class="cursor-import-note">ZIP，≤ 3.2MB</span>
+    </div>
+
+    <details class="cursor-fold" id="cursor-types-fold">
+      <summary>光标状态（{{ cursor_types|length }} 种）</summary>
+      <div class="fold-body">
+        <table class="cursor-types">
+          <thead><tr><th style="width:38%">状态</th><th style="width:40%">出现位置</th><th>光标包</th></tr></thead>
+          <tbody>
+            {% for item in cursor_types %}
+            <tr data-type="{{ item.name }}">
+              <td><code>{{ item.name }}</code> <span class="type-where">{{ item.label }}</span></td>
+              <td class="type-where">{{ item.where }}</td>
+              <td class="type-cell"><span class="type-inherited">使用初始箭头</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details class="cursor-fold" id="cursor-format-fold">
+      <summary>光标包格式</summary>
+      <div class="fold-body">
+        <p class="muted">
+          一个 ZIP，一份 <code>cursor.json</code>，若干图片。<code>name</code> 与 <code>description</code>
+          会显示在卡片上，<code>description</code> 不超过 12 字。没定义的状态沿用初始箭头。
+        </p>
+        <div class="cursor-manifest"><strong>cursor.json</strong>
+{
+  "name": "我的光标包",
+  "description": "冷蓝箭头",
+  "cursors": {
+    "default":  "arrow.png",
+    "pointer":  "hand.png",
+    "text":     "text.png",
+    "progress": "busy.png"
+  },
+  "hotspots": { "default": [1, 1], "pointer": [8, 2] }
+}</div>
+        <p class="faint" style="margin-top:8px">
+          <code>cursors</code> 的键是状态名，值是包内图片路径；<code>hotspots</code> 是点击生效的坐标，
+          省略即 <code>[0, 0]</code>。图片支持 PNG / SVG / WebP / ICO / GIF。
+        </p>
+      </div>
+    </details>
+  </section>
+
+{% endif %}
+
+{% if tab == "security" %}
+<div class="grid two">
+  <section class="card">
+    <div class="card-head">
+      <h2>登录密码</h2>
+      <span class="badge {{ 'ok' if info.has_password else 'warn' }}">{{ "已设置" if info.has_password else "未设置" }}</span>
+    </div>
+    <p class="muted">
+      {{ "修改密码需要输入当前密码。" if info.has_password else "设置之后，访问 WebUI 需要先登入。" }}
+      会话有效期 30 分钟，有操作会自动续期；改密码会让其它会话立即失效。
+    </p>
+    <form id="password-form" class="stack narrow" autocomplete="off">
+      {% if info.has_password %}
+      <label>当前密码 <input type="password" name="current" autocomplete="current-password" required /></label>
+      {% endif %}
+      <label>新密码 <input type="password" name="password" autocomplete="new-password" minlength="6" required /></label>
+      <label>再输一次 <input type="password" name="confirm" autocomplete="new-password" minlength="6" required /></label>
+      <div class="row-actions">
+        <button type="submit" class="primary">{{ "更新密码" if info.has_password else "设置密码" }}</button>
+        {% if info.has_password %}
+        <button type="button" class="ghost" id="password-clear">移除密码</button>
+        {% endif %}
+      </div>
+    </form>
+    {% if info.has_password %}
+    <p class="faint" style="margin-top:12px">移除密码后控制台会重新开放给任何能访问该端口的人。</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>访问 token</h2><span class="badge {{ 'accent' if info.token_enabled else '' }}">{{ "已启用" if info.token_enabled else "未设置" }}</span></div>
+    <p class="muted">给脚本与 API 客户端用，与密码并存，任一通过即可访问。</p>
+    <form method="post" action="/settings/webui-token" class="stack narrow auto-form">
+      <label>token <input name="webui_token" value="{{ config.webui.access_token }}" placeholder="留空即关闭 token 登录" /></label>
+      <p class="faint autosave-note">修改后所有已保存 token 的客户端都要更新。</p>
+    </form>
+  </section>
+
+  <section class="card wide-card">
+    <div class="card-head">
+      <h2>登录记录</h2>
+      <span class="sub" id="login-count">—</span>
+    </div>
+    <p class="muted">时间与来源 IP，倒序。成功与失败都会记。</p>
+    <div class="login-history" id="login-history"><p class="faint">加载中…</p></div>
+  </section>
+
+  <section class="card wide-card">
+    <div class="card-head"><h2>当前会话</h2><span class="sub">修改密码会清空全部</span></div>
+    <div class="login-history" id="session-list"><p class="faint">加载中…</p></div>
+  </section>
+</div>
+{% endif %}
+
+{% if tab == "advanced" %}
+<div class="grid two">
+  <section class="card">
+    <div class="card-head"><h2>插件</h2></div>
     <form method="post" action="/settings/runtime" class="stack narrow auto-form">
       <label class="check">
         <input type="checkbox" name="watch" value="1" {{ "checked" if config.plugins.watch else "" }} />
         监听插件目录变化并自动重载
       </label>
     </form>
-    <dl class="kv" style="margin-top:16px">
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>运行时</h2></div>
+    <dl class="kv">
       <dt>消息后端</dt><dd>{{ info.storage.backend }}</dd>
       <dt>消息条数</dt><dd>{{ info.storage.messages }}</dd>
       <dt>数据库</dt><dd>{{ info.storage.path|default("（内存）") }}</dd>
       <dt>运行时长</dt><dd>{{ info.uptime_human }}</dd>
       <dt>插件</dt><dd>{{ info.plugins }} 个已加载</dd>
+      <dt>本次错误</dt><dd>{{ info.error_counts.ERROR }} 错误 / {{ info.error_counts.WARN }} 警告</dd>
     </dl>
+    <div class="row-actions" style="margin-top:14px">
+      <a class="btn ghost sm" href="/config">查看脱敏配置</a>
+      <a class="btn ghost sm" href="/metrics">Prometheus 指标</a>
+    </div>
   </section>
 </div>
+{% endif %}
 
 <script>
   (function () {
@@ -69,11 +240,7 @@
 
     async function apply(form) {
       try {
-        await fetch(form.action, {
-          method: "POST",
-          body: new FormData(form),
-          redirect: "follow"
-        });
+        await fetch(form.action, { method: "POST", body: new FormData(form), redirect: "follow" });
         notify("已应用", "ok");
       } catch (error) {
         notify("应用失败：" + error.message, "err");
@@ -86,15 +253,11 @@
         if (timers.has(form)) clearTimeout(timers.get(form));
         apply(form);
       });
-
       form.querySelectorAll("input, select, textarea").forEach(function (field) {
         var immediate = field.tagName === "SELECT" || field.type === "checkbox" || field.type === "radio";
         field.addEventListener(immediate ? "change" : "input", function () {
           if (timers.has(form)) clearTimeout(timers.get(form));
-          if (immediate) {
-            apply(form);
-            return;
-          }
+          if (immediate) { apply(form); return; }
           timers.set(form, setTimeout(function () { apply(form); }, 500));
         });
       });
@@ -110,6 +273,195 @@
       };
       mode.addEventListener("change", syncToken);
       syncToken();
+    }
+
+    // ---- 显示：配色与光标（存在 localStorage，页面首帧由 base.html 的脚本应用） ----
+    var themeSelect = document.getElementById("theme-select");
+    if (themeSelect) {
+      themeSelect.value = document.documentElement.dataset.themeChoice || "system";
+      themeSelect.addEventListener("change", function () {
+        var choice = themeSelect.value;
+        try { localStorage.setItem("qsick.theme", choice); } catch (_) {}
+        document.documentElement.dataset.themeChoice = choice;
+        window.qsickApplyTheme && window.qsickApplyTheme();
+        notify("配色：" + themeSelect.options[themeSelect.selectedIndex].text, "ok");
+      });
+    }
+
+    var picker = document.getElementById("cursor-picker");
+    if (picker) {
+      var packLabel = document.getElementById("cursor-pack-label");
+      var typesFold = document.getElementById("cursor-types-fold");
+
+      function currentPack() {
+        return typeof window.qsickCursorPackInfo === "function" ? window.qsickCursorPackInfo() : null;
+      }
+
+      function mark() {
+        var choice = (typeof window.qsickCursorPackInfo === "function"
+          ? (localStorage.getItem("qsick.cursor") || "default") : "default");
+        picker.querySelectorAll(".cursor-option").forEach(function (button) {
+          button.classList.toggle("active", button.dataset.cursor === choice);
+        });
+      }
+
+      /** 刷新卡片、标签页标题，以及类型表里的"这个状态由谁提供"。 */
+      function refresh() {
+        var pack = currentPack();
+        if (packLabel) {
+          packLabel.textContent = pack
+            ? pack.name + (pack.types.length ? " · " + pack.types.length + " 种状态" : "")
+            : "未导入光标包";
+        }
+        if (typesFold) {
+          typesFold.querySelectorAll("tr[data-type]").forEach(function (row) {
+            var cell = row.querySelector(".type-cell");
+            if (!cell) return;
+            var provided = pack && pack.types.indexOf(row.dataset.type) >= 0;
+            cell.innerHTML = provided
+              ? '<span class="type-provided">包里已提供</span>'
+              : '<span class="type-inherited">使用初始箭头</span>';
+          });
+        }
+        mark();
+      }
+
+      picker.addEventListener("click", function (event) {
+        var button = event.target.closest(".cursor-option");
+        if (!button) return;
+        if (typeof window.qsickSetCursor === "function") window.qsickSetCursor(button.dataset.cursor);
+        refresh();
+        notify(button.dataset.cursor === "custom" ? "已启用光标包" : "已切回系统光标", "ok");
+      });
+
+      var importButton = document.getElementById("cursor-import-button");
+      var importInput = document.getElementById("cursor-import-input");
+      var importClear = document.getElementById("cursor-import-clear");
+
+      if (importButton && importInput) {
+        importButton.addEventListener("click", function () { importInput.click(); });
+        importInput.addEventListener("change", function () {
+          var file = importInput.files && importInput.files[0];
+          if (!file || typeof window.qsickImportCursorPack !== "function") return;
+          window.qsickImportCursorPack(file).then(function (result) {
+            if (result.ok) {
+              refresh();
+              var extra = result.warnings && result.warnings.length
+                ? "（跳过 " + result.warnings.length + " 项）" : "";
+              notify("已导入「" + result.name + "」" + extra, "ok");
+            } else {
+              notify(result.error || "导入失败", "err");
+            }
+            importInput.value = "";
+          });
+        });
+      }
+
+      if (importClear) {
+        importClear.addEventListener("click", function () {
+          if (typeof window.qsickClearCursorPack === "function") window.qsickClearCursorPack();
+          refresh();
+          notify("已移除光标包", "ok");
+        });
+      }
+
+      refresh();
+    }
+
+    // ---- 安全：密码 ----
+    var form = document.getElementById("password-form");
+    if (form) {
+      form.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        var data = new FormData(form);
+        var body = {
+          password: String(data.get("password") || ""),
+          confirm: String(data.get("confirm") || ""),
+          current: String(data.get("current") || "")
+        };
+        try {
+          var response = await fetch("/api/security/password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+          });
+          var result = await response.json();
+          if (result.ok) {
+            notify(result.message || "密码已更新，正在刷新", "ok");
+            setTimeout(function () { location.reload(); }, 700);
+          } else {
+            notify(result.error || "保存失败", "err");
+          }
+        } catch (error) {
+          notify("保存失败：" + error.message, "err");
+        }
+      });
+    }
+
+    var clearButton = document.getElementById("password-clear");
+    if (clearButton) {
+      clearButton.addEventListener("click", async function () {
+        var current = String((document.querySelector('input[name="current"]') || {}).value || "");
+        if (!current) { notify("先在上面填一次当前密码", "warn"); return; }
+        if (!confirm("移除密码？控制台会重新开放给任何能访问该端口的人。")) return;
+        try {
+          var response = await fetch("/api/security/password/clear", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ current: current })
+          });
+          var result = await response.json();
+          if (result.ok) {
+            notify(result.message || "已移除", "ok");
+            setTimeout(function () { location.href = "/settings?tab=security"; }, 700);
+          } else {
+            notify(result.error || "移除失败", "err");
+          }
+        } catch (error) {
+          notify("移除失败：" + error.message, "err");
+        }
+      });
+    }
+
+    // ---- 安全：登录记录与会话 ----
+    var history = document.getElementById("login-history");
+    if (history) {
+      fetch("/api/security/overview", { headers: { Accept: "application/json" } })
+        .then(function (response) { return response.ok ? response.json() : null; })
+        .then(function (data) {
+          if (!data) { history.innerHTML = '<p class="faint">读取失败</p>'; return; }
+          var count = document.getElementById("login-count");
+          if (count) count.textContent = data.logins.length + " 条";
+
+          if (!data.logins.length) {
+            history.innerHTML = '<p class="faint">还没有登录记录。</p>';
+          } else {
+            history.innerHTML =
+              '<table class="table compact"><thead><tr><th>时间</th><th>来源 IP</th><th>结果</th></tr></thead><tbody>' +
+              data.logins.map(function (item) {
+                return '<tr><td class="num">' + escapeHtml(item.time) + '</td>' +
+                  '<td class="num">' + escapeHtml(item.ip || "—") + '</td>' +
+                  '<td>' + (item.ok ? '<span class="badge ok">成功</span>' : '<span class="badge warn">失败</span>') +
+                  '</td></tr>';
+              }).join("") + '</tbody></table>';
+          }
+
+          var list = document.getElementById("session-list");
+          if (list) {
+            if (!data.sessions.length) {
+              list.innerHTML = '<p class="faint">当前没有活动会话（未启用密码时为空）。</p>';
+            } else {
+              list.innerHTML =
+                '<table class="table compact"><thead><tr><th>来源 IP</th><th>登入时间</th><th>剩余</th></tr></thead><tbody>' +
+                data.sessions.map(function (item) {
+                  return '<tr><td class="num">' + escapeHtml(item.ip || "—") + '</td>' +
+                    '<td class="num">' + escapeHtml(item.created) + '</td>' +
+                    '<td class="num">' + Math.round(item.expires_in / 60) + ' 分钟</td></tr>';
+                }).join("") + '</tbody></table>';
+            }
+          }
+        })
+        .catch(function () { history.innerHTML = '<p class="faint">读取失败</p>'; });
     }
   })();
 </script>

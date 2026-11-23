@@ -10,7 +10,7 @@ from typing import Any
 
 import uvicorn
 
-from . import __version__, metrics as metricsmod, log as logmod
+from . import __version__, metrics as metricsmod, quotes as quotesmod, log as logmod
 from . import network_profiles as netprofiles
 from .config import RuntimeConfig, load_config
 from .instances import InstanceContext, InstanceHub
@@ -253,6 +253,9 @@ class Runtime:
         self.metrics = metricsmod.History()
         #: First sample is free -- `cpu_percent` needs a baseline delta, so an immediate one would read 0 anyway.
         self._metrics_task: asyncio.Task[None] | None = None
+        #: One sentence, chosen once per launch. Re-picking it per render would make the dashboard shuffle its own
+        #: text every two seconds, which reads as a glitch rather than as a greeting.
+        self.quote: tuple[str, str] | None = quotesmod.pick()
         self.registry: ActionRegistry = action_mod.build_registry()
         self.hub = EventHub()
         self.plugins = PluginHost(
@@ -2262,4 +2265,8 @@ class Runtime:
             "chat_enabled": bool(self.config.webui.chat_enabled),
             "reverse_ws": self.reverse.status(),
             "charts": self.chart_data(),
+            # Counted since startup, not read off the log ring: the buffer trims, and "how many errors this run"
+            # has to include the ones that have already scrolled out of view.
+            "error_counts": logmod.counts(),
+            "quote": {"text": self.quote[0], "source": self.quote[1]} if self.quote else None,
         }

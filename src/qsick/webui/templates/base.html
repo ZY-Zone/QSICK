@@ -3,12 +3,30 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="color-scheme" content="light" />
+  {# 跟随系统配色：`light dark` 让浏览器把表单控件、滚动条也一并切换，只改 CSS 变量会留下白底的输入框。 #}
+  <meta name="color-scheme" content="light dark" />
   <title>QSICK · {% block title %}{{ page }}{% endblock %}</title>
   <link rel="icon" href="/favicon.ico" />
+  {# 主题与光标在首帧之前定好，否则深色模式会先闪一下白底。 #}
+  <script>
+    (function () {
+      try {
+        var theme = localStorage.getItem("qsick.theme") || "system";
+        var dark = theme === "dark" ||
+          (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        document.documentElement.dataset.themeChoice = theme;
+        // 默认不接管光标：自绘光标是选项，不是默认行为。
+        var cursor = localStorage.getItem("qsick.cursor") || "default";
+        document.documentElement.dataset.cursor = cursor;
+      } catch (_) {}
+    })();
+  </script>
   <link rel="stylesheet" href="/static/app.css?v={{ asset_version }}" />
+  <link rel="stylesheet" href="/static/cursor.css?v={{ asset_version }}" />
   <script src="/static/htmx-lite.js" defer></script>
   <script src="/static/app.js?v={{ asset_version }}" defer></script>
+  <script src="/static/cursor.js?v={{ asset_version }}" defer></script>
   {% block extra_head %}{% endblock %}
 </head>
 <body data-page="{{ page }}">
@@ -23,6 +41,10 @@
   <symbol id="i-net" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M3 12h18M12 3c2.6 2.4 4 5.7 4 9s-1.4 6.6-4 9c-2.6-2.4-4-5.7-4-9s1.4-6.6 4-9"/></symbol>
   <symbol id="i-sliders" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M4 7h9m4 0h3M4 17h3m4 0h9M13 7a2 2 0 1 1 4 0 2 2 0 0 1-4 0M7 17a2 2 0 1 1 4 0 2 2 0 0 1-4 0"/></symbol>
   <symbol id="i-out" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h8"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M6 11h12v9H6zM9 11V7a3 3 0 0 1 6 0v4"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path fill="currentColor" d="M4 3v17.5l4.6-4.1 2.9 6.2 3-1.4-2.9-6.1h5.9z"/></symbol>
+  <symbol id="i-hand" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11m0 0V4.5a1.5 1.5 0 0 1 3 0V11m0 0V6.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1a6 6 0 0 1-6-6v-3.5a1.5 1.5 0 0 1 3 0V13"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0L8 8m4-4 4 4M4 16v3h16v-3"/></symbol>
 </svg>
 
 <header class="topbar">
@@ -34,7 +56,9 @@
     </span>
   </a>
 
-  <nav class="nav">
+  {# 主导航居中：绝对定位到视口中线，而不是靠 flex 分配剩余空间——后者会随两侧内容
+     宽度变化而漂移，"居中"就成了近似值。 #}
+  <nav class="nav nav-center">
     {% set nav = [
       ("dashboard", "/", "总览", "i-home"),
       ("logs", "/logs", "日志", "i-logs"),
@@ -55,8 +79,6 @@
   </nav>
 
   <div class="right">
-    {# 账号状态控件已移除：它重复了页脚和账户管理页已有的信息，而右上角本该只放操作。
-       被踢下线的原因仍可见——账户管理页每行都有，页脚也保留账号。 #}
     {% if info.webui_auth %}
       <form method="post" action="/logout" style="margin:0">
         <button class="iconbtn" type="submit" title="退出登录" aria-label="退出登录">
@@ -67,30 +89,52 @@
   </div>
 </header>
 
+{% block subnav %}{% endblock %}
+
 <div class="shell">
   <main>
     {% block content %}{% endblock %}
   </main>
   <footer class="foot">
-    {# 已登录的账号放在最左边：它是最常被确认的一件事（"我现在操作的是哪个号"），排在版本号前面
-       比排在其后有用得多。未登录时不显示 uin，只留一句状态，避免空白让人以为界面坏了。 #}
-    {% if info.logged_in and info.uin %}
-    <span class="foot-account">账号 <code>{{ info.uin }}</code>{% if info.nickname %} · {{ info.nickname }}{% endif %}</span>
-    {% elif info.kicked %}
-    {# "被踢"和"未登录"必须能分辨：前者要处理（重新登录/查安全策略），后者只是还没登录。
-       顶栏那个状态控件删掉后，这里是唯一常驻的位置，原因也要跟着过来。 #}
-    <span class="foot-account is-kicked">已被踢下线{% if info.kick_reason %} · {{ info.kick_reason }}{% endif %}</span>
-    {% else %}
-    <span class="foot-account faint">未登录</span>
-    {% endif %}
-    <span>QSICK v{{ info.version }}</span>
-    <span>transport <code>{{ info.transport }}</code></span>
-    <span>OneBot <code>{{ info.onebot.host }}:{{ info.onebot.port }}</code></span>
+    {# 页脚只留两件事：这东西是什么版本，以及你在跟哪个地址说话。账号、transport、
+       OneBot 监听地址都各有更好的位置——账户管理页、网络页——重复放在这里只是噪音。 #}
+    <span>QSICK <code>v{{ info.version }}</code></span>
+    <span class="foot-sep">·</span>
     <span>WebUI <code>{{ info.webui.host }}:{{ info.webui.port }}</code></span>
-    <span class="spacer"></span>
-            <a href="/plugins/market">插件市场</a>
   </footer>
 </div>
+
+{% if info.kicked %}
+{# 被踢是一条**需要处理**的消息：重新登录、或者去查安全策略。它原来挂在顶栏，后来挪到页脚，
+   现在页脚按操作者的要求只剩版本与地址，所以改成横幅——横幅可以带原因和动作，页脚只能放一行灰字。
+   "被踢"和"未登录"必须能分辨：后者只是还没登录，不需要做任何事。 #}
+<div class="kick-banner">
+  <div class="kick-inner">
+    <span class="kick-icon">!</span>
+    <div class="kick-copy">
+      <strong>QQ 已被踢下线</strong>
+      <span>{{ info.kick_reason or "没有给出原因，可能是账号在别处登录或触发了安全策略。" }}</span>
+    </div>
+    <a class="btn sm" href="/accounts">去重新登录</a>
+  </div>
+</div>
+{% endif %}
+
+{% if needs_password_setup %}
+{# 首次访问的引导：不挡住界面，可关掉，7 天内不再问。拒绝渲染直到设密码会把人锁在自己刚装的
+   软件外面，而这台机器上本来就是这个人在操作。 #}
+<div class="setup-banner" id="setup-banner" hidden>
+  <div class="setup-inner">
+    <span class="setup-icon"><svg aria-hidden="true"><use href="#i-lock"/></svg></span>
+    <div class="setup-copy">
+      <strong>还没有设置 WebUI 密码</strong>
+      <span>任何能访问 {{ info.webui.host }}:{{ info.webui.port }} 的人都能操作这个控制台。</span>
+    </div>
+    <a class="btn sm primary" href="/settings?tab=security">去设置</a>
+    <button type="button" class="ghost sm" id="setup-dismiss">稍后</button>
+  </div>
+</div>
+{% endif %}
 
 <div id="toasts" aria-live="polite"></div>
 </body>

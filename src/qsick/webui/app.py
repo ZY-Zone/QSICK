@@ -28,6 +28,8 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import log as logmod
+from .auth import COOKIE_NAME as AUTH_COOKIE, SESSION_SECONDS, AuthStore
+from .cursor_types import CURSOR_TYPES
 
 log = logmod.get_logger("WebUI")
 from .. import downloads
@@ -51,7 +53,7 @@ def _asset_version(static_dir: Path) -> str:
     """
     newest = 0.0
     total = 0
-    for name in ("app.css", "app.js", "htmx-lite.js"):
+    for name in ("app.css", "app.js", "cursor.css", "cursor.js", "htmx-lite.js"):
         try:
             stat = (static_dir / name).stat()
         except OSError:
@@ -63,6 +65,10 @@ def _asset_version(static_dir: Path) -> str:
 
 #: Injected into every template so `base.html` can stamp the real version onto its <link>/<script> URLs.
 ASSET_VERSION = _asset_version(BASE / "static")
+
+#: The settings page's sub-sections. Validated on the way in so an unknown ?tab= falls back instead of rendering a
+#: page with no panels at all.
+SETTINGS_TABS = ("general", "display", "security", "advanced")
 
 
 def _human_duration(seconds: float) -> str:
@@ -110,6 +116,15 @@ def _relogin_delays() -> list[tuple[int, str]]:
             for seconds in RELOGIN_DELAY_CHOICES]
 
 
+def _auth(app: "FastAPI") -> AuthStore:
+    """The live auth store.
+
+    Read through `app.state` rather than captured in a closure: a store only the builder can reach cannot be swapped
+    for a test, and cannot be reloaded later without rebuilding the whole app.
+    """
+    return app.state.auth
+
+
 def create_app(runtime: "Runtime") -> FastAPI:
     app = FastAPI(title="QSICK WebUI", docs_url=None, redoc_url=None)
     app.state.runtime = runtime
@@ -124,6 +139,53 @@ def create_app(runtime: "Runtime") -> FastAPI:
     #: the HTML, and the browser was still executing last week's file. A version nobody has to remember to bump is
     #: the only kind that stays correct.
     templates.env.globals["asset_version"] = ASSET_VERSION
+
+    #: Password authentication, alongside the access token. Loaded once per app so a restart drops every session --
+    #: a stale cookie that outlives the process it was issued by is the last thing a console wants.
+    app.state.auth = AuthStore(runtime.config.path("webui", "auth.json"))
+    app.state.auth.load()
+
+    def template_context(request: Request) -> dict[str, Any]:
+        """Values every page needs, computed per render.
+
+        A context processor rather than a Jinja global: a global would be shared by concurrent requests, so two
+        tabs served at the same moment could overwrite each other's answer. These are cheap predicates, but
+        "cheap and wrong" is still wrong.
+        """
+        return {
+            "needs_password_setup": (
+                not _auth(app).has_password
+                and request.cookies.get("qsick_setup_dismissed", "") != "1"
+                and not request.url.path.startswith("/login")
+            ),
+            "has_password": _auth(app).has_password,
+        }
+
+    templates.context_processors.insert(0, template_context)
+
+    def client_ip(request: Request) -> str:
+        """The address to record in the login history.
+
+        X-Forwarded-For is honoured only when it is the first hop's single value, and the direct peer otherwise: a
+        header a client can set freely is a note from the caller, not evidence.
+        """
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            first = forwarded.split(",")[0].strip()
+            if first:
+                return first
+        return request.client.host if request.client else ""
+
+    def wants_password_setup(request: Request) -> bool:
+        """True on the very first visit of a password-less install.
+
+        The console has been open to anyone who could reach the port until now; the prompt is a nudge to close that,
+        shown once per browser session rather than blocked on, because refusing to render the dashboard until a
+        password exists would lock out the person who just installed it.
+        """
+        if _auth(app).has_password:
+            return False
+        return request.cookies.get("qsick_setup_dismissed", "") != "1"
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next: Any) -> Response:
@@ -147,19 +209,34 @@ def create_app(runtime: "Runtime") -> FastAPI:
         return runtime.config.webui.access_token
 
     def authorized(request: Request) -> bool:
+        """Whether this request may in.
+
+        Three ways through, in order of how much they get used:
+
+          * a valid access token, in the query, a cookie or a header -- the path scripts and API clients take;
+          * a live password session, which is what a person browsing uses;
+          * neither configured at all, which is the out-of-the-box state on a local machine.
+
+        A password does not disable the token: an operator who sets a password for the browser must not thereby
+        break the `curl` calls that carried the token, and the token is still the shorter-lived, rotatable option
+        of the two.
+        """
         token = current_token()
-        if not token:
-            return True
         supplied = request.query_params.get("token") or request.cookies.get("qsick_token")
         supplied = supplied or request.headers.get("x-access-token", "")
-        return supplied == token
+        if token and supplied and secrets.compare_digest(str(supplied), str(token)):
+            return True
+        if _auth(app).has_password:
+            return _auth(app).touch(request.cookies.get(AUTH_COOKIE, "")) is not None
+        # No password set: fall back to the token rule, and with no token either, the console is open.
+        return not token
 
     def guard(request: Request) -> Response | None:
         if authorized(request):
             return None
         if request.url.path.startswith("/api/"):
             return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
-        target = quote(request.url.path, safe="/")
+        target = quote(request.url.path + (("?" + request.url.query) if request.url.query else ""), safe="/")
         return RedirectResponse(f"/login?next={target}", status_code=303)
 
     @app.get("/favicon.ico", include_in_schema=False)
@@ -174,35 +251,161 @@ def create_app(runtime: "Runtime") -> FastAPI:
 
     @app.get("/login", response_class=HTMLResponse)
     async def login_page(request: Request, next: str = "/") -> HTMLResponse:
-        if not current_token():
-            return RedirectResponse("/", status_code=303)
         if authorized(request):
             return RedirectResponse(next or "/", status_code=303)
+        # Nothing to ask for when neither a password nor a token is configured -- the console is simply open.
+        if not _auth(app).has_password and not current_token():
+            return RedirectResponse("/", status_code=303)
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"page": "login", "info": runtime.info(), "next": next, "error": ""},
+            {
+                "page": "login",
+                "info": runtime.info(),
+                "next": next,
+                "error": "",
+                "needs_password": _auth(app).has_password,
+                "token_login": bool(current_token()),
+                "session_minutes": SESSION_SECONDS // 60,
+            },
         )
 
     @app.post("/login", response_class=HTMLResponse)
-    async def login_submit(request: Request, token_value: str = Form("", alias="token"), next: str = Form("/")):
+    async def login_submit(
+        request: Request,
+        password: str = Form(""),
+        token_value: str = Form("", alias="token"),
+        next: str = Form("/"),
+    ):
+        ip = client_ip(request)
+        agent = request.headers.get("user-agent", "")
+
+        if _auth(app).has_password and password:
+            if _auth(app).check(password):
+                session = _auth(app).start_session(ip)
+                _auth(app).note_login(ip, True, agent)
+                response = RedirectResponse(next or "/", status_code=303)
+                response.set_cookie(
+                    AUTH_COOKIE, session.token, httponly=True, samesite="lax",
+                    max_age=SESSION_SECONDS,
+                )
+                return response
+            _auth(app).note_login(ip, False, agent)
+            return templates.TemplateResponse(
+                request,
+                "login.html",
+                {"page": "login", "info": runtime.info(), "next": next, "error": "密码不正确",
+                 "needs_password": True, "token_login": bool(current_token()),
+                 "session_minutes": SESSION_SECONDS // 60},
+                status_code=401,
+            )
+
         expected = current_token()
-        if expected and secrets.compare_digest(token_value, expected):
+        if expected and token_value and secrets.compare_digest(token_value, expected):
+            _auth(app).note_login(ip, True, agent + " (token)")
             response = RedirectResponse(next or "/", status_code=303)
             response.set_cookie("qsick_token", token_value, httponly=True, samesite="lax")
             return response
+
+        _auth(app).note_login(ip, False, agent)
+        message = "密码不正确" if _auth(app).has_password else "token 不正确"
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"page": "login", "info": runtime.info(), "next": next, "error": "token 不正确"},
+            {"page": "login", "info": runtime.info(), "next": next, "error": message,
+             "needs_password": _auth(app).has_password, "token_login": bool(current_token()),
+             "session_minutes": SESSION_SECONDS // 60},
             status_code=401,
         )
 
     @app.post("/logout")
-    async def logout() -> RedirectResponse:
+    async def logout(request: Request) -> RedirectResponse:
+        _auth(app).end_session(request.cookies.get(AUTH_COOKIE, ""))
         response = RedirectResponse("/login", status_code=303)
         response.delete_cookie("qsick_token")
+        response.delete_cookie(AUTH_COOKIE)
         return response
+
+    # ---------------------------------------------------------------- 安全与隐私
+
+    @app.post("/api/security/password")
+    async def set_password(request: Request) -> JSONResponse:
+        """Set or change the WebUI password.
+
+        Changing an existing password requires the current one. Setting the first one does not -- there is nothing to
+        confirm against, and demanding a password in order to create the first password is a lock with no key.
+        """
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            payload = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JSONResponse({"ok": False, "error": "请求体不是 JSON"}, status_code=400)
+        if not isinstance(payload, dict):
+            return JSONResponse({"ok": False, "error": "请求体必须是对象"}, status_code=400)
+
+        current = str(payload.get("current") or "")
+        fresh = str(payload.get("password") or "")
+        again = str(payload.get("confirm") or "")
+
+        if _auth(app).has_password and not _auth(app).check(current):
+            return JSONResponse({"ok": False, "error": "当前密码不正确"}, status_code=403)
+        if len(fresh) < 6:
+            return JSONResponse({"ok": False, "error": "新密码至少 6 位"}, status_code=400)
+        if fresh != again:
+            return JSONResponse({"ok": False, "error": "两次输入不一致"}, status_code=400)
+        if fresh == current:
+            return JSONResponse({"ok": False, "error": "新密码与当前密码相同"}, status_code=400)
+
+        _auth(app).set_password(fresh)
+        _auth(app).note_login(client_ip(request), True, "password changed")
+        # The password change invalidated every session, including this one; hand back a fresh cookie so the caller
+        # is not logged out by its own success.
+        session = _auth(app).start_session(client_ip(request))
+        response = JSONResponse({"ok": True, "message": "密码已更新，其它会话已失效"})
+        response.set_cookie(AUTH_COOKIE, session.token, httponly=True, samesite="lax", max_age=SESSION_SECONDS)
+        return response
+
+    @app.post("/api/security/password/clear")
+    async def clear_password(request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        if not _auth(app).has_password:
+            return JSONResponse({"ok": True, "message": "本来就没有设置密码"})
+        try:
+            payload = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            payload = {}
+        current = str((payload or {}).get("current") or "")
+        if not _auth(app).check(current):
+            return JSONResponse({"ok": False, "error": "当前密码不正确"}, status_code=403)
+        _auth(app).clear_password()
+        _auth(app).note_login(client_ip(request), True, "password cleared")
+        response = JSONResponse({"ok": True, "message": "密码已移除，WebUI 重新开放访问"})
+        response.delete_cookie(AUTH_COOKIE)
+        return response
+
+    @app.post("/api/security/setup-dismissed")
+    async def dismiss_setup(request: Request) -> JSONResponse:
+        """Remember that this browser said "not now" to the first-run password prompt."""
+        response = JSONResponse({"ok": True})
+        response.set_cookie("qsick_setup_dismissed", "1", max_age=7 * 24 * 3600, samesite="lax")
+        return response
+
+    @app.get("/api/security/overview")
+    async def security_overview(request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return JSONResponse({
+            "has_password": _auth(app).has_password,
+            "token_enabled": bool(current_token()),
+            "session_seconds": SESSION_SECONDS,
+            "sessions": _auth(app).active_sessions(),
+            "logins": _auth(app).recent_logins(30),
+        })
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request) -> HTMLResponse:
@@ -615,19 +818,27 @@ def create_app(runtime: "Runtime") -> FastAPI:
         return JSONResponse({"plugins": runtime.plugins.view()})
 
     @app.get("/settings", response_class=HTMLResponse)
-    async def settings_page(request: Request, saved: int = 0) -> HTMLResponse:
+    async def settings_page(request: Request, saved: int = 0, tab: str = "general") -> HTMLResponse:
         denied = guard(request)
         if denied:
             return denied
+        # The tab lives in the query string rather than in client state: a reload has to land on the same panel, and
+        # a link like /settings?tab=security has to be shareable with the person you are asking to set a password.
+        chosen = tab if tab in SETTINGS_TABS else "general"
+        info = runtime.info()
+        info["has_password"] = _auth(app).has_password
+        info["token_enabled"] = bool(current_token())
         return templates.TemplateResponse(
             request,
             "settings.html",
             {
                 "page": "settings",
-                "info": runtime.info(),
+                "info": info,
                 "config": runtime.config,
                 "config_json": _config_json(runtime),
                 "saved": bool(saved),
+                "tab": chosen,
+                "cursor_types": CURSOR_TYPES,
             },
         )
 
