@@ -265,35 +265,49 @@
           "kind": "str",
           "required": false,
           "default": null,
-          "desc": "说说 id；与 feed_ref 二选一"
+          "desc": ""
         },
         {
           "name": "feed_ref",
           "kind": "dict",
           "required": false,
           "default": null,
-          "desc": "列表返回的 feed 引用 {tid, uin, appid}"
+          "desc": ""
         },
         {
           "name": "target_uin",
           "kind": "str",
           "required": false,
           "default": null,
-          "desc": "说说所属 QQ 号"
+          "desc": ""
         },
         {
           "name": "appid",
           "kind": "str",
           "required": false,
           "default": null,
-          "desc": "说说的 appid，列表里带回来的"
+          "desc": ""
         },
         {
           "name": "content",
-          "kind": "str",
+          "kind": "any",
           "required": true,
           "default": null,
-          "desc": "评论内容"
+          "desc": "评论正文"
+        },
+        {
+          "name": "comment",
+          "kind": "dict",
+          "required": false,
+          "default": null,
+          "desc": "父评论对象；带上即回复该楼"
+        },
+        {
+          "name": "comment_id",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "父评论 id（可替代 comment）"
         }
       ],
       "op": "comment_qzone"
@@ -1866,29 +1880,22 @@
           "desc": ""
         },
         {
-          "name": "target_uin",
-          "kind": "str",
+          "name": "comment",
+          "kind": "dict",
           "required": false,
           "default": null,
-          "desc": "说说所属 QQ 号"
-        },
-        {
-          "name": "appid",
-          "kind": "str",
-          "required": false,
-          "default": null,
-          "desc": "说说的 appid，列表里带回来的"
+          "desc": "读到的完整父评论对象（NapCat 用法）"
         },
         {
           "name": "comment_id",
           "kind": "str",
-          "required": true,
+          "required": false,
           "default": null,
-          "desc": "父评论 id"
+          "desc": "只给 id 的简化写法"
         },
         {
-          "name": "num",
-          "kind": "int",
+          "name": "cursor",
+          "kind": "str",
           "required": false,
           "default": null,
           "desc": ""
@@ -3921,35 +3928,35 @@
           "kind": "str",
           "required": false,
           "default": null,
-          "desc": "说说 id；与 feed_ref 二选一"
+          "desc": ""
         },
         {
           "name": "feed_ref",
           "kind": "dict",
           "required": false,
           "default": null,
-          "desc": "列表返回的 feed 引用 {tid, uin, appid}"
+          "desc": ""
         },
         {
           "name": "target_uin",
           "kind": "str",
           "required": false,
           "default": null,
-          "desc": "说说所属 QQ 号"
+          "desc": ""
         },
         {
           "name": "appid",
           "kind": "str",
           "required": false,
           "default": null,
-          "desc": "说说的 appid，列表里带回来的"
+          "desc": ""
         },
         {
           "name": "ugc_right",
           "kind": "int",
           "required": true,
           "default": null,
-          "desc": ""
+          "desc": "1 所有人 / 4 好友 / 16 部分好友 / 64 仅自己 / 128 部分不可见"
         },
         {
           "name": "target_uins",

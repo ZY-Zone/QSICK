@@ -97,8 +97,10 @@ async def find_feed(ctx: Any, params: dict[str, Any]) -> tuple[dict[str, Any], d
         feed = params.get("feed") if isinstance(params.get("feed"), dict) else {}
         if not feed:
             # A handle alone says who the post is, not what it says; ask for the body so a rewriting call has it.
+            # `feed_detail` answers with the item itself (`{tid, content, ..., feed}`), so the text is on that, not
+            # inside the nested `feed` -- reading the wrong one was why `set_qzone_msg_right` insisted it had none.
             try:
-                feed = (await client(ctx).feed_detail(ref)).get("feed") or {}
+                feed = await client(ctx).feed_detail(ref)
             except QzoneError:
                 feed = {}
         return ref, feed

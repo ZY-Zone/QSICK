@@ -261,3 +261,77 @@ class TestCredentials:
         with pytest.raises(qzone.QzoneError) as caught:
             await instance.credentials()
         assert "p_skey" in str(caught.value)
+
+
+class TestRightRewrite:
+    """`set_msg_right` resubmits the whole post, so the picture has to be rebuilt into `richval`.
+
+    Measured the hard way: sending only `tid`/`con`/`ugc_right` answers ok and silently drops the attached image.
+    """
+
+    def a_detail(self, *, pictures=True) -> dict:
+        detail = {
+            "code": 0, "tid": "tid-1", "uin": "3905548034", "ugcright_id": "tid-1",
+            "content": "test", "conlist": [{"con": "test"}], "t1_subtype": 1, "ugc_right": 1,
+        }
+        if pictures:
+            detail["pic"] = [{
+                "pic_id": ",album-1,lloc-1,extra", "pictype": 22, "height": 240, "width": 240,
+                "url1": "https://m.qpic.cn/x?bo=8ADwAPAA8AADACU!&ek=1",
+            }]
+        return detail
+
+    async def _body(self, detail) -> dict:
+        client = FakeClient([(200, '{"code":0}')])
+        client.own_msg_detail = lambda tid: _resolved(detail)
+        await client.set_msg_right("tid-1", 1)
+        _method, _url, _headers, body = client.requests[0]
+        import urllib.parse
+        # `keep_blank_values` matters: a text-only post sends `richval=` and dropping it would look like the
+        # field was never written at all.
+        return dict(urllib.parse.parse_qsl(body.decode("utf-8"), keep_blank_values=True))
+
+    async def test_the_picture_becomes_richval(self):
+        body = await self._body(self.a_detail())
+        # `,albumid,lloc,lloc,type,height,width,,0,0` -- lloc appears twice, as NapCat writes it.
+        assert body["richval"] == ",album-1,lloc-1,lloc-1,22,240,240,,0,0"
+        assert body["richtype"] == "1"
+
+    async def test_the_text_and_identity_are_carried_back(self):
+        body = await self._body(self.a_detail())
+        assert body["con"] == "test"
+        assert body["tid"] == "tid-1"
+        assert body["ugcright_id"] == "tid-1"
+        assert body["hostuin"] == "3905548034"
+        assert body["ugc_right"] == "1"
+
+    async def test_the_picture_bo_metadata_is_echoed(self):
+        body = await self._body(self.a_detail())
+        assert body["pic_bo"] == "8ADwAPAA8AADACU!\t8ADwAPAA8AADACU!"
+
+    async def test_a_text_only_post_sends_no_richval(self):
+        body = await self._body(self.a_detail(pictures=False))
+        assert body["richval"] == ""
+        assert body["richtype"] == ""
+
+    async def test_a_forwarded_post_is_refused_rather_than_rewritten(self):
+        detail = self.a_detail()
+        detail["rt_tid"] = "something"
+        client = FakeClient([])
+        client.own_msg_detail = lambda tid: _resolved(detail)
+        with pytest.raises(qzone.QzoneError) as caught:
+            await client.set_msg_right("tid-1", 1)
+        assert "cannot be rebuilt" in str(caught.value)
+
+    async def test_another_accounts_post_is_refused(self):
+        detail = self.a_detail()
+        detail["uin"] = "1927676487"
+        client = FakeClient([])
+        client.own_msg_detail = lambda tid: _resolved(detail)
+        with pytest.raises(qzone.QzoneError) as caught:
+            await client.set_msg_right("tid-1", 1)
+        assert "own posts" in str(caught.value)
+
+
+async def _resolved(value):
+    return value

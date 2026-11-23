@@ -289,6 +289,28 @@ def normalize_feed(raw: Any) -> dict[str, Any]:
     }
 
 
+def _picture_bo(picture: dict[str, Any]) -> str | None:
+    """The `bo=` fragment a picture URL carries, which the rewrite echoes back.
+
+    Only the first match is used and an ambiguous URL (two different `bo=`) counts as unknown rather than a guess.
+    """
+    import urllib.parse
+
+    for key in ("smallurl", "url1", "url2", "url3"):
+        value = picture.get(key)
+        if not isinstance(value, str) or not value:
+            continue
+        found = re.findall(r"[?&]bo=([^&#]*)", value)
+        if len(found) > 1:
+            return None
+        if not found:
+            continue
+        decoded = urllib.parse.unquote(found[0])
+        if decoded and not any(ch in decoded for ch in "\t\r\n"):
+            return decoded
+    return None
+
+
 def _as_int(value: Any) -> int:
     try:
         return int(value)
@@ -408,7 +430,9 @@ class QzoneClient:
         if status != 200:
             raise QzoneError(f"{route}: HTTP {status}: {text[:160]}", route=route)
         try:
-            answer = unwrap_jsonp(text)
+            # Some of these answer in `jsonhtml` -- a whole HTML page calling `frameElement.callback({...})` --
+            # which is why the jsonp unwrapper alone reported "response is not JSON" for `set_ban`.
+            answer = unwrap_upload_response(text)
         except ValueError:
             raise QzoneError(f"{route}: response is not JSON: {text[:160]}", route=route) from None
         code = _as_int(answer.get("code")) if isinstance(answer, dict) else 0
@@ -668,25 +692,120 @@ class QzoneClient:
         answer = await self.cgi("set_profile", fields, post=True)
         return {"name": name, "description": description, "raw": answer}
 
-    async def set_msg_right(self, tid: str, ugc_right: int, *, content: str = "",
-                            target_uins: list[str] | None = None, uin: str = "") -> dict[str, Any]:
-        """Change who can see one post.
+    async def own_msg_detail(self, tid: str) -> dict[str, Any]:
+        """The legacy detail of one of *this account's* posts, read via `emotion_cgi_msgdetail_v6`.
 
-        `con` is required -- measured, the CGI answers `code -10005 您未输入内容，随便写点什么吧` without it, because
-        this endpoint rewrites the whole post rather than patching a field. So the current text has to be sent back
-        unchanged, which is also why NapCat reads the post first.
+        Needed because the visibility CGI resubmits the whole post: it carries `con`, `pic`, `richtype`,
+        `ugcright_id` and the rest, none of which a listing has. Measured: `taotao.qq.com` answers while
+        `taotao.qzone.qq.com` refuses with `code -3 参数错误`, so the host matters.
         """
-        if not str(content or "").strip():
-            raise QzoneError("set_msg_right needs the post's current text (`con`); read the feed first and pass it")
         credentials = await self.credentials()
-        fields: dict[str, Any] = {
-            "tid": tid, "con": content, "ugc_right": str(ugc_right),
-            "hostuin": uin or credentials.uin, "format": "json",
+        import urllib.parse
+
+        query = urllib.parse.urlencode({
+            "tid": tid, "uin": credentials.uin, "format": "json",
+            "inCharset": "utf-8", "outCharset": "utf-8", "g_tk": credentials.g_tk,
+        })
+        url = f"{WEB_ROOT}taotao.qq.com/cgi-bin/emotion_cgi_msgdetail_v6?{query}"
+        status, text = await self._request("GET", url, headers=self._headers(credentials, oidb=None))
+        if status != 200:
+            raise QzoneError(f"own_msg_detail: HTTP {status}: {text[:160]}", route="own_msg_detail")
+        try:
+            answer = unwrap_jsonp(text)
+        except ValueError:
+            raise QzoneError(f"own_msg_detail: response is not JSON: {text[:160]}",
+                             route="own_msg_detail") from None
+        code = _as_int(answer.get("code")) if isinstance(answer, dict) else 0
+        if code != 0:
+            raise QzoneError(f"own_msg_detail: code {code} {answer.get('message') or ''}".strip(),
+                             route="own_msg_detail", retcode=code, payload=answer)
+        return answer if isinstance(answer, dict) else {}
+
+    async def set_msg_right(self, tid: str, ugc_right: int, *, target_uins: list[str] | None = None,
+                            uin: str = "") -> dict[str, Any]:
+        """Change who can see one of this account's posts.
+
+        This endpoint **resubmits the whole post**, so everything it carries has to be rebuilt and sent back:
+        measured, sending only `tid`/`con`/`ugc_right` succeeded and silently dropped the attached picture. The
+        detail read supplies the pieces; a post carrying media we cannot reconstruct is refused rather than
+        rewritten into something smaller.
+        """
+        if ugc_right not in (1, 4, 16, 64, 128):
+            raise QzoneError("ugc_right must be one of 1/4/16/64/128")
+        credentials = await self.credentials()
+        owner = uin or credentials.uin
+        detail = await self.own_msg_detail(tid)
+        if str(detail.get("tid") or "") != tid:
+            raise QzoneError("the detail does not describe the post that was asked for")
+        if str(detail.get("uin") or "") not in ("", str(credentials.uin)):
+            raise QzoneError("only this account's own posts can have their visibility changed")
+        for field in ("video", "videos", "music", "forward", "origin", "rt_tid"):
+            # A forward or a clip cannot be rebuilt from this detail; rewriting would lose it.
+            if detail.get(field):
+                raise QzoneError(f"this post carries `{field}`, which cannot be rebuilt; refusing to rewrite it")
+
+        conlist = detail.get("conlist")
+        if isinstance(conlist, list) and conlist:
+            content = "".join(str(part.get("con") or "") for part in conlist if isinstance(part, dict))
+        else:
+            content = str(detail.get("content") or "")
+        if not content:
+            raise QzoneError("the detail carries no text to resubmit")
+
+        pictures = detail.get("pic") if isinstance(detail.get("pic"), list) else []
+        rich_parts: list[str] = []
+        bo_parts: list[str | None] = []
+        for picture in pictures:
+            if not isinstance(picture, dict):
+                continue
+            pic_id = str(picture.get("pic_id") or "")
+            fields = pic_id.split(",")
+            album = fields[1] if len(fields) > 1 else ""
+            lloc = fields[2] if len(fields) > 2 else ""
+            if not album.strip() or not lloc.strip():
+                raise QzoneError("a picture of this post cannot be rebuilt from its metadata")
+            # 22 was the observed legacy picture type; the dimensions are on the detail.
+            picture_type = _as_int(picture.get("pictype") or picture.get("type")) or 22
+            height = _as_int(picture.get("height") or picture.get("b_height")) or 1
+            width = _as_int(picture.get("width") or picture.get("b_width")) or 1
+            rich_parts.append(f",{album},{lloc},{lloc},{picture_type},{height},{width},,0,0")
+            bo_parts.append(_picture_bo(picture))
+
+        rich_type = str(detail.get("richtype") or ("1" if pictures else ""))
+        if pictures and rich_type != "1":
+            raise QzoneError("this post's picture type cannot be rebuilt")
+        if bo_parts and any(part is None for part in bo_parts):
+            bo_parts = []
+        bo_group = ",".join(part for part in bo_parts if part) if bo_parts else ""
+
+        fields_out: dict[str, Any] = {
+            "syn_tweet_verson": "1",
+            "tid": tid,
+            "paramstr": "1",
+            "pic_template": str(detail.get("pic_template") or ""),
+            "richtype": rich_type,
+            "richval": "\t".join(rich_parts),
+            "special_url": "",
+            "subrichtype": str(detail.get("t1_subtype") or detail.get("subrichtype") or ""),
+            "pic_bo": f"{bo_group}\t{bo_group}" if bo_group else "",
+            "con": content,
+            "feedversion": str(detail.get("feedversion") or "1"),
+            "ver": str(detail.get("ver") or "1"),
+            "ugc_right": str(ugc_right),
+            "to_sign": str(detail.get("to_sign") or "0"),
+            "ugcright_id": str(detail.get("ugcright_id") or tid),
+            "hostuin": owner,
+            "code_version": str(detail.get("code_version") or "1"),
+            # Not `json`: this endpoint answers in QQ's `fs` framing.
+            "format": "fs",
+            "qzreferrer": f"https://user.qzone.qq.com/{owner}",
         }
-        if target_uins:
-            fields["allow_uins"] = "|".join(target_uins)
-        answer = await self.cgi("set_msg_right", fields, post=True)
-        return {"tid": tid, "ugc_right": ugc_right, "raw": answer}
+        if ugc_right in (16, 128):
+            if not target_uins:
+                raise QzoneError("ugc_right 16/128 needs target_uins")
+            fields_out["allow_uins"] = "|".join(target_uins)
+        answer = await self.cgi("set_msg_right", fields_out, post=True, full=True)
+        return {"tid": tid, "ugc_right": ugc_right, "images": len(rich_parts), "raw": answer}
 
     async def set_ban(self, target_uin: str, *, banned: bool = True) -> dict[str, Any]:
         fields = {"fuid": target_uin, "action": "1" if banned else "0", "format": "json"}

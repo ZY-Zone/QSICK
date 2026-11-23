@@ -120,7 +120,7 @@
       "delete_qzone_msg": "ok, the post disappears from the listing",
       "get_qzone_public_capabilities": "ok, all public_qzone_* flags false",
       "get_qzone_public_feeds": "ok but total 0 (account not whitelisted)",
-      "set_qzone_msg_right": "ok for ugc_right=1, but the call rewrites the whole post: it needs the current text ('con') or the server answers code -10005 '您未输入内容'. ugc_right=64 (仅自己可见) is refused with code -10083 '使用人数过多，请稍后再试' on every attempt, so that value is unverified rather than broken on our side."
+      "set_qzone_msg_right": "ok, and it no longer loses the picture. Two things had to be fixed: the call rewrites the whole post, so it needs the text ('con' -- without it code -10005 '您未输入内容'), AND the richval rebuilt from the post's own detail -- sending only tid/con/ugc_right answers ok while silently deleting the attached image. ugc_right=64 (仅自己可见) is still refused by the server with code -10083 on every attempt."
     },
     "unverified": [
       "set_qzone_profile / set_qzone_ban: implemented, not exercised -- they change account state",
@@ -146,6 +146,17 @@
         "pos",
         "num"
       ]
+    },
+    "media_preserving_rewrite": {
+      "why": "emotion_cgi_update resubmits a whole post, not a field",
+      "how": "read emotion_cgi_msgdetail_v6 (GET, host taotao.qq.com -- taotao.qzone.qq.com answers code -3), rebuild con from conlist/content, richval from pic[].pic_id as ,album,lloc,lloc,type,h,w,,0,0, pic_bo from the bo= fragment of the picture URLs, then POST every field back",
+      "refused_rather_than_degraded": [
+        "forwarded posts (rt_tid)",
+        "video",
+        "music",
+        "a picture whose metadata cannot be rebuilt"
+      ],
+      "finding": "the first version sent only tid/con/ugc_right; the call reported ok and the picture was gone"
     }
   },
   "shapes_that_were_guessed_wrong_first": {
