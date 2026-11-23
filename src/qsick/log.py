@@ -35,21 +35,50 @@ _LOCK = threading.RLock()
 KNOWN_CATEGORIES: dict[str, dict[str, str]] = {}
 
 
-def register_category(category: str, *, source: str = "core", description: str = "") -> None:
-    """Declare a category so the filter offers it even before anything writes to it."""
+def register_category(category: str, *, source: str = "core", group: str = "",
+                      description: str = "") -> None:
+    """Declare a category so the filter offers it even before anything writes to it.
+
+    `group` decides which of :data:`GROUPS` it lands under. A plugin category defaults to the plugin group whatever
+    the caller passes -- the source already says where it came from, and a plugin does not get to file itself under
+    "内核".
+    """
     name = str(category or "").strip()
     if not name:
         return
+    chosen = "plugin" if source == "plugin" else (group if group in GROUPS else "core")
     with _LOCK:
-        KNOWN_CATEGORIES[name] = {"category": name, "source": source, "description": description}
+        KNOWN_CATEGORIES[name] = {
+            "category": name, "source": source, "group": chosen, "description": description,
+        }
 
 
 def known_categories() -> list[dict[str, str]]:
-    """Declared categories: core first, then plugin-declared ones, each group alphabetical."""
+    """Declared categories, ordered the way the filter renders them: by group, then alphabetically."""
     with _LOCK:
         items = [dict(value) for value in KNOWN_CATEGORIES.values()]
-    rank = {"core": 0, "plugin": 1}
-    return sorted(items, key=lambda item: (rank.get(item.get("source", ""), 2), item["category"]))
+    for item in items:
+        item["group_label"] = GROUPS.get(item.get("group", ""), "其他")
+    rank = {name: index for index, name in enumerate(GROUP_ORDER)}
+    return sorted(items, key=lambda item: (rank.get(item.get("group", ""), 99), item["category"]))
+
+
+def grouped_categories() -> list[dict[str, object]]:
+    """The same list folded into ``[{group, label, categories}]`` for ``<optgroup>`` rendering.
+
+    Empty groups are dropped: an ``<optgroup>`` with nothing under it is a dead heading.
+    """
+    by_group: dict[str, list[dict[str, str]]] = {}
+    for item in known_categories():
+        by_group.setdefault(str(item.get("group") or "core"), []).append(item)
+    out: list[dict[str, object]] = []
+    for name in GROUP_ORDER:
+        entries = by_group.pop(name, [])
+        if entries:
+            out.append({"group": name, "label": GROUPS[name], "categories": entries})
+    for name, entries in by_group.items():  # anything unclassified still has to be reachable
+        out.append({"group": name, "label": GROUPS.get(name, name), "categories": entries})
+    return out
 
 
 def unregister_category(category: str) -> None:
@@ -66,24 +95,46 @@ def unregister_category(category: str) -> None:
         KNOWN_CATEGORIES.pop(name, None)
 
 
-for _name, _description in (
-    ("Runtime", "运行时的启停与实例状态"),
-    ("Plugins", "插件的加载、卸载与热重载"),
-    ("OneBot.WS", "OneBot WebSocket 连接：接入、断开、拒绝"),
-    ("OneBot.HTTP", "OneBot HTTP 端点：监听、鉴权拒绝、动作错误"),
-    ("OneBot.Reverse", "反向 WebSocket 客户端"),
-    ("OneBot.Events", "OneBot 事件映射与分发"),
-    ("OneBot.Actions", "动作注册与执行"),
-    ("MessageCache", "消息缓存写入"),
-    ("Transport.Pipe", "pipe 载荷与 DLL 通道"),
-    ("Transport.Headless", "无头实例进程"),
-    ("SessionLink", "会话与载荷的连接状态"),
-    ("Protocol.Media", "媒体地址与 rkey"),
-    ("Protocol.RKey", "rkey 提供方"),
-    ("WebUI", "WebUI 服务"),
-    ("Market", "插件市场"),
+#: The four groups the filter offers. Coarse on purpose: a list of eighteen categories is not a filter, it is
+#: scissors. Someone reading the log is asking one of four questions -- "is the core unhappy", "is the injected
+#: side unhappy", "what did my plugin do", "what are the connections doing" -- so those are the four choices.
+GROUPS: dict[str, str] = {
+    "core": "QSICK 内核",
+    "dll": "DLL / 注入",
+    "plugin": "插件",
+    "net": "网络连接",
+}
+
+GROUP_ORDER = ("core", "dll", "plugin", "net")
+
+for _name, _group, _description in (
+    ("Runtime", "core", "运行时的启停与实例状态"),
+    ("Runtime.Fetch", "core", "历史消息拉取"),
+    ("WebUI", "core", "WebUI 服务"),
+    ("WebUI.Messages", "core", "WebUI 消息页"),
+    ("OneBot.Events", "core", "OneBot 事件映射与分发"),
+    ("OneBot.Actions", "core", "动作注册与执行"),
+    ("OneBot.Server", "net", "OneBot 服务端（通用）"),
+    ("Noise", "core", "被过滤的噪声事件"),
+    ("MessageCache", "core", "消息缓存入口与写入"),
+    ("Protocol.Media", "core", "媒体地址与 rkey"),
+    ("Protocol.RKey", "core", "rkey 提供方"),
+    ("Market", "core", "插件市场"),
+    ("Plugins", "core", "插件的加载、卸载与热重载（宿主侧）"),
+    ("Transport.Inject", "dll", "DLL 注入过程"),
+    ("Transport.Injector", "dll", "进程启动与模块枚举"),
+    ("Transport.Payload", "dll", "载荷调用"),
+    ("Transport.Pipe", "dll", "pipe 载荷通道"),
+    ("Transport.Headless", "dll", "无头实例进程"),
+    ("Headless", "dll", "无头实例管理"),
+    ("Instance.Template", "dll", "实例模板复制"),
+    ("Transport.Mock", "dll", "mock 传输（测试用）"),
+    ("SessionLink", "dll", "会话与载荷的连接状态"),
+    ("OneBot.WS", "net", "OneBot WebSocket 连接：接入、断开、拒绝"),
+    ("OneBot.HTTP", "net", "OneBot HTTP 端点：监听、鉴权拒绝"),
+    ("OneBot.Reverse", "net", "反向 WebSocket 客户端"),
 ):
-    register_category(_name, description=_description)
+    register_category(_name, group=_group, description=_description)
 
 
 @dataclass(slots=True)

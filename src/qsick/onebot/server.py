@@ -52,12 +52,26 @@ class EventHub:
     def remove_sse(self, queue: asyncio.Queue[str]) -> None:
         self._sse.discard(queue)
 
+    #: HTTP is stateless, so there is no connection to count. These two are what can honestly be shown instead:
+    #: how many requests are being served right now, and how many have been served in total. A panel that claimed
+    #: "0 connections" for a working HTTP endpoint would be telling the operator nothing is using it.
+    http_active = 0
+    http_requests = 0
+
+    def note_http(self, delta: int) -> None:
+        """Call with +1 when a request starts and -1 when it ends."""
+        self.http_active = max(0, self.http_active + delta)
+        if delta > 0:
+            self.http_requests += 1
+
     def stats(self) -> dict[str, int]:
         return {
             "websockets": len(self._websockets),
             "sse": len(self._sse),
             "dropped_sse": self.dropped_sse,
             "slow_ws": self.slow_ws,
+            "http_active": self.http_active,
+            "http_requests": self.http_requests,
         }
 
     async def broadcast(self, payload: dict[str, Any]) -> None:
@@ -122,6 +136,8 @@ def create_app(runtime: "Runtime") -> FastAPI:
         return {"status": "ok", "self_id": runtime.self_id}
 
     async def _run_body(body: Any) -> JSONResponse:
+        if body is not None:
+            hub.note_http(-1)     # paired with the +1 the caller took before parsing
         if not isinstance(body, dict):
             return JSONResponse(models.fail("body must be an object"), status_code=400)
         name = str(body.get("action", ""))
@@ -133,7 +149,9 @@ def create_app(runtime: "Runtime") -> FastAPI:
 
     @app.post(config.http_path)
     async def action_post(request: Request) -> JSONResponse:
+        hub.note_http(1)
         if not authorized(request):
+            hub.note_http(-1)
             http_log.warn("onebot http rejected", reason="bad access_token", verb="POST",
                           path=str(request.url.path))
             return JSONResponse(models.fail("unauthorized", models.UNAUTHORIZED), status_code=401)
@@ -165,7 +183,9 @@ def create_app(runtime: "Runtime") -> FastAPI:
 
     @app.get(config.http_path)
     async def action_get(request: Request) -> JSONResponse:
+        hub.note_http(1)
         if not authorized(request):
+            hub.note_http(-1)
             http_log.warn("onebot http rejected", reason="bad access_token", verb="GET",
                           path=str(request.url.path))
             return JSONResponse(models.fail("unauthorized", models.UNAUTHORIZED), status_code=401)

@@ -1,0 +1,55 @@
+{# 第二排三块等宽：CPU、内存、网络配置。网络面板与两张图同高，
+   超过三行由 .netpanel 自己滚动。消息数单独占第三排——它的横轴是 7 天，
+   挤进三分之一宽会把 15 根柱子压成一片。
+
+   服务端只给数据（含最小二乘拟合结果），页面只负责画——拟合放在服务端是为了
+   /api/status 的读取方也能复用同一个结果，而不是每家自己算一遍。 #}
+<div class="charts">
+  <article class="card chart-card">
+    <div class="card-head">
+      <h2>CPU 占用</h2>
+      <span class="faint" id="cpu-range">近 30 分钟</span>
+    </div>
+    <div class="chart-legend">
+      <span class="chip-line"><i class="sw sw-cpu"></i>实时</span>
+      <span class="chip-line"><i class="sw sw-fit"></i>拟合</span>
+      <span class="chip-line"><i class="sw sw-avg"></i>均值 <b id="cpu-avg">—</b></span>
+    </div>
+    <svg class="chart-svg" id="cpu-chart" viewBox="0 0 640 190" role="img"
+         aria-label="CPU 占用折线图"></svg>
+    <div class="chart-foot">
+      <span>当前 <b id="cpu-now">—</b></span>
+      <span>峰值 <b id="cpu-peak">—</b></span>
+    </div>
+  </article>
+
+  <article class="card chart-card">
+    <div class="card-head">
+      <h2>内存占用</h2>
+      <span class="faint" id="mem-total">—</span>
+    </div>
+    <div class="pie-wrap">
+      <svg class="pie-svg" id="mem-chart" viewBox="0 0 180 180" role="img" aria-label="内存占用饼图"></svg>
+      <ul class="pie-legend" id="mem-legend"></ul>
+    </div>
+  </article>
+
+  {% include "partials/network_card.html" %}
+</div>
+
+<article class="card chart-card wide">
+  <div class="card-head">
+    <h2>消息数</h2>
+    <span class="faint">近 7 天 · 每格 12 小时</span>
+  </div>
+  <div class="chart-legend">
+    <span class="chip-line">缓存共 <b id="msg-total">—</b> 条</span>
+    <span class="chip-line">峰值 <b id="msg-peak">—</b></span>
+    <span class="chip-line">均值 <b id="msg-avg">—</b></span>
+    <span class="msg-accounts" id="msg-accounts"></span>
+  </div>
+  <svg class="chart-svg tall" id="msg-chart" viewBox="0 0 640 190" role="img"
+       aria-label="按来源账号着色的消息数柱状图"></svg>
+</article>
+
+<script type="application/json" id="chart-seed">{{ info.charts|tojson }}</script>

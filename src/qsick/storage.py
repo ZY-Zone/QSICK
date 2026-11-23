@@ -48,6 +48,9 @@ class MessageStore(Protocol):
     def search(self, query: str = "", offset: int = 0, limit: int = 50) -> list[Message]: ...
     def count_matching(self, query: str = "") -> int: ...
     def count(self) -> int: ...
+    def counts_by_bucket(self, start: int, end: int, bucket_seconds: int) -> dict[int, int]: ...
+    def counts_by_bucket_and_account(self, start: int, end: int, bucket_seconds: int
+                                     ) -> dict[int, dict[str, int]]: ...
     def prune(self) -> Any: ...
     def set_media_path(self, message_id: int, element_id: str, path: str) -> bool: ...
     def delete(self, message_id: int) -> bool: ...
@@ -92,6 +95,33 @@ class MemoryStore:
             1 for message in self._messages.values()
             if needle in (message.text or "").lower() or needle in str(message.chat_id)
         )
+
+    def counts_by_bucket(self, start: int, end: int, bucket_seconds: int) -> dict[int, int]:
+        """See :meth:`SqliteStore.counts_by_bucket`; the in-memory store answers the same question."""
+        width = max(1, int(bucket_seconds))
+        found: dict[int, int] = {}
+        for message in self._messages.values():
+            stamp = int(getattr(message, "time", 0) or 0)
+            if not stamp or stamp < start or stamp >= end:
+                continue
+            slot = int(start) + ((stamp - int(start)) // width) * width
+            found[slot] = found.get(slot, 0) + 1
+        return found
+
+    def counts_by_bucket_and_account(self, start: int, end: int, bucket_seconds: int
+                                     ) -> dict[int, dict[str, int]]:
+        """See :meth:`SqliteStore.counts_by_bucket_and_account`."""
+        width = max(1, int(bucket_seconds))
+        out: dict[int, dict[str, int]] = {}
+        for message in self._messages.values():
+            stamp = int(getattr(message, "time", 0) or 0)
+            if not stamp or stamp < start or stamp >= end:
+                continue
+            bucket = int(start) + ((stamp - int(start)) // width) * width
+            account = str(getattr(message, "account", "") or "") or "unknown"
+            slot = out.setdefault(bucket, {})
+            slot[account] = slot.get(account, 0) + 1
+        return out
 
     def count(self) -> int:
         return len(self._messages)
@@ -264,6 +294,55 @@ class SqliteStore:
         with self._lock:
             row = self._db.execute("SELECT COUNT(*) AS total FROM messages").fetchone()
         return int(row["total"]) if row else 0
+
+    def counts_by_bucket(self, start: int, end: int, bucket_seconds: int) -> dict[int, int]:
+        """Message counts per `bucket_seconds` window between `start` and `end`, keyed by bucket start.
+
+        Buckets are aligned to `start` so they do not shift between renders. Rows with no timestamp (`time = 0`)
+        are left out: they cannot be placed on a time axis, and inventing a position for them would draw a spike
+        that never happened. The grouping is integer arithmetic rather than a date function so it behaves the same
+        whatever SQLite build is bundled.
+        """
+        width = max(1, int(bucket_seconds))
+        with self._lock:
+            rows = self._db.execute(
+                """
+                SELECT CAST((time - ?) / ? AS INTEGER) AS slot, COUNT(*) AS total
+                FROM messages
+                WHERE time >= ? AND time < ?
+                GROUP BY slot
+                """,
+                (int(start), width, int(start), int(end)),
+            ).fetchall()
+        return {int(start) + int(row["slot"]) * width: int(row["total"]) for row in rows}
+
+    def counts_by_bucket_and_account(self, start: int, end: int, bucket_seconds: int
+                                     ) -> dict[int, dict[str, int]]:
+        """Same buckets as :meth:`counts_by_bucket`, split one level further by account.
+
+        The account lives in the raw payload's `account` field -- that is where the transport puts the uin the
+        message belongs to, and there is no column for it. `json_extract` is used rather than a LIKE: matching JSON
+        with a substring would also match an account number that merely appeared inside a message body.
+        """
+        width = max(1, int(bucket_seconds))
+        with self._lock:
+            rows = self._db.execute(
+                """
+                SELECT CAST((time - ?) / ? AS INTEGER) AS slot,
+                       COALESCE(json_extract(raw, '$.account'), '') AS account,
+                       COUNT(*) AS total
+                FROM messages
+                WHERE time >= ? AND time < ?
+                GROUP BY slot, account
+                """,
+                (int(start), width, int(start), int(end)),
+            ).fetchall()
+        out: dict[int, dict[str, int]] = {}
+        for row in rows:
+            bucket = int(start) + int(row["slot"]) * width
+            account = str(row["account"] or "") or "unknown"
+            out.setdefault(bucket, {})[account] = int(row["total"])
+        return out
 
     def _prune_locked(self) -> int:
         """Drop whatever the retention limits say is over, and report how many rows went.

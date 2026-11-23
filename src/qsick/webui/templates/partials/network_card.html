@@ -1,0 +1,37 @@
+{# 网络配置面板：已启用的端点一行一个，和 CPU / 内存并排占第二排的三分之一。
+
+   每行占面板可用高度的三分之一，超过三个就滚动——所以"三个"不是硬限制，
+   而是"不用滚就能看完的量"。禁用项不出现：这里回答的是"应该监听的东西，
+   现在监听了吗"，一行"未启用"两个问题都没回答。 #}
+<article class="card chart-card netcard">
+  <div class="card-head">
+    <h2>网络配置</h2>
+    <a class="faint" href="/network">配置 →</a>
+  </div>
+  <div class="netpanel">
+    {% if info.network_cards %}
+    <ul class="netlist">
+      {% for card in info.network_cards %}
+      <li class="netline" title="{{ card.detail }}">
+        <span class="dot {{ card.tone }}"></span>
+        <span class="netline-main">
+          <strong>{{ card.label }}</strong>
+          {% if card.account %}<span class="netline-account">{{ card.account }}</span>{% endif %}
+          <span class="netline-detail">{{ card.detail }}</span>
+        </span>
+        <span class="netline-side">
+          <span class="netline-state">{{ card.state }}</span>
+          {% if card.show_connections %}
+          <span class="netline-count">
+            {{ card.connections }}{{ " 个连接" if card.connection_kind != "request" else " 次请求" }}
+          </span>
+          {% endif %}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty netline-empty">没有启用的网络配置</div>
+    {% endif %}
+  </div>
+</article>

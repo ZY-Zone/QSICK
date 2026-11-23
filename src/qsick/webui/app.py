@@ -43,6 +43,28 @@ BASE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE / "templates"))
 
 
+def _asset_version(static_dir: Path) -> str:
+    """A short token that changes whenever a bundled asset changes.
+
+    Built from the newest mtime plus the total size, which is enough to tell "the same bytes" from "not", and does
+    not need hashing three files on every render -- it is computed once, at startup.
+    """
+    newest = 0.0
+    total = 0
+    for name in ("app.css", "app.js", "htmx-lite.js"):
+        try:
+            stat = (static_dir / name).stat()
+        except OSError:
+            continue
+        newest = max(newest, stat.st_mtime)
+        total += stat.st_size
+    return f"{int(newest):x}{total:x}"
+
+
+#: Injected into every template so `base.html` can stamp the real version onto its <link>/<script> URLs.
+ASSET_VERSION = _asset_version(BASE / "static")
+
+
 def _human_duration(seconds: float) -> str:
     seconds = max(0, int(seconds))
     days, rest = divmod(seconds, 86400)
@@ -93,6 +115,15 @@ def create_app(runtime: "Runtime") -> FastAPI:
     app.state.runtime = runtime
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     app.mount("/static", StaticFiles(directory=str(BASE / "static")), name="static")
+
+    #: Cache-busting token for app.css / app.js, derived from the files themselves.
+    #:
+    #: It used to be a hand-written string in base.html, last touched on 2026-11-14. Every UI change since then
+    #: shipped behind a URL the browser had already cached, so the running page silently kept the old JavaScript --
+    #: which is exactly what "the dropdown is still broken" looked like from the outside: the fix was on disk and in
+    #: the HTML, and the browser was still executing last week's file. A version nobody has to remember to bump is
+    #: the only kind that stays correct.
+    templates.env.globals["asset_version"] = ASSET_VERSION
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next: Any) -> Response:
@@ -212,7 +243,13 @@ def create_app(runtime: "Runtime") -> FastAPI:
                 # Declared categories, so the filter offers "Plugins" and "OneBot.WS" before anything has written to
                 # them. Populating from observed records alone meant the categories that matter exactly when they are
                 # empty were the ones that could not be selected.
-                "categories": logmod.known_categories(),
+                #
+                # Grouped, not flat: eighteen entries is a list to read, not a filter to use. Four groups answer the
+                # four questions someone actually has. Plugins are the exception and stay individual, because "which
+                # plugin said this" is the whole reason to filter there.
+                "groups": logmod.grouped_categories(),
+                "category_groups": {entry["category"]: entry["group"]
+                                    for entry in logmod.known_categories()},
             },
         )
 
@@ -261,6 +298,21 @@ def create_app(runtime: "Runtime") -> FastAPI:
         if denied:
             return denied
         return JSONResponse(runtime.info())
+
+    @app.get("/api/charts")
+    async def charts_api(request: Request) -> JSONResponse:
+        """The overview's three charts, polled separately from the status tiles.
+
+        Separate because of the cadence: the tiles want two seconds, a thirty-minute trend does not, and rebuilding
+        a few hundred SVG points every two seconds to redraw an identical line is work nobody asked for.
+        """
+        denied = guard(request)
+        if denied:
+            return denied
+        # Take a sample on demand as well as on the timer: right after a restart the ring is empty, and a page
+        # opened in that window should draw from its first refresh rather than from five seconds later.
+        runtime.sample_metrics()
+        return JSONResponse(runtime.chart_data())
 
     @app.get("/metrics")
     async def metrics(request: Request) -> PlainTextResponse:
@@ -1158,13 +1210,6 @@ def create_app(runtime: "Runtime") -> FastAPI:
 
     def _headless() -> HeadlessManager:
         return HeadlessManager(runtime.config.headless_root)
-
-    @app.get("/partials/network", response_class=HTMLResponse)
-    async def partial_network(request: Request) -> HTMLResponse:
-        denied = guard(request)
-        if denied:
-            return denied
-        return templates.TemplateResponse(request, "partials/network.html", {"page": "index", "info": runtime.info()})
 
     @app.get("/accounts/{instance_id}/login", response_class=HTMLResponse)
     async def accounts_login(instance_id: str, request: Request, embedded: int = 0) -> HTMLResponse:

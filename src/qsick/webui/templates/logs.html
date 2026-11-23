@@ -21,9 +21,12 @@
       <option value="ERROR">ERROR</option>
     </select>
     <select id="log-category">
-      <option value="">全部分类</option>
-      {% for entry in categories %}
-      <option value="{{ entry.category }}" title="{{ entry.description }}">{{ entry.category }}</option>
+      <option value="">全部</option>
+      {% for group in groups %}
+      <option value="group:{{ group.group }}" title="{{ group.categories|length }} 个分类">{{ group.label }}</option>
+      {% for entry in group.categories if group.group == "plugin" %}
+      <option value="{{ entry.category }}" title="{{ entry.description }}">&nbsp;&nbsp;{{ entry.category }}</option>
+      {% endfor %}
       {% endfor %}
     </select>
     <span class="spacer"></span>
@@ -35,5 +38,7 @@
   </div>
   <div class="logview" id="logs"></div>
   <script type="application/json" id="log-seed">{{ records|tojson }}</script>
+  {# category → group, so the filter can match a whole group without a round trip. #}
+  <script type="application/json" id="log-groups">{{ category_groups|tojson }}</script>
 </section>
 {% endblock %}

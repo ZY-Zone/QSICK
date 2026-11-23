@@ -10,7 +10,7 @@ from typing import Any
 
 import uvicorn
 
-from . import __version__, log as logmod
+from . import __version__, metrics as metricsmod, log as logmod
 from . import network_profiles as netprofiles
 from .config import RuntimeConfig, load_config
 from .instances import InstanceContext, InstanceHub
@@ -249,6 +249,10 @@ class Runtime:
         #: core-tier plugin may set them, and they live for this process only: a restriction is state a plugin
         #: re-applies on load, not configuration that quietly outlives the plugin that wrote it.
         self._account_restrictions: dict[str, str] = {}
+        #: CPU/memory samples for the dashboard, trimmed by age (see metrics.History).
+        self.metrics = metricsmod.History()
+        #: First sample is free -- `cpu_percent` needs a baseline delta, so an immediate one would read 0 anyway.
+        self._metrics_task: asyncio.Task[None] | None = None
         self.registry: ActionRegistry = action_mod.build_registry()
         self.hub = EventHub()
         self.plugins = PluginHost(
@@ -500,7 +504,12 @@ class Runtime:
         return self.is_account_online(name)
 
     def network_cards(self) -> list[dict[str, Any]]:
-        """At most three configured network endpoints for the dashboard."""
+        """Every **enabled** network endpoint, one row each, for the dashboard's network panel.
+
+        Disabled endpoints are left out entirely rather than shown greyed: this panel answers "what is supposed to be
+        listening, and is it", and a row saying "未启用" answers neither. Three rows fit without scrolling; past
+        that the panel scrolls.
+        """
         cfg = self.config.onebot
         server = self._onebot_server
         started = bool(server and getattr(server, "started", False))
@@ -509,37 +518,56 @@ class Runtime:
 
         if cfg.enable_http:
             cards.append({
-                "id": "http", "label": "OneBot HTTP",
-                "tone": "green" if started else "red",
+                "id": "http", "label": "OneBot HTTP", "kind": "http",
+                "tone": "green" if started else "gray",
                 "state": "监听中" if started else "未启动",
                 "detail": f"http://{cfg.host}:{cfg.port}{cfg.http_path}",
+                # A server's connection count is what tells you whether anything is actually talking to it.
+                # HTTP has no connection to count; in-flight requests and the running total are what can honestly
+                # be shown, and the template labels them as requests rather than implying a socket count.
+                "connections": int(hub.get("http_requests", 0)),
+                "active": int(hub.get("http_active", 0)),
+                "connection_kind": "request",
+                "show_connections": True,
             })
-        else:
-            cards.append({"id": "http", "label": "OneBot HTTP", "tone": "gray", "state": "未启用", "detail": "HTTP 服务已关闭"})
 
         if cfg.enable_ws:
             cards.append({
-                "id": "ws", "label": "OneBot WebSocket",
-                "tone": "green" if started else "red",
-                "state": f"{hub['websockets']} 个连接" if started else "未启动",
+                "id": "ws", "label": "OneBot WebSocket", "kind": "ws",
+                "tone": "green" if started else "gray",
+                "state": "监听中" if started else "未启动",
                 "detail": f"ws://{cfg.host}:{cfg.port}{cfg.ws_path}",
+                "connections": int(hub.get("websockets", 0)) if started else 0,
+                "connection_kind": "connection",
+                "show_connections": True,
             })
-        else:
-            cards.append({"id": "ws", "label": "OneBot WebSocket", "tone": "gray", "state": "未启用", "detail": "WebSocket 服务已关闭"})
 
-        urls = list(cfg.reverse_ws_urls)
-        if urls:
-            connected = bool(self.reverse.status().get("connected"))
+        if cfg.enable_sse:
             cards.append({
-                "id": "reverse", "label": "Reverse WS 客户端",
-                "tone": "green" if connected else "red",
-                "state": "正常" if connected else "异常",
-                "detail": f"{'已连接' if connected else '未连接'} · {len(urls)} 个目标",
+                "id": "sse", "label": "OneBot SSE", "kind": "sse",
+                "tone": "green" if started else "gray",
+                "state": "监听中" if started else "未启动",
+                "detail": f"http://{cfg.host}:{cfg.port}{cfg.sse_path}",
+                "connections": int(hub.get("sse", 0)) if started else 0,
+                "connection_kind": "connection",
+                "show_connections": True,
             })
-        else:
-            cards.append({"id": "reverse", "label": "Reverse WS 客户端", "tone": "gray", "state": "未启用", "detail": "未配置目标地址"})
 
-        return cards[:3]
+        for index, target in enumerate(self._reverse_targets()):
+            url, account, _report = target
+            status = self.reverse.status()
+            connected = bool(status.get("connected"))
+            cards.append({
+                "id": f"reverse-{index}", "label": "Reverse WS", "kind": "reverse",
+                "tone": "green" if connected else "gray",
+                "state": "已连接" if connected else "未连接",
+                "detail": url,
+                "account": account,
+                "connections": 1 if connected else 0,
+                "show_connections": False,
+            })
+
+        return cards
 
     def _last_error(self) -> dict[str, Any] | None:
         for record in reversed(logmod.BUFFER.tail(300)):
@@ -699,6 +727,11 @@ class Runtime:
         if self.config.pipe_auto_start and self.config.pipe_auto_start_session:
             self._tasks.append(asyncio.create_task(
                 self._auto_pipe_session(), name="qsick-pipe-autostart"))
+        # The dashboard's history has to have been collecting before anyone opens the page -- a chart that starts
+        # when you look at it shows nothing, which is the one thing it must not do.
+        if metricsmod.available():
+            self._metrics_task = asyncio.create_task(self._metrics_loop(), name="qsick-metrics")
+            self._tasks.append(self._metrics_task)
         log.info(
             "runtime started",
             transport=self.transport.name,
@@ -2065,6 +2098,125 @@ class Runtime:
 
     # --------------------------------------------------------------------- info
 
+    # ------------------------------------------------------------------ metrics
+
+    #: How often the dashboard's CPU/memory history is sampled. Thirty minutes at this spacing is 360 points --
+    #: enough to show a spike, few enough that the task costs nothing.
+    METRICS_INTERVAL = 5.0
+
+    def _qq_uins(self) -> dict[str, str]:
+        """Map a QQ process (or the session that owns it) to the account logged into it.
+
+        Two keys per account on purpose: a pipe session is identified by its tmp_id (`session_of` reads that out of
+        the command line), a headless instance by its pid. `metrics.sample` looks up both, so the pie can label a
+        slice with the uin without this function having to know which kind it found.
+        """
+        found: dict[str, str] = {}
+        try:
+            for row in self.session_rows():
+                uin = str((row.get("account") or {}).get("uin") or "").strip()
+                session = str(row.get("tmp_id") or "")
+                if uin and session:
+                    found[session] = uin
+        except Exception:  # noqa: BLE001 - a chart is not worth an exception
+            pass
+        try:
+            for item in self.instances_online():
+                uin = str(item.get("uin") or "").strip()
+                if uin and uin != "0":
+                    found[uin] = uin
+        except Exception:  # noqa: BLE001
+            pass
+        return found
+
+    def sample_metrics(self) -> None:
+        """Take one sample. Safe to call directly -- the dashboard's poll does so to stay fresh after a restart."""
+        try:
+            self.metrics.record(self._qq_uins())
+        except Exception as exc:  # noqa: BLE001 - a broken syscall must not stop the runtime
+            log.warn("metrics sample failed", error=f"{type(exc).__name__}: {exc}")
+
+    async def _metrics_loop(self) -> None:
+        while not self._stopping.is_set():
+            self.sample_metrics()
+            try:
+                await asyncio.wait_for(self._stopping.wait(), timeout=self.METRICS_INTERVAL)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                continue
+
+    def chart_data(self) -> dict[str, Any]:
+        """Everything the overview's three charts need, precomputed.
+
+        The fit is done here rather than in the browser: the same least-squares result is then reusable by anything
+        else that reads `/api/status`, and the page stays a renderer.
+        """
+        latest = self.metrics.latest()
+        points = self.metrics.cpu_points()
+        values = [point[1] for point in points]
+        memory = latest.memory_breakdown() if latest else {}
+        return {
+            "available": metricsmod.available() and bool(latest),
+            "interval": self.METRICS_INTERVAL,
+            "cpu": {
+                "points": points,
+                "fit": metricsmod.fit_curve(points),
+                "average": round(sum(values) / len(values), 2) if values else 0.0,
+                "peak": round(max(values), 2) if values else 0.0,
+                "current": round(values[-1], 2) if values else 0.0,
+            },
+            "memory": memory,
+            "messages": self.message_history(),
+        }
+
+    # How far back the message-count chart looks, and how wide each bar is: seven days in half-day buckets.
+    MESSAGE_WINDOW_SECONDS = 7 * 24 * 3600
+    MESSAGE_BUCKET_SECONDS = 12 * 3600
+
+    def message_history(self) -> dict[str, Any]:
+        """Messages stored per 12-hour bucket over the last seven days, split by the account they arrived on."""
+        now = int(time.time())
+        bucket = self.MESSAGE_BUCKET_SECONDS
+        # The window start is snapped back to a bucket boundary *before* the query, not after: the store aligns
+        # its slots to whatever `start` it is given, so aligning only the display left every key off by the
+        # remainder and the chart read zero while the database held hundreds of messages.
+        start = (now - self.MESSAGE_WINDOW_SECONDS)
+        start -= start % bucket
+        split: dict[int, dict[str, int]] = {}
+        try:
+            split = self.cache_store.counts_by_bucket_and_account(start, now, bucket)
+        except Exception as exc:  # noqa: BLE001
+            log.warn("message history query failed", error=f"{type(exc).__name__}: {exc}")
+
+        # Accounts are ordered by volume, largest first, so the legend and the stacking order agree and the
+        # busiest account gets the first colour rather than whichever number sorts first.
+        totals: dict[str, int] = {}
+        for accounts in split.values():
+            for account, count in accounts.items():
+                totals[account] = totals.get(account, 0) + count
+        accounts = [name for name, _ in sorted(totals.items(), key=lambda pair: (-pair[1], pair[0]))]
+
+        buckets: list[dict[str, Any]] = []
+        index = start
+        while index < now:
+            parts = split.get(index, {})
+            buckets.append({
+                "start": index,
+                "end": min(index + bucket, now),
+                "count": sum(parts.values()),
+                # `parts` is what lets the renderer colour each segment by source account.
+                "accounts": {name: int(parts.get(name, 0)) for name in accounts},
+            })
+            index += bucket
+        values = [item["count"] for item in buckets]
+        return {
+            "buckets": buckets,
+            "accounts": [{"account": name, "count": totals.get(name, 0)} for name in accounts],
+            "total": sum(values),
+            "peak": max(values) if values else 0,
+            "average": round(sum(values) / len(values), 1) if values else 0.0,
+            "bucket_seconds": bucket,
+        }
+
     def info(self) -> dict[str, Any]:
         login = self.login
         # 被踢不能只看成"未登录"：顶栏以前只显示"未登录"，用户看不到自己是被
@@ -2109,4 +2261,5 @@ class Runtime:
             "webui_auth": bool(self.config.webui.access_token),
             "chat_enabled": bool(self.config.webui.chat_enabled),
             "reverse_ws": self.reverse.status(),
+            "charts": self.chart_data(),
         }

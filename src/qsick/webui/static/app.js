@@ -54,11 +54,46 @@
       }
     } catch (_) {}
 
+    // 分类 → 分组。分组筛选要按组匹配，靠这张表在本地判断，不必为每次筛选回服务器。
+    var categoryGroups = {};
+    try {
+      var groupSeed = document.getElementById("log-groups");
+      if (groupSeed) categoryGroups = JSON.parse(groupSeed.textContent) || {};
+    } catch (_) {}
+
+    /** 还原上次选的分类筛选。
+     *
+     * 之前只有级别会被记住，分类每次刷新都回到"全部"——刷一下就丢筛选条件，
+     * 而刷新恰恰是排查问题时最常做的事。
+     *
+     * 记下的值可能已经不存在了（插件被卸载、分类改名），所以只有对应 <option>
+     * 真的在列表里才套用，否则留空。设一个不存在的 value 会让 select 显示成空白，
+     * 看起来像坏了。
+     */
+    function restoreCategory() {
+      var saved = "";
+      try { saved = localStorage.getItem("qsick.log.category") || ""; } catch (_) {}
+      if (!saved) return;
+      var exists = false;
+      for (var i = 0; i < categorySelect.options.length; i += 1) {
+        if (categorySelect.options[i].value === saved) { exists = true; break; }
+      }
+      if (exists) categorySelect.value = saved;
+      else { try { localStorage.removeItem("qsick.log.category"); } catch (_) {} }
+    }
+    restoreCategory();
+
     function matches(line) {
       var level = line.dataset.level || "INFO";
       if ((ranks[level] || 0) < (ranks[levelSelect.value] || 2)) return false;
-      var category = categorySelect.value;
-      if (category && line.dataset.category !== category) return false;
+      var wanted = categorySelect.value;
+      if (wanted) {
+        if (wanted.indexOf("group:") === 0) {
+          if (categoryGroups[line.dataset.category] !== wanted.slice(6)) return false;
+        } else if (line.dataset.category !== wanted) {
+          return false;
+        }
+      }
       var needle = (search.value || "").trim().toLowerCase();
       if (needle && (line.textContent || "").toLowerCase().indexOf(needle) === -1) return false;
       return true;
@@ -80,6 +115,8 @@
       line.className = "logline lvl-" + record.level;
       line.dataset.level = record.level;
       line.dataset.category = record.category;
+      var group = categoryGroups[record.category];
+      if (group) line.dataset.group = group;
       var fields = record.fields && Object.keys(record.fields).length
         ? " " + Object.keys(record.fields).map(function (key) {
             return key + "=" + JSON.stringify(record.fields[key]);
@@ -114,7 +151,10 @@
       try { localStorage.setItem("qsick.log.level", levelSelect.value); } catch (_) {}
       apply();
     });
-    categorySelect.addEventListener("change", apply);
+    categorySelect.addEventListener("change", function () {
+      try { localStorage.setItem("qsick.log.category", categorySelect.value); } catch (_) {}
+      apply();
+    });
     search.addEventListener("input", apply);
     $("#log-clear").addEventListener("click", function () {
       if (!confirm("清空服务端日志缓冲？")) return;
@@ -273,6 +313,409 @@
     }, 2000);
   }
 
+  // ----------------------------------------------------------------- charts
+  //
+  // 三张图都画在 <svg> 里，用 viewBox 定坐标、preserveAspectRatio="none" 拉满容器。
+  // 不引入图表库：需要的只有折线、柱子和饼，而一个 40KB 的库换不来这四十行 SVG。
+  //
+  // 坐标一律用"作图坐标系"（0..640 × 0..190），再由 viewBox 缩放到实际宽度——
+  // 这样数据点不需要知道容器多大，窗口缩放时也不用重算。
+
+  var CHART_H = 190;
+  var CHART_PAD = { top: 14, right: 12, bottom: 22, left: 34 };
+
+  /** 把 <svg> 的坐标系设成它当前的实际像素宽度，并返回作图区尺寸。
+   *
+   * 原来的写法是固定 viewBox="0 0 640 190" 加 preserveAspectRatio="none"：
+   * 图形拉满容器没问题，但**文字也被跟着横向拉伸**。1440px 宽的页面上，
+   * 640 宽的坐标系被拉到 ~660px，刻度字号被压扁到认不出——截图里
+   * "20.0%" 看起来像 "2.0%"，就是这么来的。
+   *
+   * 现在每次渲染按 clientWidth 重设 viewBox，1 单位 = 1 像素，文字不再变形；
+   * 窗口尺寸变化时重画一次即可（见下面的 resize 监听）。
+   */
+  function prepare(svg) {
+    var width = Math.max(280, Math.round(svg.clientWidth || svg.parentNode.clientWidth || 640));
+    svg.setAttribute("viewBox", "0 0 " + width + " " + CHART_H);
+    return {
+      width: width,
+      left: CHART_PAD.left,
+      right: width - CHART_PAD.right,
+      top: CHART_PAD.top,
+      bottom: CHART_H - CHART_PAD.bottom,
+    };
+  }
+
+  // 记住上一次的数据：窗口缩放后要用同一份数据重画，不必等下一次轮询。
+  var lastCharts = null;
+
+  /** 折线路径：点集 → "M x y L x y …"。 */
+  function linePath(points, toX, toY) {
+    if (!points.length) return "";
+    return points.map(function (point, index) {
+      return (index ? "L" : "M") + toX(point[0]).toFixed(1) + " " + toY(point[1]).toFixed(1);
+    }).join(" ");
+  }
+
+  function svgEl(name, attrs) {
+    var node = document.createElementNS("http://www.w3.org/2000/svg", name);
+    Object.keys(attrs || {}).forEach(function (key) { node.setAttribute(key, attrs[key]); });
+    return node;
+  }
+
+  function clearSvg(svg) {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+  }
+
+  /** 把任意上限抬到一个"好读"的整数，返回 {top, step}。
+   *
+   * 直接按 4 等分会得到 0 / 176 / 353 / 529 这种刻度：数值没错，但没人这么读图。
+   * 从 1-2-5 数列里挑步长，刻度就落在 0 / 200 / 400 上。
+   */
+  function niceAxis(rawMax) {
+    var target = Math.max(1e-6, rawMax) / 4;   // 四条网格线 → 五档
+    var magnitude = Math.pow(10, Math.floor(Math.log10(target)));
+    var candidates = [1, 2, 2.5, 5, 10];
+    var step = magnitude;
+    for (var index = 0; index < candidates.length; index += 1) {
+      step = candidates[index] * magnitude;
+      if (step >= target) break;
+    }
+    var top = step * 4;
+    // 上限被抬过数据的真实最大值才画得下：数据 100 配 step 25 正好，数据 101 需要 step 50。
+    while (top < rawMax) { step *= 2; top = step * 4; }
+    return { top: top, step: step };
+  }
+
+  /** 网格与纵轴刻度。`scale` 来自 niceAxis，`unit` 只用于文字。 */
+  function drawGrid(svg, box, scale, unit) {
+    for (var step = 0; step <= 4; step += 1) {
+      var value = step * scale.step;
+      var y = box.bottom - (value / scale.top) * (box.bottom - box.top);
+      svg.appendChild(svgEl("line", {
+        x1: box.left, x2: box.right, y1: y, y2: y,
+        class: step === 0 ? "chart-axis" : "chart-grid",
+      }));
+      var label = svgEl("text", {
+        x: box.left - 6, y: y + 3, class: "chart-tick", "text-anchor": "end",
+      });
+      label.textContent = (scale.step < 1 ? value.toFixed(1) : String(Math.round(value))) + unit;
+      svg.appendChild(label);
+    }
+  }
+
+  function drawCpu(charts) {
+    var svg = $("#cpu-chart");
+    if (!svg) return;
+    clearSvg(svg);
+    var box = prepare(svg);
+    var cpu = charts.cpu || {};
+    var points = cpu.points || [];
+    var fit = cpu.fit || [];
+    var average = Number(cpu.average || 0);
+    var peak = Number(cpu.peak || 0);
+
+    // 纵轴顶取"数据和均值里较高的那个"再留一点余量，且至少 10%：
+    // 一条贴着实线走的空载曲线看不出形状，而 0 刻度对百分比没有意义。
+    var scale = niceAxis(Math.min(100, Math.max(10, peak, average) * 1.15));
+    drawGrid(svg, box, scale, "%");
+
+    function toY(value) { return box.bottom - (value / scale.top) * (box.bottom - box.top); }
+
+    if (!points.length) {
+      var empty = svgEl("text", {
+        x: box.width / 2, y: CHART_H / 2, class: "chart-empty", "text-anchor": "middle",
+      });
+      empty.textContent = charts.available ? "正在采样…" : "本平台不支持采样";
+      svg.appendChild(empty);
+      return;
+    }
+
+    var first = points[0][0];
+    var last = points[points.length - 1][0];
+    var span = last - first || 1;
+    function toX(stamp) { return box.left + ((stamp - first) / span) * (box.right - box.left); }
+    function pathOf(series) {
+      return series.map(function (point, index) {
+        return (index ? "L" : "M") + toX(point[0]).toFixed(1) + " " + toY(point[1]).toFixed(1);
+      }).join(" ");
+    }
+
+    // 均值线：虚线，画在数据下面，免得盖住真实曲线。
+    svg.appendChild(svgEl("line", {
+      x1: box.left, x2: box.right, y1: toY(average), y2: toY(average), class: "chart-avg",
+    }));
+
+    // 面积：给折线一点体积感，半透明让它不抢眼。
+    var line = pathOf(points);
+    if (line) {
+      svg.appendChild(svgEl("path", {
+        d: line + " L" + toX(last).toFixed(1) + " " + box.bottom +
+           " L" + toX(first).toFixed(1) + " " + box.bottom + " Z",
+        class: "chart-area",
+      }));
+      svg.appendChild(svgEl("path", { d: line, class: "chart-line" }));
+    }
+    if (fit.length) {
+      svg.appendChild(svgEl("path", { d: pathOf(fit), class: "chart-fit" }));
+    }
+
+    // 横轴两端各标一个时间：30 分钟的窗口用"距今多久"比用钟点更好读。
+    [[first, "start", Math.round((last - first) / 60) + " 分钟前"],
+     [last, "end", "现在"]].forEach(function (entry) {
+      var label = svgEl("text", {
+        x: entry[1] === "end" ? box.right : box.left, y: CHART_H - 6, class: "chart-tick",
+        "text-anchor": entry[1] === "end" ? "end" : "start",
+      });
+      label.textContent = entry[2];
+      svg.appendChild(label);
+    });
+
+    var now = $("#cpu-now"), avg = $("#cpu-avg"), pk = $("#cpu-peak");
+    if (now) now.textContent = Number(cpu.current || 0).toFixed(1) + "%";
+    if (avg) avg.textContent = average.toFixed(1) + "%";
+    if (pk) pk.textContent = peak.toFixed(1) + "%";
+  }
+
+  /** 内存饼图：qsick 自身、每个 QQ 主进程、其他已用、空闲。 */
+  function drawMemory(charts) {
+    var svg = $("#mem-chart");
+    if (!svg) return;
+    clearSvg(svg);
+    var memory = charts.memory || {};
+    var total = Number(memory.total || 0);
+    var legend = $("#mem-legend");
+    if (legend) legend.innerHTML = "";
+    var totalLabel = $("#mem-total");
+    if (totalLabel) {
+      totalLabel.textContent = total ? (total / 1073741824).toFixed(1) + " GB 物理内存" : "";
+    }
+    if (!total) return;
+
+    // 超过四五个 QQ 进程时颜色会重复，所以按固定色板循环取；
+    // 图例文字里带了 pid，重复颜色也能分清是哪一块。
+    var palette = ["--sky", "--ok", "--warn", "--err", "--fuchsia", "--teal"];
+    var slices = [{ label: "QSICK", value: Number(memory.self || 0), color: "--sky" }];
+    (memory.qq || []).forEach(function (item, index) {
+      var name = item.uin ? "QQ (" + item.uin + ")" : "QQ " + item.pid;
+      slices.push({
+        label: name, value: Number(item.bytes || 0),
+        color: palette[(index + 1) % palette.length],
+        sub: item.processes > 1 ? item.processes + " 个进程" : "",
+      });
+    });
+    slices.push({ label: "其他", value: Number(memory.other || 0), color: "--faint" });
+    slices.push({ label: "空闲", value: Number(memory.available || 0), color: "--line" });
+
+    var usable = slices.filter(function (slice) { return slice.value > 0; });
+    var centre = 90, radius = 74, thickness = 26;
+    var start = -Math.PI / 2;
+    usable.forEach(function (slice) {
+      var sweep = (slice.value / total) * Math.PI * 2;
+      // 整圆用一个 ring，不用 arc：起止点重合的 A 命令什么都不画。
+      if (sweep >= Math.PI * 2 - 1e-6) {
+        svg.appendChild(svgEl("circle", {
+          cx: centre, cy: centre, r: radius - thickness / 2,
+          fill: "none", stroke: "var(" + slice.color + ")", "stroke-width": thickness,
+        }));
+      } else {
+        var outer = radius, inner = radius - thickness;
+        var mid = radius - thickness / 2;
+        var x1 = centre + outer * Math.cos(start), y1 = centre + outer * Math.sin(start);
+        var x2 = centre + outer * Math.cos(start + sweep), y2 = centre + outer * Math.sin(start + sweep);
+        var x3 = centre + inner * Math.cos(start + sweep), y3 = centre + inner * Math.sin(start + sweep);
+        var x4 = centre + inner * Math.cos(start), y4 = centre + inner * Math.sin(start);
+        var large = sweep > Math.PI ? 1 : 0;
+        svg.appendChild(svgEl("path", {
+          d: "M" + x1.toFixed(1) + " " + y1.toFixed(1) +
+             " A" + outer + " " + outer + " 0 " + large + " 1 " + x2.toFixed(1) + " " + y2.toFixed(1) +
+             " L" + x3.toFixed(1) + " " + y3.toFixed(1) +
+             " A" + inner + " " + inner + " 0 " + large + " 0 " + x4.toFixed(1) + " " + y4.toFixed(1) + " Z",
+          fill: "var(" + slice.color + ")",
+        }));
+      }
+      start += sweep;
+    });
+
+    var used = svgEl("text", { x: centre, y: centre - 2, class: "pie-centre", "text-anchor": "middle" });
+    used.textContent = Math.round(((total - Number(memory.available || 0)) / total) * 100) + "%";
+    svg.appendChild(used);
+    var caption = svgEl("text", { x: centre, y: centre + 14, class: "pie-caption", "text-anchor": "middle" });
+    caption.textContent = "已用";
+    svg.appendChild(caption);
+
+    if (!legend) return;
+    usable.forEach(function (slice) {
+      var row = document.createElement("li");
+      var share = (slice.value / total) * 100;
+      row.innerHTML =
+        '<i class="sw" style="background:var(' + slice.color + ')"></i>' +
+        '<span class="pie-name">' + escapeHtml(slice.label) + "</span>" +
+        '<span class="pie-size">' + formatBytes(slice.value) + "</span>" +
+        '<span class="pie-share">' + share.toFixed(share < 1 ? 2 : 1) + "%</span>";
+      if (slice.sub) row.title = slice.sub;
+      legend.appendChild(row);
+    });
+  }
+
+  function formatBytes(bytes) {
+    var value = Number(bytes || 0);
+    if (value >= 1073741824) return (value / 1073741824).toFixed(2) + " GB";
+    return Math.round(value / 1048576) + " MB";
+  }
+
+  /** 消息数柱状图：每根柱子按来源账号分段，段色固定跟着账号走。
+
+   * 颜色按账号在 `accounts` 里的次序分配，而那个次序由服务端按总量排好——
+   * 不按账号数字大小，否则量最大的账号可能拿到最不显眼的颜色。
+   * 同一个账号在每次重画、每次刷新后颜色都一样，图例才读得下去。
+   */
+  var ACCOUNT_COLORS = [
+    "--sky", "--ok", "--warn", "--err", "--violet", "--teal", "--pink", "--faint",
+  ];
+
+  function drawMessages(charts) {
+    var svg = $("#msg-chart");
+    if (!svg) return;
+    clearSvg(svg);
+    var box = prepare(svg);
+    var data = charts.messages || {};
+    var buckets = data.buckets || [];
+    var accounts = data.accounts || [];
+    var peak = Number(data.peak || 0);
+    var average = Number(data.average || 0);
+
+    var total = $("#msg-total"), pk = $("#msg-peak"), avg = $("#msg-avg");
+    if (total) total.textContent = String(data.total || 0);
+    if (pk) pk.textContent = String(peak);
+    if (avg) avg.textContent = average.toFixed(1);
+
+    var colorOf = {};
+    accounts.forEach(function (item, index) {
+      colorOf[item.account] = ACCOUNT_COLORS[index % ACCOUNT_COLORS.length];
+    });
+
+    // 图例：账号 → 颜色 → 总量。放在标题行右侧，不占图的面积。
+    var legend = $("#msg-accounts");
+    if (legend) {
+      legend.innerHTML = "";
+      accounts.forEach(function (item) {
+        var chip = document.createElement("span");
+        chip.className = "chip-line";
+        chip.innerHTML =
+          '<i class="sw" style="background:var(' + colorOf[item.account] + ')"></i>' +
+          escapeHtml(item.account) + " <b>" + item.count + "</b>";
+        legend.appendChild(chip);
+      });
+    }
+
+    var scale = niceAxis(Math.max(1, peak * 1.15));
+    drawGrid(svg, box, scale, "");
+
+    if (!buckets.length) return;
+
+    var slot = (box.right - box.left) / buckets.length;
+    var barWidth = Math.max(3, slot * 0.62);
+    var previousDay = "";
+    buckets.forEach(function (bucket, index) {
+      var x = box.left + slot * index + (slot - barWidth) / 2;
+      var bottom = box.bottom;
+      var totalHeight = 0;
+      var parts = bucket.accounts || {};
+
+      // 从下往上堆：段序与 `accounts` 一致，所以量最大的账号总是贴着轴，最容易被看见。
+      accounts.forEach(function (item) {
+        var count = Number(parts[item.account] || 0);
+        if (!count) return;
+        var height = (count / scale.top) * (box.bottom - box.top);
+        totalHeight += height;
+        var bar = svgEl("rect", {
+          x: x.toFixed(1), y: (bottom - height).toFixed(1), width: barWidth.toFixed(1),
+          height: Math.max(1, height).toFixed(1),
+          fill: "var(" + colorOf[item.account] + ")",
+          class: "chart-seg",
+        });
+        var caption = svgEl("title");
+        caption.textContent = bucketLabel(bucket) + " · " + item.account + " · " + count + " 条";
+        bar.appendChild(caption);
+        svg.appendChild(bar);
+        bottom -= height;
+      });
+
+      if (!totalHeight) {
+        // 空桶留一条一像素的底：空桶和"这一格没数据"必须能分辨。
+        svg.appendChild(svgEl("rect", {
+          x: x.toFixed(1), y: (box.bottom - 1).toFixed(1), width: barWidth.toFixed(1), height: "1",
+          class: "chart-bar empty",
+        }));
+      }
+
+      // 只在本地日期发生变化的那一格标日期。原来判的是 `getHours() === 0`，
+      // 但桶是从 epoch 按 12 小时切出来的，在 UTC+8 落在 08:00 / 20:00 —— 永远
+      // 不是午夜，于是整条轴上只剩最左边一个日期。
+      var date = new Date(bucket.start * 1000);
+      var dayKey = date.getFullYear() + "-" + date.getMonth() + "-" + date.getDate();
+      var newDay = index === 0 || dayKey !== previousDay;
+      previousDay = dayKey;
+      if (newDay) {
+        var label = svgEl("text", {
+          x: (x + barWidth / 2).toFixed(1), y: CHART_H - 6, class: "chart-tick", "text-anchor": "middle",
+        });
+        label.textContent = (date.getMonth() + 1) + "/" + date.getDate();
+        svg.appendChild(label);
+      }
+    });
+
+    // 均值线画在最上面：这是一张计数图，趋势比单根柱子重要。
+    var avgY = box.bottom - (average / scale.top) * (box.bottom - box.top);
+    svg.appendChild(svgEl("line", {
+      x1: box.left, x2: box.right, y1: avgY.toFixed(1), y2: avgY.toFixed(1), class: "chart-avg",
+    }));
+  }
+
+  function bucketLabel(bucket) {
+    var start = new Date(bucket.start * 1000);
+    var end = new Date(bucket.end * 1000);
+    function pad(value) { return value < 10 ? "0" + value : String(value); }
+    return (start.getMonth() + 1) + "/" + start.getDate() + " " + pad(start.getHours()) + ":00" +
+      " – " + (end.getMonth() + 1) + "/" + end.getDate() + " " + pad(end.getHours()) + ":00";
+  }
+
+  function renderCharts(charts) {
+    if (!charts) return;
+    lastCharts = charts;
+    drawCpu(charts);
+    drawMemory(charts);
+    drawMessages(charts);
+  }
+
+  function redrawCharts() {
+    if (lastCharts) renderCharts(lastCharts);
+  }
+
+  function initCharts() {
+    var seed = document.getElementById("chart-seed");
+    if (!seed) return;
+    try { renderCharts(JSON.parse(seed.textContent)); } catch (error) { /* 首次渲染失败不该阻断轮询 */ }
+
+    // 五秒一次。状态卡片是两秒，但它们重画的是文字；这几张图每次要重建上百个
+    // SVG 节点，没必要跟着那个节奏跑。
+    setInterval(function () {
+      fetch("/api/charts", { headers: { Accept: "application/json" } })
+        .then(function (response) { return response.ok ? response.json() : null; })
+        .then(function (data) { if (data) renderCharts(data); })
+        .catch(function () { /* 网络抖动忽略，下次再试 */ });
+    }, 5000);
+
+    // 坐标系是按像素定的，所以宽度一变就得重画。去抖到 150ms：拖窗口会连发几十个
+    // resize，每次都重建三张 SVG 没有意义。
+    var resizeTimer = 0;
+    window.addEventListener("resize", function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(redrawCharts, 150);
+    });
+  }
+
   // ---------------------------------------------------------- custom select menus
   var selectMenu = null;
 
@@ -296,7 +739,11 @@
 
   function closeSelectMenu() {
     if (selectMenu) selectMenu.hidden = true;
+    menuAnchor = null;
   }
+
+  //: 打开菜单时锚点 <select> 的位置。滚动监听用它判断"下拉真的被滚走了没有"。
+  var menuAnchor = null;
 
   function openSelectMenu(select) {
     if (!selectMenu) return;
@@ -324,6 +771,7 @@
       selectMenu.appendChild(item);
     });
     var rect = select.getBoundingClientRect();
+    menuAnchor = { select: select, left: rect.left, top: rect.top, width: rect.width };
     selectMenu.style.width = Math.max(rect.width, 180) + "px";
     selectMenu.style.left = rect.left + "px";
     selectMenu.style.top = (rect.bottom + 4) + "px";
@@ -376,13 +824,33 @@
       closeSelectMenu();
     });
     window.addEventListener("resize", closeSelectMenu);
-    window.addEventListener("scroll", closeSelectMenu, true);
+    // 滚动时收起菜单——判据是"锚点有没有真的被滚走"。
+    //
+    // 这里原来是无条件 `addEventListener("scroll", closeSelectMenu, true)`：捕获阶段，
+    // 页面上任何元素滚动都会触发。日志页正好是最坏情况：日志视图每来一行就自动
+    // 滚到底，而菜单本身 `max-height: 260px; overflow: auto`，选项一多也有自己的
+    // 滚动条。于是滚轮一转、或者新日志一到，scroll 事件就来了，菜单立刻收起——
+    // 用户看到的现象正是"滚轮和侧条都用不了，一转就缩回去"。
+    //
+    // 现在只有两种情况会收起：
+    //   1. 滚动发生在菜单之外，且锚点 <select> 的位置确实变了（页面真的滚了）；
+    //   2. 视口尺寸变了（由 resize 处理）。
+    // 菜单内部滚动、日志视图自动滚动，都不移动锚点，因此不再打断选择。
+    window.addEventListener("scroll", function (event) {
+      if (!selectMenu || selectMenu.hidden) return;
+      if (selectMenu.contains(event.target)) return;
+      if (!menuAnchor) { closeSelectMenu(); return; }
+      var rect = menuAnchor.select.getBoundingClientRect();
+      if (Math.abs(rect.left - menuAnchor.left) < 1 && Math.abs(rect.top - menuAnchor.top) < 1) return;
+      closeSelectMenu();
+    }, true);
   }
 
   document.addEventListener("DOMContentLoaded", function () {
     initLogs();
     initActions();
     initStatusFallback();
+    initCharts();
     initSelectMenus();
   });
 })();

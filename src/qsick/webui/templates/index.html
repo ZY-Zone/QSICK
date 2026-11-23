@@ -15,10 +15,5 @@
   {% include "partials/status.html" %}
 </section>
 
-<section class="card" style="margin-top:14px">
-  <div class="card-head"><h2>网络状态</h2><a class="faint" href="/network">配置 →</a></div>
-  <div id="network-list" hx-get="/partials/network" hx-trigger="every 2s" hx-swap="innerHTML">
-    {% include "partials/network.html" %}
-  </div>
-</section>
+{% include "partials/charts.html" %}
 {% endblock %}

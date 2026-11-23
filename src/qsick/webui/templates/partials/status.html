@@ -1,21 +1,18 @@
-<div class="stats">
+{# Two rows, everything that used to be four sections. 消息缓存 moved down to the message chart, and the
+   "最后报错" tile is gone -- it answered "when did something last break" which the log page answers properly,
+   and it cost a row's worth of width to say "—" most of the time.
+
+   网络端点原来是这里下面的一行 chip；现在是第二排的第三个面板，和 CPU / 内存平分那一行。 #}
+<div class="stats tight">
   <div class="stat">
     <span class="label">连接</span>
     <span class="value">{{ "在线" if info.online else "离线" }}</span>
-    <span class="sub">transport {{ info.transport }} / {{ info.transport_mode }}</span>
+    <span class="sub">{{ info.transport }} / {{ info.transport_mode }}</span>
   </div>
   <div class="stat">
     <span class="label">运行时长</span>
     <span class="value sm">{{ info.uptime_human }}</span>
-    <span class="sub">已处理 {{ info.events_seen }} 个事件</span>
-  </div>
-</div>
-
-<div class="mini">
-  <div class="stat">
-    <span class="label">消息缓存</span>
-    <span class="value">{{ info.messages_stored }}</span>
-    <span class="sub">{{ info.storage.backend }}</span>
+    <span class="sub">{{ info.events_seen }} 事件 · {{ info.events_dropped }} 丢弃</span>
   </div>
   {% if info.transport_info and info.transport_info.pid %}
   <div class="stat">
@@ -25,23 +22,8 @@
   </div>
   {% endif %}
   <div class="stat">
-    <span class="label">Reverse WS</span>
-    <span class="value sm">{{ "已连接" if info.reverse_ws.connected else "未连接" }}</span>
-    <span class="sub">{{ info.reverse_ws.urls|length }} 个目标</span>
-  </div>
-  <div class="stat">
     <span class="label">插件</span>
     <span class="value">{{ info.plugins }}</span>
-    <span class="sub">已加载</span>
+    <span class="sub">{{ info.actions }} 个动作</span>
   </div>
-  <a class="stat stat-link" href="/logs" title="{{ info.last_error.message if info.last_error else '暂无报错' }}">
-    <span class="label">最后报错</span>
-    {% if info.last_error %}
-    <span class="value sm">{{ info.last_error.time }}</span>
-    <span class="sub">{{ info.last_error.category }} · {{ info.last_error.message[:32] }}</span>
-    {% else %}
-    <span class="value sm">—</span>
-    <span class="sub">暂无报错</span>
-    {% endif %}
-  </a>
 </div>

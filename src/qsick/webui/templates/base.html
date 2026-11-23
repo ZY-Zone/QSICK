@@ -6,9 +6,9 @@
   <meta name="color-scheme" content="light" />
   <title>QSICK · {% block title %}{{ page }}{% endblock %}</title>
   <link rel="icon" href="/favicon.ico" />
-  <link rel="stylesheet" href="/static/app.css?v=20261114a" />
+  <link rel="stylesheet" href="/static/app.css?v={{ asset_version }}" />
   <script src="/static/htmx-lite.js" defer></script>
-  <script src="/static/app.js?v=20261114a" defer></script>
+  <script src="/static/app.js?v={{ asset_version }}" defer></script>
   {% block extra_head %}{% endblock %}
 </head>
 <body data-page="{{ page }}">

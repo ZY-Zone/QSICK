@@ -455,13 +455,35 @@ class TestLogCategories:
         logmod.unregister_category("Plugins")
         assert "Plugins" in {entry["category"] for entry in logmod.known_categories()}
 
-    def test_plugins_sort_after_core(self):
+    def test_ordering_follows_the_group_order(self):
+        # The filter renders by group, so the list has to arrive in that order: core, dll, plugin, net. A plugin
+        # category landed among the core ones would sit under the wrong heading.
         logmod.register_category("Plugin.zzz", source="plugin")
         try:
-            sources = [entry["source"] for entry in logmod.known_categories()]
-            assert sources == sorted(sources), "core entries must come before plugin entries"
+            order = [entry["group"] for entry in logmod.known_categories()]
+            ranks = {name: index for index, name in enumerate(logmod.GROUP_ORDER)}
+            assert order == sorted(order, key=lambda name: ranks.get(name, 99))
         finally:
             logmod.unregister_category("Plugin.zzz")
+
+    def test_a_plugin_category_is_always_filed_under_plugins(self):
+        # A plugin does not get to file itself under "core" whatever it asks for.
+        logmod.register_category("Plugin.sneaky", source="plugin", group="core")
+        try:
+            entry = next(item for item in logmod.known_categories()
+                         if item["category"] == "Plugin.sneaky")
+            assert entry["group"] == "plugin"
+        finally:
+            logmod.unregister_category("Plugin.sneaky")
+
+    def test_grouped_categories_drops_empty_groups(self):
+        # An <optgroup> with nothing under it is a dead heading.
+        for item in logmod.grouped_categories():
+            assert item["categories"], f"{item['group']} rendered with no entries"
+
+    def test_the_four_groups_are_the_documented_ones(self):
+        assert set(logmod.GROUPS) == {"core", "dll", "plugin", "net"}
+        assert set(logmod.GROUP_ORDER) == set(logmod.GROUPS)
 
 
 class TestConnectionLogs:

@@ -122,7 +122,13 @@ async def test_token_redirects_pages_to_login(tmp_path: Path):
         await runtime.stop()
 
 
-async def test_last_error_link(runtime: Runtime):
+async def test_last_error_is_reported_but_no_longer_a_dashboard_tile(runtime: Runtime):
+    """`last_error` stays in the API; the tile is gone.
+
+    The tile spent most of its life showing "—", it duplicated what the log page answers properly, and on the
+    compressed overview it would have cost a slot in a two-row strip. The *data* is still worth having for
+    consumers that poll /api/status, so only the presentation went.
+    """
     from qsick import log as logmod
 
     logmod.get_logger("Test").error("dashboard failure", code=500)
@@ -130,7 +136,7 @@ async def test_last_error_link(runtime: Runtime):
         status = await web.get("/api/status")
         assert status.json()["last_error"]["message"] == "dashboard failure"
         home = await web.get("/")
-        assert "dashboard failure" in home.text
+        assert "最后报错" not in home.text
 
 
 async def test_status_and_metrics(runtime: Runtime):
