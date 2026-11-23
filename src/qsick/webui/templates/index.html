@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}总览{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -15,30 +15,10 @@
   {% include "partials/status.html" %}
 </section>
 
-<div class="grid two" style="margin-top:14px">
-  <section class="card quick-card">
-    <div class="card-head">
-      <h2>快速测试</h2>
-      <label class="quick-account">测试账户
-        <select id="quick-account" aria-label="测试账户"><option value="">加载中…</option></select>
-      </label>
-    </div>
-    <form class="quick-form" onsubmit="return qsickQuickSend(event)">
-      <div class="quick-row">
-        <input class="quick-group" name="group_id" value="30001" inputmode="numeric" aria-label="群号" title="群号" />
-        <input class="quick-text" name="text" value="hello from QSICK" aria-label="文本" title="文本" />
-        <button type="submit">发送</button>
-        <button type="button" class="ghost" onclick="qsickCopy('quick-result')">复制</button>
-      </div>
-    </form>
-    <pre id="quick-result" class="result quick-result">—</pre>
-  </section>
-
-  <section class="card">
-    <div class="card-head"><h2>网络状态</h2><a class="faint" href="/network">配置 →</a></div>
-    <div id="network-list" hx-get="/partials/network" hx-trigger="every 2s" hx-swap="innerHTML">
-      {% include "partials/network.html" %}
-    </div>
-  </section>
-</div>
+<section class="card" style="margin-top:14px">
+  <div class="card-head"><h2>网络状态</h2><a class="faint" href="/network">配置 →</a></div>
+  <div id="network-list" hx-get="/partials/network" hx-trigger="every 2s" hx-swap="innerHTML">
+    {% include "partials/network.html" %}
+  </div>
+</section>
 {% endblock %}

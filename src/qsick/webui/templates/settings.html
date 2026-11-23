@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>设置</h1>
-    <p>修改后立即生效并写回配置文件，无需保存按钮。</p>
+    <p>支持热重载。</p>
   </div>
   <div class="actions"><span class="badge ok">热重载</span></div>
 </div>
@@ -26,7 +26,7 @@
       <label>固定 token
         <input name="pipe_token" value="{{ config.transport.pipe_token }}" placeholder="仅在固定模式下使用" {{ "disabled" if config.transport.pipe_auth != "fixed" else "" }} />
       </label>
-      <p class="faint autosave-note">当前：<code>{{ config.transport.pipe_auth }}</code> · 修改后自动应用</p>
+      <p class="faint autosave-note">当前：<code>{{ config.transport.pipe_auth }}</code></p>
     </form>
   </section>
 
@@ -35,7 +35,7 @@
     <form method="post" action="/settings/storage" class="stack narrow auto-form">
       <label>最多保留条数 <input name="max_messages" type="number" min="0" max="1000000" value="{{ config.rotation.max_messages }}" /></label>
       <label>最多保留天数 <input name="max_days" type="number" min="0" max="3650" value="{{ config.rotation.max_days }}" /></label>
-      <p class="faint autosave-note">输入后自动应用 · 0 表示不限制</p>
+      <p class="faint autosave-note">0 表示不限制，启动时清理超额消息</p>
     </form>
   </section>
 
@@ -46,7 +46,6 @@
         <input type="checkbox" name="watch" value="1" {{ "checked" if config.plugins.watch else "" }} />
         监听插件目录变化并自动重载
       </label>
-      <p class="faint autosave-note">切换后自动应用</p>
     </form>
     <dl class="kv" style="margin-top:16px">
       <dt>消息后端</dt><dd>{{ info.storage.backend }}</dd>

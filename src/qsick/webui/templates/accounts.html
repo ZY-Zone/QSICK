@@ -4,7 +4,6 @@
 <div class="page-head">
   <div>
     <h1>账户管理</h1>
-    <p>每个账号一份独立目录：<code>headlessClient/C0</code>、<code>C1</code> …，类型可选无头或 pipe。</p>
   </div>
   <div class="actions">
     <button type="button" id="account-create">新建实例</button>
@@ -27,11 +26,11 @@
     <label class="dialog-field">
       <span>实例类型</span>
       <select id="create-kind" name="kind" data-native-select>
-        <option value="headless">headless —— 无壳，直接加载 wrapper.node（省空间）</option>
+        <option value="headless">headless —— 无壳，直接加载 wrapper.node（不推荐）</option>
         <option value="pipe">pipe —— 完整客户端 + 注入（能力全，约 1.1 GB/实例）</option>
       </select>
       <small class="hint" id="create-kind-hint">
-        headless 不启动 QQ 界面，登录靠扫码页；占空间很小，所有实例共用一份 runtime。
+        headless 已不推荐使用，建议改用 pipe session。
       </small>
     </label>
     <p id="create-error" class="dialog-error" role="alert" hidden></p>
@@ -81,7 +80,13 @@
 </section>
 
 <section class="card" style="margin-top:14px">
-  <div class="card-head"><h2>实例</h2><span class="sub">每 5 秒刷新</span></div>
+  <div class="card-head">
+    <h2>实例</h2>
+    <div class="actions">
+      <span class="faint">已不推荐，建议改用上方的 pipe session</span>
+      <span class="sub">每 5 秒刷新</span>
+    </div>
+  </div>
   <div id="accounts-list" hx-get="/partials/accounts" hx-trigger="every 5s" hx-swap="innerHTML">
     {% include "partials/accounts_table.html" %}
   </div>
@@ -162,7 +167,7 @@
     var kindHint = document.getElementById("create-kind-hint");
 
     var KIND_HINTS = {
-      headless: "headless 不启动 QQ 界面，登录靠扫码页；占空间很小，所有实例共用一份 runtime。",
+      headless: "headless 已不推荐使用，建议改用 pipe session。",
       pipe: "pipe 会铺一份完整 QQ 客户端（硬链接，磁盘只多占很少），带 launch.bat，能力最全。"
     };
 

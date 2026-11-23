@@ -59,7 +59,6 @@ class RawMessageStore:
         """
         payload = self._merge_payload(message)
         self._append(payload)
-        self._prune()
 
     @staticmethod
     def _merge_payload(message: Message) -> dict[str, Any]:
@@ -262,7 +261,15 @@ class RawMessageStore:
 
         return [_row_to_dict(row) for row in rows]
 
-    def _prune(self) -> None:
+    def prune(self) -> int:
+        """按配置裁剪历史，只删最旧的。
+
+        由 ``Runtime.start`` 在启动时调用一次，而不是每次落盘都调：逐条裁剪会把保留上限变成硬顶，
+        写进来的历史边写边被吃掉。调成启动时一趟，语义就是"启动时清理超额消息"。
+        """
+        return self._prune()
+
+    def _prune(self) -> int:
         """按配置裁剪历史，只删最旧的。
 
         以前这里有个反了的假设：``_records`` 的时间序是**正序**（最旧在前），
@@ -274,7 +281,7 @@ class RawMessageStore:
         ``_records`` 的返回顺序。
         """
         if not self.max_messages and not self.max_days:
-            return
+            return 0
         drop: list[Any] = []
         records = self._records(limit=1 << 30)
         if self.max_days:
@@ -291,9 +298,12 @@ class RawMessageStore:
                                                  int(item.get("message_id") or 0)))
                 extra = len(remaining) - self.max_messages
                 drop.extend(record.get("message_id") for record in remaining[:extra])
+        removed = 0
         for message_id in drop:
             if message_id:
                 self._store.delete(message_id)
+                removed += 1
+        return removed
 
 
 class MemoryRawMessageStore:
@@ -318,7 +328,6 @@ class MemoryRawMessageStore:
         key = str(message.message_id)
         self._records[key] = payload
         self._records.move_to_end(key)
-        self._prune()
 
     # ---------------------------------------------------------------- 读取
 
@@ -428,6 +437,12 @@ class MemoryRawMessageStore:
             if account and str(message.account) != str(account):
                 continue
             yield message
+
+    def prune(self) -> int:
+        """启动时裁剪一趟；语义与 :meth:`RawMessageStore.prune` 一致。"""
+        before = len(self._records)
+        self._prune()
+        return before - len(self._records)
 
     def _prune(self) -> None:
         if self.max_messages and len(self._records) > self.max_messages:

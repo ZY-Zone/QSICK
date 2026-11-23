@@ -467,6 +467,19 @@ class Runtime:
         except Exception as exc:  # noqa: BLE001 - a scratch file must not stop startup
             log.warn("session port override reset failed", error=f"{type(exc).__name__}: {exc}")
 
+        # Trim the message cache once, here, rather than on every insert.
+        #
+        # A per-insert prune turns the retention limit into a hard ceiling that eats history as it is written; the
+        # operator asked for "the cache is cleaned when QSICK starts", so a long-running session keeps what it
+        # recorded until the next restart. Both stores are trimmed because both can be the one holding the cache.
+        for label, store in (("cache", self.cache_store), ("instance", self.store)):
+            try:
+                removed = await asyncio.to_thread(store.prune)
+                if removed:
+                    log.info("pruned the message store at startup", store=label, removed=int(removed or 0))
+            except Exception as exc:  # noqa: BLE001 - a full disk must not stop startup
+                log.warn("startup prune failed", store=label, error=f"{type(exc).__name__}: {exc}")
+
         await self.transport.start()
         # 先同步传输层已经知道的逐实例状态（headless 场景）。
         #
@@ -1916,8 +1929,11 @@ class Runtime:
             "last_event_at": self.last_event_at,
             "last_error": self._last_error(),
             "network_cards": self.network_cards(),
-            "messages_stored": len(self.store),
-            "storage": store_info(self.store),
+            # The message cache's own store, not the primary instance's database. The overview used to report
+            # `self.store` while the 消息缓存 page reads `cache_store`, so the two screens disagreed about how many
+            # messages the cache holds -- and the overview was the wrong one.
+            "messages_stored": len(self.cache_store),
+            "storage": store_info(self.cache_store),
             "actions": len(self.registry._actions),
             "action_categories": self.registry.categories(),
             "plugins": len(self.plugins._loaded),

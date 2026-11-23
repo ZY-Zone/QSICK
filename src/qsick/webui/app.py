@@ -587,9 +587,13 @@ def create_app(runtime: "Runtime") -> FastAPI:
         max_days = max(0, min(max_days, 3650))
         runtime.config.rotation.max_messages = max_messages
         runtime.config.rotation.max_days = max_days
-        for attribute, value in (("max_messages", max_messages), ("max_days", max_days)):
-            if hasattr(runtime.store, attribute):
-                setattr(runtime.store, attribute, value)
+        # The cache is what these limits are for -- it is the store the 消息缓存 page reads and the one the
+        # overview counts. Setting only `runtime.store` used to leave the cache's limits untouched, so the form
+        # wrote a number that nothing read.
+        for store in (runtime.cache_store, runtime.store):
+            for attribute, value in (("max_messages", max_messages), ("max_days", max_days)):
+                if hasattr(store, attribute):
+                    setattr(store, attribute, value)
         _write_setting(runtime, {"rotation": {"max_messages": max_messages, "max_days": max_days}})
         return RedirectResponse("/settings?saved=1", status_code=303)
 

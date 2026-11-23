@@ -259,63 +259,6 @@
     return false;
   };
 
-  // ---------------------------------------------------------------- quick send
-  function loadQuickAccounts() {
-    var select = $("#quick-account");
-    if (!select) return;
-    fetch("/api/accounts").then(function (response) { return response.json(); }).then(function (data) {
-      var accounts = data.accounts || [];
-      select.innerHTML = "";
-      if (!accounts.length) {
-        var empty = document.createElement("option");
-        empty.value = "";
-        empty.textContent = "无可用账号";
-        empty.disabled = true;
-        select.appendChild(empty);
-        select.disabled = true;
-        return;
-      }
-      select.disabled = false;
-      accounts.forEach(function (account) {
-        var option = document.createElement("option");
-        option.value = String(account.qq || account.id);
-        // 被踢和单纯未登录不能标成同一句话：前者是"发生了什么事"，
-        // 后者只是"还没登录"。
-        var suffix = "";
-        if (!account.logged_in) suffix = account.kicked ? " · 已被踢下线" : " · 未登录";
-        option.textContent = (account.qq || account.id) + suffix;
-        if (account.kicked) option.title = account.kick_reason || "被 QQ 强制下线";
-        select.appendChild(option);
-      });
-    }).catch(function () {});
-  }
-
-  window.qsickQuickSend = function (event) {
-    event.preventDefault();
-    var form = event.target;
-    var out = $("#quick-result");
-    var account = $("#quick-account");
-    out.textContent = "...";
-    fetch("/api/actions/send_group_msg", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        group_id: Number(form.group_id.value || 0),
-        account: account ? account.value : "",
-        message: [{ type: "text", data: { text: form.text.value || "" } }]
-      })
-    }).then(function (response) { return response.json(); }).then(function (result) {
-      out.textContent = JSON.stringify(result, null, 2);
-      toast(result.status === "ok" ? "sent" : "failed", result.status === "ok" ? "ok" : "err");
-    }).catch(function (error) {
-      out.textContent = String(error);
-      toast("request failed", "err");
-    });
-    return false;
-  };
-
-  loadQuickAccounts();
-
   // ------------------------------------------------------------- status fallback
   function initStatusFallback() {
     if (window.htmx) return;

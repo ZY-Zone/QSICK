@@ -536,17 +536,6 @@ button:disabled:hover { background: #e8eef6; border-color: #dbe3ee; }
 .net-copy span { font-size: 11px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .net-state { font-size: 11px; color: var(--muted); white-space: nowrap; }
 
-/* compact quick test */
-.quick-card .card-head { margin-bottom: 6px; }
-.quick-account { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
-.quick-account select { height: 26px; padding: 1px 6px; font-size: 11px; }
-.quick-row { display: flex; align-items: center; gap: 8px; }
-.quick-row input { height: 32px; padding: 5px 8px; }
-.quick-group { width: 110px; flex: none; }
-.quick-text { flex: 1; min-width: 0; }
-.quick-row button { height: 32px; padding: 0 14px; flex: none; }
-.quick-result { margin-top: 8px; padding: 8px; max-height: 120px; overflow: auto; }
-
 /* standalone QR login window */
 .qr-window { margin: 0; padding: 10px; background: var(--bg); min-width: 360px; }
 .qr-window-card {

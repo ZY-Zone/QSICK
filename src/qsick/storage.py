@@ -48,6 +48,7 @@ class MessageStore(Protocol):
     def search(self, query: str = "", offset: int = 0, limit: int = 50) -> list[Message]: ...
     def count_matching(self, query: str = "") -> int: ...
     def count(self) -> int: ...
+    def prune(self) -> Any: ...
     def set_media_path(self, message_id: int, element_id: str, path: str) -> bool: ...
     def delete(self, message_id: int) -> bool: ...
     def delete_chat(self, chat_type: str, chat_id: int) -> int: ...
@@ -67,7 +68,6 @@ class MemoryStore:
     def put(self, message: Message) -> None:
         self._messages[message.message_id] = message
         self._messages.move_to_end(message.message_id)
-        self.prune()
 
     def get(self, message_id: int) -> Message | None:
         return self._messages.get(message_id)
@@ -124,7 +124,6 @@ class MemoryStore:
             cutoff = int(time.time()) - self.max_days * 86400
             for message_id in [mid for mid, msg in self._messages.items() if msg.time and msg.time < cutoff]:
                 self._messages.pop(message_id, None)
-
     def close(self) -> None:
         self._messages.clear()
 
@@ -182,7 +181,6 @@ class SqliteStore:
                 ),
             )
             self._db.commit()
-            self._prune_locked()
 
     def get(self, message_id: int) -> Message | None:
         with self._lock:
@@ -267,9 +265,16 @@ class SqliteStore:
             row = self._db.execute("SELECT COUNT(*) AS total FROM messages").fetchone()
         return int(row["total"]) if row else 0
 
-    def _prune_locked(self) -> None:
+    def _prune_locked(self) -> int:
+        """Drop whatever the retention limits say is over, and report how many rows went.
+
+        Called once at startup rather than after every insert. Pruning inside `put` made the limit a hard ceiling
+        that quietly ate history as it was written; as a startup pass it means "the cache is trimmed when QSICK
+        starts", and a session that runs for a week keeps what it recorded until the next restart.
+        """
+        removed = 0
         if self.max_messages:
-            self._db.execute(
+            cursor = self._db.execute(
                 """
                 DELETE FROM messages WHERE message_id IN (
                     SELECT message_id FROM messages ORDER BY stored_at ASC, message_id ASC
@@ -278,10 +283,17 @@ class SqliteStore:
                 """,
                 (self.max_messages,),
             )
+            removed += max(0, cursor.rowcount or 0)
         if self.max_days:
             cutoff = int(time.time()) - self.max_days * 86400
-            self._db.execute("DELETE FROM messages WHERE time > 0 AND time < ?", (cutoff,))
+            cursor = self._db.execute("DELETE FROM messages WHERE time > 0 AND time < ?", (cutoff,))
+            removed += max(0, cursor.rowcount or 0)
         self._db.commit()
+        return removed
+
+    def prune(self) -> int:
+        with self._lock:
+            return self._prune_locked()
 
     def set_media_path(self, message_id: int, element_id: str, path: str) -> bool:
         with self._lock:

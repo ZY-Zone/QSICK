@@ -1,23 +1,13 @@
-﻿<div class="stats">
+<div class="stats">
   <div class="stat">
     <span class="label">连接</span>
     <span class="value">{{ "在线" if info.online else "离线" }}</span>
     <span class="sub">transport {{ info.transport }} / {{ info.transport_mode }}</span>
   </div>
   <div class="stat">
-    <span class="label">账号</span>
-    <span class="value sm">{{ info.nickname or "—" }}</span>
-    <span class="sub"><code>{{ info.uin }}</code></span>
-  </div>
-  <div class="stat">
     <span class="label">运行时长</span>
     <span class="value sm">{{ info.uptime_human }}</span>
     <span class="sub">已处理 {{ info.events_seen }} 个事件</span>
-  </div>
-  <div class="stat">
-    <span class="label">插件过滤</span>
-    <span class="value">{{ info.events_dropped }}</span>
-    <span class="sub">重复丢弃 {{ info.events_duplicate }}</span>
   </div>
 </div>
 
