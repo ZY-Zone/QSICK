@@ -127,16 +127,17 @@
   "name": "我的光标包",
   "description": "冷蓝箭头",
   "cursors": {
-    "default":  "arrow.png",
-    "pointer":  "hand.png",
-    "text":     "text.png",
-    "progress": "busy.png"
+    "default":     "arrow.png",
+    "pointer":     "hand.png",
+    "text":        "text.png",
+    "not-allowed": "no.png"
   },
   "hotspots": { "default": [1, 1], "pointer": [8, 2] }
 }</div>
         <p class="faint" style="margin-top:8px">
           <code>cursors</code> 的键是状态名，值是包内图片路径；<code>hotspots</code> 是点击生效的坐标，
           省略即 <code>[0, 0]</code>。图片支持 PNG / SVG / WebP / ICO / GIF。
+          只需要这 {{ cursor_types|length }} 种——其它状态界面里不会出现。
         </p>
       </div>
     </details>
@@ -220,10 +221,6 @@
       <dt>插件</dt><dd>{{ info.plugins }} 个已加载</dd>
       <dt>本次错误</dt><dd>{{ info.error_counts.ERROR }} 错误 / {{ info.error_counts.WARN }} 警告</dd>
     </dl>
-    <div class="row-actions" style="margin-top:14px">
-      <a class="btn ghost sm" href="/config">查看脱敏配置</a>
-      <a class="btn ghost sm" href="/metrics">Prometheus 指标</a>
-    </div>
   </section>
 </div>
 {% endif %}

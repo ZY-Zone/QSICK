@@ -29,7 +29,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import log as logmod
 from .auth import COOKIE_NAME as AUTH_COOKIE, SESSION_SECONDS, AuthStore
-from .cursor_types import CURSOR_TYPES
+from .cursor_types import CURSOR_STATES
 
 log = logmod.get_logger("WebUI")
 from .. import downloads
@@ -838,7 +838,7 @@ def create_app(runtime: "Runtime") -> FastAPI:
                 "config_json": _config_json(runtime),
                 "saved": bool(saved),
                 "tab": chosen,
-                "cursor_types": CURSOR_TYPES,
+                "cursor_types": CURSOR_STATES,
             },
         )
 

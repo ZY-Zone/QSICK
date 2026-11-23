@@ -18,7 +18,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 from qsick.webui.app import create_app  # noqa: E402
-from qsick.webui.cursor_types import CURSOR_TYPES, TYPE_NAMES  # noqa: E402
+from qsick.webui.cursor_types import CURSOR_STATES, STATE_NAMES  # noqa: E402
 
 STATIC = REPO / "src" / "qsick" / "webui" / "static"
 TEMPLATES = REPO / "src" / "qsick" / "webui" / "templates"
@@ -38,7 +38,7 @@ class TestTypesAreInSync:
         block = re.search(r"var TYPES = \[(.*?)\];", js, re.S)
         assert block, "cursor.js 里找不到 TYPES"
         declared = set(re.findall(r'"([a-z-]+)"', block.group(1)))
-        assert declared == set(TYPE_NAMES)
+        assert declared == set(STATE_NAMES)
 
     def test_every_type_but_default_has_a_selector(self):
         js = cursor_js()
@@ -46,21 +46,21 @@ class TestTypesAreInSync:
         assert block, "cursor.js 里找不到 TYPE_SELECTORS"
         handled = set(re.findall(r'\n    "?([a-z-]+)"?:', block.group(1)))
         # `default` 是通配兜底，不需要选择器。
-        assert handled == set(TYPE_NAMES) - {"default"}
+        assert handled == set(STATE_NAMES) - {"default"}
 
     def test_no_type_appears_twice(self):
-        assert len(TYPE_NAMES) == len(set(TYPE_NAMES))
+        assert len(STATE_NAMES) == len(set(STATE_NAMES))
 
     def test_the_page_shows_every_type(self, runtime):
         with TestClient(create_app(runtime)) as web:
             body = web.get("/settings?tab=display").text
-        for name in TYPE_NAMES:
+        for name in STATE_NAMES:
             assert f'data-type="{name}"' in body, name
 
     def test_the_count_matches_the_heading(self, runtime):
         with TestClient(create_app(runtime)) as web:
             body = web.get("/settings?tab=display").text
-        assert f"光标状态（{len(CURSOR_TYPES)} 种）" in body
+        assert f"光标状态（{len(CURSOR_STATES)} 种）" in body
 
 
 class TestNoOverlap:

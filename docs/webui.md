@@ -82,9 +82,16 @@ WebUI 是 QSICK 的操作面板，与内核同进程运行（FastAPI + Jinja2）
 `name` 与 `description` 必填，`description` 不超过 12 字，两者会显示在设置页的卡片上。
 `hotspots` 是点击生效的坐标，省略即 `[0, 0]`。支持 PNG / SVG / WebP / ICO / GIF。
 
-能表达 22 种状态（`default`、`pointer`、`text`、`progress`、`not-allowed`、`grab` 等，
-`src/qsick/webui/cursor_types.py` 是唯一清单）。**包里没定义的状态沿用包的初始箭头，不会退回系统光标**
-—— 退回系统光标会让系统画一个、包画一个，也就是两个指针叠在一起。
+只表达 **4 种状态**：`default`、`pointer`、`text`、`not-allowed`。
+`src/qsick/webui/cursor_types.py` 是唯一清单，测试比对它与 `cursor.js` 是否一致。
+
+只留四种是刻意的：光标包要求作者为每个状态画图并标热点，而界面里根本不会出现的状态（`grab`、
+`zoom-in`、`col-resize` …）就是白做的工——更糟的是做了却看不到，会让人以为功能坏了。清单只收
+那些不需要额外标记就能出现在屏幕上的。要加回一种，在 `cursor.js` 的 `TYPES` 与 `TYPE_SELECTORS`
+各加一行、在 `cursor_types.py` 加一条即可。
+
+**包里没定义的状态沿用包的初始箭头，不会退回系统光标** —— 退回系统光标会让系统画一个、包画一个，
+也就是两个指针叠在一起。
 
 正因如此，项目**不再提供内置箭头样式**：内置样式要靠一个跟随指针的元素来画，而那个元素无法覆盖
 每一个状态，必然出现叠加。光标包走 CSS `cursor`，浏览器原生支持全部状态。

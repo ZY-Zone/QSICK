@@ -28,38 +28,26 @@
   var MAX_PACK_BYTES = 3.2 * 1024 * 1024;
   var MAX_DESCRIPTION = 12;
 
-  //: 需要覆盖的类型，顺序即 CSS 里的优先级（后面的覆盖前面的）。
-  var TYPES = ["default", "pointer", "text", "vertical-text", "progress", "wait", "help",
-               "crosshair", "not-allowed", "no-drop", "grab", "grabbing", "move",
-               "all-scroll", "cell", "context-menu", "alias", "copy",
-               "zoom-in", "zoom-out", "col-resize", "row-resize"];
+  //: 需要覆盖的状态。
+  //:
+  //: 只有四种。光标包要求作者为每个状态画一张图并标热点，而界面里根本不会出现的状态
+  //: 就是白做的工——更糟的是，做了却看不到会让人以为功能坏了。所以清单只留那些
+  //: "不需要额外标记就能出现在屏幕上的"：
+  //:   default     — 页面本身
+  //:   pointer     — 链接、按钮、下拉、开关
+  //:   text        — 输入框、文本域
+  //:   not-allowed — 禁用的控件
+  //: 加回一种只需在 TYPES 与 TYPE_SELECTORS 各加一行，并在 cursor_types.py 里同步。
+  var TYPES = ["default", "pointer", "text", "not-allowed"];
 
-  //: 每个类型的匹配规则。`default` 不在这里——它是通配兜底。
+  //: 每个状态的匹配规则。`default` 不在这里——它是通配兜底。
   var TYPE_SELECTORS = {
     pointer: 'a, button, select, summary, label, .dd-option, .cursor-option, ' +
              'input[type="checkbox"], input[type="radio"], input[type="submit"], ' +
              '[role="button"], .nav a, .subnav a',
     text: 'input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]), ' +
-          'textarea, [contenteditable="true"]',
-    "vertical-text": '[data-cursor-type="vertical-text"]',
-    progress: '[aria-busy="true"], body.is-busy, body.is-busy *, [data-cursor-type="progress"]',
-    wait: 'body.is-wait, body.is-wait *, [data-cursor-type="wait"]',
-    help: "abbr[title], [data-cursor-help]",
-    crosshair: '[data-cursor-type="crosshair"]',
-    "not-allowed": ':disabled, [aria-disabled="true"], .is-disabled, [data-cursor-type="not-allowed"]',
-    "no-drop": '[data-cursor-type="no-drop"]',
-    grab: '[draggable="true"], [data-cursor-type="grab"]',
-    grabbing: 'body.is-dragging, body.is-dragging *, [data-cursor-type="grabbing"]',
-    move: '[data-cursor-type="move"]',
-    "all-scroll": '[data-cursor-type="all-scroll"]',
-    cell: '[data-cursor-type="cell"]',
-    "context-menu": '[data-cursor-type="context-menu"]',
-    alias: '[data-cursor-type="alias"]',
-    copy: '[data-cursor-type="copy"]',
-    "zoom-in": '[data-cursor-type="zoom-in"]',
-    "zoom-out": '[data-cursor-type="zoom-out"]',
-    "col-resize": '[data-cursor-type="col-resize"], [data-resize="col"]',
-    "row-resize": '[data-cursor-type="row-resize"], [data-resize="row"]'
+          'textarea',
+    "not-allowed": ':disabled, [aria-disabled="true"], .is-disabled'
   };
 
   function read(key) {
