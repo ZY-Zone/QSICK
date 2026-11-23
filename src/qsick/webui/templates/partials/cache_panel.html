@@ -1,0 +1,43 @@
+{% if tab == "cache" %}
+{# 缓存清理：一块饼图说明"谁占地方"，一张表说明"每项多大、怎么清"。
+   饼图在前是因为问题是"什么东西占了这么多"，不是"有哪些缓存"——后者看表就行。 #}
+<div class="cache-layout">
+  <section class="card cache-chart-card">
+    <div class="card-head">
+      <h2>缓存占用</h2>
+      <span class="faint" id="cache-total">—</span>
+    </div>
+    <div class="pie-wrap">
+      <svg class="pie-svg" id="cache-chart" viewBox="0 0 180 180" role="img" aria-label="缓存占用饼图"></svg>
+      <ul class="pie-legend" id="cache-legend"></ul>
+    </div>
+  </section>
+
+  <section class="card cache-list-card">
+    <div class="card-head">
+      <h2>缓存项</h2>
+      <button type="button" class="ghost sm" id="cache-clear-all">一键清理</button>
+    </div>
+    <div class="cache-list" id="cache-list">
+      {% for item in caches %}
+      <div class="cache-row" data-id="{{ item.id }}">
+        <span class="cache-dot" data-id="{{ item.id }}"></span>
+        <span class="cache-name">
+          <strong>{{ item.label }}</strong>
+          <span class="cache-detail">{{ item.detail }}</span>
+        </span>
+        <span class="cache-size" data-size>{{ item.human }}</span>
+        <button type="button" class="ghost sm cache-clear" data-id="{{ item.id }}">清理</button>
+      </div>
+      {% else %}
+      <p class="faint">没有可清理的缓存项。</p>
+      {% endfor %}
+    </div>
+    <p class="faint" style="margin-top:12px">
+      清理会立刻释放空间，且不可撤销。配置、插件与登录密码不在其中。
+    </p>
+  </section>
+</div>
+
+<script type="application/json" id="cache-seed">{{ caches|tojson }}</script>
+{% endif %}

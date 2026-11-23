@@ -29,6 +29,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import log as logmod
 from .auth import COOKIE_NAME as AUTH_COOKIE, SESSION_SECONDS, AuthStore
+from . import caches as cachmod
 from .cursor_types import CURSOR_STATES
 
 log = logmod.get_logger("WebUI")
@@ -53,7 +54,7 @@ def _asset_version(static_dir: Path) -> str:
     """
     newest = 0.0
     total = 0
-    for name in ("app.css", "app.js", "cursor.css", "cursor.js", "htmx-lite.js"):
+    for name in ("app.css", "app.js", "cache.css", "cursor.css", "cursor.js", "htmx-lite.js"):
         try:
             stat = (static_dir / name).stat()
         except OSError:
@@ -68,7 +69,7 @@ ASSET_VERSION = _asset_version(BASE / "static")
 
 #: The settings page's sub-sections. Validated on the way in so an unknown ?tab= falls back instead of rendering a
 #: page with no panels at all.
-SETTINGS_TABS = ("general", "display", "security", "advanced")
+SETTINGS_TABS = ("general", "display", "security", "cache", "advanced")
 
 
 def _human_duration(seconds: float) -> str:
@@ -144,6 +145,8 @@ def create_app(runtime: "Runtime") -> FastAPI:
     #: a stale cookie that outlives the process it was issued by is the last thing a console wants.
     app.state.auth = AuthStore(runtime.config.path("webui", "auth.json"))
     app.state.auth.load()
+    # The cache panel clears the login history through this, so it has to be reachable from the runtime too.
+    runtime.auth_store = app.state.auth
 
     def template_context(request: Request) -> dict[str, Any]:
         """Values every page needs, computed per render.
@@ -393,6 +396,38 @@ def create_app(runtime: "Runtime") -> FastAPI:
         response = JSONResponse({"ok": True})
         response.set_cookie("qsick_setup_dismissed", "1", max_age=7 * 24 * 3600, samesite="lax")
         return response
+
+    # ---------------------------------------------------------------- 缓存清理
+
+    @app.get("/api/cache")
+    async def cache_status(request: Request) -> JSONResponse:
+        denied = guard(request)
+        if denied:
+            return denied
+        return JSONResponse({"items": cachmod.measure(cachmod.collect(runtime))})
+
+    @app.post("/api/cache/clear")
+    async def cache_clear(request: Request) -> JSONResponse:
+        """Clear one cache, or all of them with `{"id": "all"}`."""
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            payload = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JSONResponse({"ok": False, "error": "请求体不是 JSON"}, status_code=400)
+        item_id = str((payload or {}).get("id") or "").strip()
+        if not item_id:
+            return JSONResponse({"ok": False, "error": "缺少 id"}, status_code=400)
+
+        items = cachmod.collect(runtime)
+        result = cachmod.clear(items, item_id)
+        if result.get("ok"):
+            logmod.get_logger("WebUI.Cache").info(
+                "cleared caches", id=item_id, freed=result.get("freed_human"))
+            # Hand back the fresh sizes so the page does not have to guess what is left.
+            result["items"] = cachmod.measure(cachmod.collect(runtime))
+        return JSONResponse(result, status_code=200 if result.get("ok") else 400)
 
     @app.get("/api/security/overview")
     async def security_overview(request: Request) -> JSONResponse:
@@ -839,6 +874,7 @@ def create_app(runtime: "Runtime") -> FastAPI:
                 "saved": bool(saved),
                 "tab": chosen,
                 "cursor_types": CURSOR_STATES,
+                "caches": cachmod.measure(cachmod.collect(runtime)) if chosen == "cache" else [],
             },
         )
 

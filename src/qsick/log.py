@@ -49,6 +49,23 @@ def counts() -> dict[str, int]:
         return dict(_COUNTS)
 
 
+def buffer_bytes() -> int:
+    """Rough memory held by the retained log lines.
+
+    Approximate on purpose: Python's per-string overhead is not exposed, and a cache panel needs a magnitude rather
+    than a byte count. 49 bytes is the CPython header for a short ASCII str; CJK text takes more and the estimate
+    understates it, which is the safe direction for something a user may decide to clear.
+    """
+    return BUFFER.size_bytes()
+
+
+def clear_buffer() -> int:
+    """Drop the retained log lines. Returns the approximate bytes released."""
+    freed = BUFFER.size_bytes()
+    BUFFER.clear()
+    return freed
+
+
 def reset_counts() -> None:
     with _LOCK:
         for key in _COUNTS:
@@ -205,6 +222,17 @@ class LogBuffer:
     def since(self, cursor: int) -> list[Record]:
         with _LOCK:
             return [r for r in self._records if r.seq > cursor]
+
+    def size_bytes(self) -> int:
+        """Approximate bytes held by the retained records."""
+        with _LOCK:
+            total = 0
+            for record in self._records:
+                try:
+                    total += len(str(record)) + 49
+                except Exception:  # noqa: BLE001
+                    continue
+            return total
 
     def clear(self) -> None:
         with _LOCK:

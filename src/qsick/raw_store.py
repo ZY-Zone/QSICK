@@ -42,6 +42,52 @@ class RawMessageStore:
         self.max_days = max(0, max_days)
         self._store = SqliteMaxStore(self.path, protocol=protocol)
 
+    def clear(self) -> int:
+        """Drop every raw record.
+
+        Deletes by SQL rather than walking records and calling `delete(id)`: records whose `message_id` is missing
+        or unusable are stored under a synthetic key (`raw:...`), so `delete(record["message_id"])` silently fails on
+        them -- a "clear everything" that leaves rows behind. Verified: a message_id of 0 is stored as
+        `raw:5555...` and `delete(0)` returns False.
+
+        The frames table goes too; leaving it would keep every element of every deleted message on disk.
+        """
+        connection = getattr(self._store, "_db", None)
+        if connection is None:
+            return 0
+        try:
+            removed = connection.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM raw_frames")
+            connection.execute("DELETE FROM messages")
+            connection.commit()
+        except Exception:  # noqa: BLE001
+            try:
+                connection.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            return 0
+        self._vacuum()
+        return int(removed or 0)
+
+    def _vacuum(self) -> None:
+        """Give the pages back after the rows are gone.
+
+        A DELETE alone leaves the file the same size, so a cache panel would report "freed 0" for a 100 MB store
+        whose contents are gone -- indistinguishable from the clear having failed. `SqliteMaxStore` has no vacuum(),
+        so this reaches for its connection. That is the same private access `raw_fields` above already relies on,
+        and it is wrapped: a locked database just means the space comes back later.
+        """
+        connection = getattr(self._store, "_db", None)
+        if connection is None:
+            return
+        for statement in ("PRAGMA wal_checkpoint(TRUNCATE)", "VACUUM"):
+            try:
+                connection.execute(statement)
+                connection.commit()
+            except Exception:  # noqa: BLE001
+                continue
+
     # ---------------------------------------------------------------- 写入
 
     def put(self, message: Message) -> None:

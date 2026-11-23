@@ -8,6 +8,7 @@
   ("general", "通用"),
   ("display", "显示"),
   ("security", "安全与隐私"),
+  ("cache", "缓存清理"),
   ("advanced", "高级")
 ] %}
 <nav class="subnav subnav-center">
@@ -198,6 +199,8 @@
   </section>
 </div>
 {% endif %}
+
+{% include "partials/cache_panel.html" %}
 
 {% if tab == "advanced" %}
 <div class="grid two">

@@ -55,6 +55,7 @@ class MessageStore(Protocol):
     def set_media_path(self, message_id: int, element_id: str, path: str) -> bool: ...
     def delete(self, message_id: int) -> bool: ...
     def delete_chat(self, chat_type: str, chat_id: int) -> int: ...
+    def clear(self) -> int: ...
     def close(self) -> None: ...
 
     def __len__(self) -> int: ...
@@ -122,6 +123,12 @@ class MemoryStore:
             slot = out.setdefault(bucket, {})
             slot[account] = slot.get(account, 0) + 1
         return out
+
+    def clear(self) -> int:
+        """Drop every message. Returns how many were removed."""
+        removed = len(self._messages)
+        self._messages.clear()
+        return removed
 
     def count(self) -> int:
         return len(self._messages)
@@ -408,6 +415,25 @@ class SqliteStore:
             )
             self._db.commit()
             return cursor.rowcount
+
+    def clear(self) -> int:
+        """Drop every message and give the space back.
+
+        VACUUM is what actually shrinks the file -- a DELETE alone leaves the pages allocated, so the cache would
+        still report its old size, which reads as the clear having failed. It needs an exclusive lock, so a failure
+        is tolerated: the rows are gone either way and the next clear will reclaim the file.
+        """
+        with self._lock:
+            cursor = self._db.execute("DELETE FROM messages")
+            self._db.commit()
+            removed = cursor.rowcount
+            try:
+                self._db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                self._db.execute("VACUUM")
+                self._db.commit()
+            except Exception:  # noqa: BLE001
+                pass
+            return removed
 
     def close(self) -> None:
         with self._lock:

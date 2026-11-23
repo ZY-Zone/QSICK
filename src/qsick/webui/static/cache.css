@@ -1,0 +1,48 @@
+/* ============================================================== 缓存清理
+ *
+ * 左侧饼图 + 右侧列表。饼图回答"谁占地方"，列表回答"每项多大、怎么清"——
+ * 顺序反过来会让人先读一屏文字才看到重点。
+ *
+ * 两栏在窄屏叠成一栏；饼图先、列表后，因为窄屏下先出现的应该是那个"结论"。
+ */
+.cache-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+  gap: 14px; align-items: start;
+}
+@media (max-width: 980px) { .cache-layout { grid-template-columns: minmax(0, 1fr); } }
+
+.cache-chart-card, .cache-list-card { display: flex; flex-direction: column; }
+.cache-chart-card .pie-wrap { padding-top: 4px; }
+
+.cache-list { display: flex; flex-direction: column; }
+.cache-row {
+  display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto;
+  align-items: center; gap: 11px;
+  padding: 11px 2px; border-bottom: 1px solid var(--line);
+}
+.cache-row:last-child { border-bottom: none; }
+/* 空的缓存项整体变灰：它们是"本来就没事"的，不该和占地方的那几项抢注意力。 */
+.cache-row.is-empty { opacity: .55; }
+
+.cache-dot {
+  width: 9px; height: 9px; border-radius: 50%; flex: none;
+  background: var(--line-strong);
+  transition: background-color var(--dur) var(--ease-out);
+}
+.cache-name { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.cache-name strong { font-size: 12.5px; font-weight: 600; }
+.cache-detail {
+  color: var(--faint); font-size: 10.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 尺寸列等宽 + 表格数字：一列数字右对齐才好比大小。 */
+.cache-size {
+  font-family: var(--mono); font-size: 12px; color: var(--text);
+  text-align: right; min-width: 74px; font-variant-numeric: tabular-nums;
+}
+.cache-clear { flex: none; }
+
+/* 饼图弧段悬停：只有这里需要"点得动"的暗示，所以给它一点点反馈。 */
+.cache-arc { transition: opacity .12s var(--ease-out); }
+.cache-arc:hover { opacity: .78; }

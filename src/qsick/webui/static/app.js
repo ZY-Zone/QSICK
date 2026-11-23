@@ -920,6 +920,157 @@
     });
   }
 
+  // ------------------------------------------------------------- 缓存清理
+  //
+  // 饼图与消息数图共用同一套 SVG 手法（像素坐标系、1-2-5 步长），一致性比新写法更值钱。
+  // 数据来自 /api/cache：清理后服务端会把新的尺寸一起返回，页面不必自己猜剩下的量。
+
+  var CACHE_COLORS = ["--sky", "--ok", "--violet", "--amber", "--pink", "--teal", "--faint"];
+
+  function cacheColor(index) {
+    return CACHE_COLORS[index % CACHE_COLORS.length];
+  }
+
+  function drawCachePie(items) {
+    var svg = $("#cache-chart");
+    if (!svg) return;
+    clearSvg(svg);
+
+    var total = items.reduce(function (sum, item) { return sum + Number(item.bytes || 0); }, 0);
+    var totalLabel = $("#cache-total");
+    if (totalLabel) totalLabel.textContent = humanBytes(total);
+
+    var legend = $("#cache-legend");
+    if (legend) legend.innerHTML = "";
+
+    if (!total) {
+      // 全空时留一圈浅色，比画一个"什么都没有"的空白 SVG 更容易理解。
+      svg.appendChild(svgEl("circle", {
+        cx: 90, cy: 90, r: 58, fill: "none", stroke: "var(--line)", "stroke-width": 24,
+      }));
+      var hint = svgEl("text", {
+        x: 90, y: 95, class: "chart-tick", "text-anchor": "middle", "font-size": "12",
+      });
+      hint.textContent = "无缓存";
+      svg.appendChild(hint);
+      return;
+    }
+
+    var radius = 58;
+    var circumference = 2 * Math.PI * radius;
+    var offset = 0;
+
+    items.forEach(function (item, index) {
+      var share = Number(item.bytes || 0) / total;
+      if (share <= 0) return;
+      var length = share * circumference;
+      var arc = svgEl("circle", {
+        cx: 90, cy: 90, r: radius, fill: "none",
+        stroke: "var(" + cacheColor(index) + ")",
+        "stroke-width": 24,
+        "stroke-dasharray": length.toFixed(2) + " " + (circumference - length).toFixed(2),
+        "stroke-dashoffset": (-offset).toFixed(2),
+        // 从 12 点方向开始，和内存占用那张图一致。
+        transform: "rotate(-90 90 90)",
+        class: "cache-arc",
+      });
+      var caption = svgEl("title");
+      caption.textContent = item.label + " · " + item.human + " · " + (share * 100).toFixed(1) + "%";
+      arc.appendChild(caption);
+      svg.appendChild(arc);
+      offset += length;
+
+      if (legend) {
+        var row = document.createElement("li");
+        row.dataset.id = item.id;
+        row.innerHTML =
+          '<i class="sw" style="background:var(' + cacheColor(index) + ')"></i>' +
+          '<span class="pie-name">' + escapeHtml(item.label) + '</span>' +
+          '<span class="pie-size">' + escapeHtml(item.human) + '</span>' +
+          '<span class="pie-share">' + (share * 100).toFixed(1) + '%</span>';
+        legend.appendChild(row);
+      }
+    });
+
+    // 中心不写总数：卡片标题右侧已经有一个，"合计"两个字只是把同一个数字说两遍。
+    // 环形图中间留空反而更像一个仪表，视线会落到弧段上。
+  }
+
+  function humanBytes(size) {
+    var value = Number(size) || 0;
+    if (value < 1024) return Math.round(value) + " B";
+    var units = ["KB", "MB", "GB"];
+    for (var index = 0; index < units.length; index += 1) {
+      value /= 1024;
+      if (value < 1024 || index === units.length - 1) {
+        return (units[index] === "KB" ? Math.round(value) : value.toFixed(1)) + " " + units[index];
+      }
+    }
+    return Math.round(value) + " B";
+  }
+
+  function renderCachePanel(items) {
+    drawCachePie(items);
+    // 表格里的尺寸也要跟着刷新，否则清完还显示旧数字。
+    var list = $("#cache-list");
+    if (!list) return;
+    items.forEach(function (item) {
+      var row = list.querySelector('.cache-row[data-id="' + item.id + '"]');
+      if (!row) return;
+      var size = row.querySelector("[data-size]");
+      if (size) size.textContent = item.human;
+      row.classList.toggle("is-empty", !Number(item.bytes));
+      var dot = row.querySelector(".cache-dot");
+      if (dot) dot.style.background = "var(" + cacheColor(items.indexOf(item)) + ")";
+    });
+  }
+
+  function initCachePanel() {
+    var seed = document.getElementById("cache-seed");
+    if (!seed) return;
+    var items;
+    try { items = JSON.parse(seed.textContent || "[]"); } catch (_) { items = []; }
+    renderCachePanel(items);
+
+    async function clear(id, label) {
+      if (!confirm("清理「" + label + "」？这会立刻释放空间，且不可撤销。")) return;
+      try {
+        var response = await fetch("/api/cache/clear", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: id }),
+        });
+        var result = await response.json();
+        if (result.ok) {
+          renderCachePanel(result.items || []);
+          if (typeof window.qsickToast === "function") {
+            window.qsickToast("已释放 " + result.freed_human, "ok");
+          }
+        } else if (typeof window.qsickToast === "function") {
+          window.qsickToast(result.error || "清理失败", "err");
+        }
+      } catch (error) {
+        if (typeof window.qsickToast === "function") window.qsickToast("清理失败：" + error.message, "err");
+      }
+    }
+
+    document.querySelectorAll(".cache-clear").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var row = button.closest(".cache-row");
+        var name = row ? row.querySelector("strong").textContent : button.dataset.id;
+        clear(button.dataset.id, name);
+      });
+    });
+
+    var all = document.getElementById("cache-clear-all");
+    if (all) {
+      all.addEventListener("click", function () {
+        if (!confirm("清理全部缓存？这会立刻释放空间，且不可撤销。")) return;
+        clear("all", "全部缓存");
+      });
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     initNavNoop();
     initLogs();
@@ -927,6 +1078,7 @@
     initStatusFallback();
     initCharts();
     initSelectMenus();
+    initCachePanel();
     initSystemTheme();
     initSetupBanner();
   });
