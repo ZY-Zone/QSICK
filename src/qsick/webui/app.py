@@ -205,7 +205,15 @@ def create_app(runtime: "Runtime") -> FastAPI:
         return templates.TemplateResponse(
             request,
             "logs.html",
-            {"page": "logs", "info": runtime.info(), "records": [r.to_dict() for r in logmod.BUFFER.tail(300)]},
+            {
+                "page": "logs",
+                "info": runtime.info(),
+                "records": [r.to_dict() for r in logmod.BUFFER.tail(300)],
+                # Declared categories, so the filter offers "Plugins" and "OneBot.WS" before anything has written to
+                # them. Populating from observed records alone meant the categories that matter exactly when they are
+                # empty were the ones that could not be selected.
+                "categories": logmod.known_categories(),
+            },
         )
 
     @app.get("/api/logs")

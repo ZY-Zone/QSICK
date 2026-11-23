@@ -20,7 +20,12 @@
       <option value="WARN">WARN+</option>
       <option value="ERROR">ERROR</option>
     </select>
-    <select id="log-category"><option value="">全部分类</option></select>
+    <select id="log-category">
+      <option value="">全部分类</option>
+      {% for entry in categories %}
+      <option value="{{ entry.category }}" title="{{ entry.description }}">{{ entry.category }}</option>
+      {% endfor %}
+    </select>
     <span class="spacer"></span>
     <label class="check"><input type="checkbox" id="log-pause" /> 暂停</label>
     <label class="check"><input type="checkbox" id="log-autoscroll" checked /> 自动滚动</label>

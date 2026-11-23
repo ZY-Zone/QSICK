@@ -328,11 +328,25 @@ class Runtime:
         raise TransportError(f"unknown transport mode {mode!r}")
 
     @property
-    def self_id(self) -> int:
+    def session_id(self) -> int:
         try:
             return int(self.login.uin)
         except (TypeError, ValueError):
             return 0
+
+    @property
+    def self_id(self) -> int:
+        return self.session_id
+
+    @property
+    def primary_account(self) -> str:
+        """The uin of the account a call with no `account` lands on, or "" when nothing is logged in.
+
+        Named separately from `self_id` because that returns an int and 0-as-unknown; a plugin composing a payload
+        wants to know whether there *is* a primary account, not to compare against zero.
+        """
+        uin = str(getattr(self.login, "uin", "") or "").strip()
+        return uin if uin.isdigit() and uin != "0" else ""
 
     @property
     def login(self) -> LoginState:
@@ -795,10 +809,20 @@ class Runtime:
             await asyncio.sleep(0.1)
         self._onebot_server = server
         started = bool(getattr(server, "started", False))
+        # Reported under the connection category, not the general runtime one: "which port is OneBot on" is a
+        # connection question, and the operator asked for connection-class logs to be separable.
+        http_log = logmod.get_logger("OneBot.HTTP")
+        endpoints = [name for name, on in (("http", self.config.onebot.enable_http),
+                                           ("ws", self.config.onebot.enable_ws),
+                                           ("sse", self.config.onebot.enable_sse)) if on]
         if started:
             log.info("onebot listener restarted", host=self.config.onebot.host, port=self.config.onebot.port)
+            http_log.info("onebot listener ready", host=self.config.onebot.host,
+                          port=self.config.onebot.port, endpoints=",".join(endpoints))
         else:
             log.warn("onebot listener did not start", host=self.config.onebot.host, port=self.config.onebot.port)
+            http_log.error("onebot listener failed to bind", host=self.config.onebot.host,
+                           port=self.config.onebot.port, endpoints=",".join(endpoints))
         return started
 
     def _reverse_targets(self) -> list[tuple[str, str, bool]]:

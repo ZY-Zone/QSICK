@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}插件{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -29,6 +29,14 @@
           <span class="badge tier-{{ plugin.tier }}">{{ plugin.tier }}</span>
           <span class="badge {{ 'ok' if plugin.loaded else 'warn' }}">{{ "运行中" if plugin.loaded else "未加载" }}</span>
           <span class="badge">{{ "自定义配置页" if plugin.config_ui == "custom" else "默认配置页" }}</span>
+          {% if plugin.accounts %}
+          <span class="badge" title="只能收发这些账号的消息">{{ plugin.accounts|join(", ") }}</span>
+          {% else %}
+          <span class="badge" title="未限定账号">全账号</span>
+          {% endif %}
+          {% if plugin.register_log_category %}
+          <span class="badge" title="日志分类已登记到日志页筛选">{{ plugin.log_category }}</span>
+          {% endif %}
         </div>
         <p>{{ plugin.description }}</p>
         <div class="chips">

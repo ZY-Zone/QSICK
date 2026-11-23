@@ -26,6 +26,65 @@ NAME_LEVELS = {name: level for level, name in LEVEL_NAMES.items()}
 
 _LOCK = threading.RLock()
 
+#: Every category this build can emit, so the WebUI's category filter can offer the whole list up front.
+#:
+#: The filter used to be filled only from records it had already seen. That reads as "the list is always correct",
+#: but it means the categories that matter exactly when they are empty were the ones you could not select -- the
+#: plugin loader before any plugin logs, the WebSocket category before the first client connects. A filter nobody
+#: can pick is not a filter.
+KNOWN_CATEGORIES: dict[str, dict[str, str]] = {}
+
+
+def register_category(category: str, *, source: str = "core", description: str = "") -> None:
+    """Declare a category so the filter offers it even before anything writes to it."""
+    name = str(category or "").strip()
+    if not name:
+        return
+    with _LOCK:
+        KNOWN_CATEGORIES[name] = {"category": name, "source": source, "description": description}
+
+
+def known_categories() -> list[dict[str, str]]:
+    """Declared categories: core first, then plugin-declared ones, each group alphabetical."""
+    with _LOCK:
+        items = [dict(value) for value in KNOWN_CATEGORIES.values()]
+    rank = {"core": 0, "plugin": 1}
+    return sorted(items, key=lambda item: (rank.get(item.get("source", ""), 2), item["category"]))
+
+
+def unregister_category(category: str) -> None:
+    """Drop a declared category -- used when the plugin that declared it is unloaded.
+
+    Core categories are not removable: they are part of the build, and a filter that loses entries depending on
+    runtime state is worse than one that offers a slightly long list.
+    """
+    name = str(category or "").strip()
+    with _LOCK:
+        entry = KNOWN_CATEGORIES.get(name)
+        if entry and entry.get("source") == "core":
+            return
+        KNOWN_CATEGORIES.pop(name, None)
+
+
+for _name, _description in (
+    ("Runtime", "运行时的启停与实例状态"),
+    ("Plugins", "插件的加载、卸载与热重载"),
+    ("OneBot.WS", "OneBot WebSocket 连接：接入、断开、拒绝"),
+    ("OneBot.HTTP", "OneBot HTTP 端点：监听、鉴权拒绝、动作错误"),
+    ("OneBot.Reverse", "反向 WebSocket 客户端"),
+    ("OneBot.Events", "OneBot 事件映射与分发"),
+    ("OneBot.Actions", "动作注册与执行"),
+    ("MessageCache", "消息缓存写入"),
+    ("Transport.Pipe", "pipe 载荷与 DLL 通道"),
+    ("Transport.Headless", "无头实例进程"),
+    ("SessionLink", "会话与载荷的连接状态"),
+    ("Protocol.Media", "媒体地址与 rkey"),
+    ("Protocol.RKey", "rkey 提供方"),
+    ("WebUI", "WebUI 服务"),
+    ("Market", "插件市场"),
+):
+    register_category(_name, description=_description)
+
 
 @dataclass(slots=True)
 class Record:

@@ -15,6 +15,9 @@
   "hooks": [
     "on_message"
   ],
+  "log": {
+    "register": true
+  },
   "priority": 10,
   "enabled": true,
   "description": "白名单外或黑名单内的消息在进入事件管线前丢弃；支持群/用户、双向名单与 scope 过滤。",

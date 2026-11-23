@@ -18,6 +18,12 @@ if TYPE_CHECKING:  # pragma: no cover
     from ..runtime import Runtime
 
 log = logmod.get_logger("OneBot.Server")
+# Connection-class categories, separate from the general server logger.
+#
+# "the websocket dropped" and "the http endpoint answered 403" were both just `OneBot.Server`, so watching one kind
+# of connection meant reading past the other. These two exist so the log filter can be narrowed to a transport.
+ws_log = logmod.get_logger("OneBot.WS")
+http_log = logmod.get_logger("OneBot.HTTP")
 
 
 class EventHub:
@@ -128,6 +134,8 @@ def create_app(runtime: "Runtime") -> FastAPI:
     @app.post(config.http_path)
     async def action_post(request: Request) -> JSONResponse:
         if not authorized(request):
+            http_log.warn("onebot http rejected", reason="bad access_token", verb="POST",
+                          path=str(request.url.path))
             return JSONResponse(models.fail("unauthorized", models.UNAUTHORIZED), status_code=401)
         content_type = request.headers.get("content-type", "").lower()
         if content_type.startswith("application/x-www-form-urlencoded"):
@@ -158,6 +166,8 @@ def create_app(runtime: "Runtime") -> FastAPI:
     @app.get(config.http_path)
     async def action_get(request: Request) -> JSONResponse:
         if not authorized(request):
+            http_log.warn("onebot http rejected", reason="bad access_token", verb="GET",
+                          path=str(request.url.path))
             return JSONResponse(models.fail("unauthorized", models.UNAUTHORIZED), status_code=401)
         name = request.query_params.get("action", "")
         # access_token authenticates the request; it is never an action parameter.
@@ -172,11 +182,14 @@ def create_app(runtime: "Runtime") -> FastAPI:
     @app.websocket(config.ws_path)
     async def websocket_endpoint(ws: WebSocket) -> None:
         if not authorized(ws):
+            ws_log.warn("onebot websocket rejected", reason="bad access_token",
+                        client=str(getattr(ws, "client", "") or ""))
             await ws.close(code=1008, reason="unauthorized")
             return
         await ws.accept()
         await hub.add_ws(ws)
-        log.info("onebot websocket connected", clients=len(hub._websockets))
+        ws_log.info("onebot websocket connected", clients=len(hub._websockets),
+                    client=str(getattr(ws, "client", "") or ""))
         try:
             await ws.send_text(
                 json.dumps(
@@ -208,10 +221,10 @@ def create_app(runtime: "Runtime") -> FastAPI:
         except WebSocketDisconnect:
             pass
         except Exception as exc:  # noqa: BLE001
-            log.warn("websocket error", error=f"{type(exc).__name__}: {exc}")
+            ws_log.warn("onebot websocket error", error=f"{type(exc).__name__}: {exc}")
         finally:
             await hub.remove_ws(ws)
-            log.info("onebot websocket disconnected", clients=len(hub._websockets))
+            ws_log.info("onebot websocket disconnected", clients=len(hub._websockets))
 
     if config.enable_sse:
 

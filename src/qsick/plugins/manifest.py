@@ -34,6 +34,26 @@ class ManifestError(ValueError):
     pass
 
 
+def _log_opted_in(raw: Any) -> bool:
+    """Read ``log`` as either a bool or ``{"register": bool}``.
+
+    The object form exists because "register my category" and "what is it called" are one decision; the bare bool is
+    accepted because that is what most manifests will write.
+    """
+    if isinstance(raw, dict):
+        return bool(raw.get("register", False))
+    return bool(raw)
+
+
+def _log_category_name(raw: Any) -> str:
+    """The category a plugin's logs are filed under: ``Plugin.<id>`` unless the manifest names one."""
+    if isinstance(raw, dict):
+        named = str(raw.get("category") or "").strip()
+        if named:
+            return named
+    return ""
+
+
 @dataclass(slots=True)
 class PluginManifest:
     id: str
@@ -52,6 +72,14 @@ class PluginManifest:
     config_ui: str = "default"
     config_page: str = ""
     config_fields: list[dict] = field(default_factory=list)
+    # Which accounts this plugin may act on and receive from. Empty means "every account", which is what a plugin
+    # that does not care about accounts wants; naming some narrows it, and the host enforces that on both the
+    # receive hook and every send, so a plugin cannot widen its own scope at runtime.
+    accounts: list[str] = field(default_factory=list)
+    # Whether this plugin's own log category should appear in the WebUI's category filter. A plugin that never logs
+    # has nothing to filter, so it says so here rather than being guessed at.
+    register_log_category: bool = False
+    log_category: str = ""
 
     @classmethod
     def load(cls, path: Path) -> "PluginManifest":
@@ -79,6 +107,9 @@ class PluginManifest:
             config_ui=str(raw.get("config_ui", "default")),
             config_page=str(raw.get("config_page", "")),
             config_fields=[dict(item) for item in raw.get("config_fields", []) if isinstance(item, dict)],
+            accounts=[str(item) for item in raw.get("accounts", []) if str(item).strip()],
+            register_log_category=_log_opted_in(raw.get("log")),
+            log_category=_log_category_name(raw.get("log")),
         )
         manifest.validate()
         return manifest
@@ -104,10 +135,19 @@ class PluginManifest:
         for item in self.config_fields:
             if not item.get("key"):
                 raise ManifestError(f"{self.id}: every config_fields entry needs a key")
+        for account in self.accounts:
+            if not account.isdigit():
+                # An instance id would look like a valid scope but never match a message's `account`, which is a uin.
+                raise ManifestError(f"{self.id}: accounts must be QQ numbers, got {account!r}")
 
     @property
     def tier_level(self) -> int:
         return TIERS[self.tier]
+
+    @property
+    def log_category_for_ui(self) -> str:
+        """The category this plugin's logs land in, registered in the filter or not."""
+        return self.log_category or f"Plugin.{self.id}"
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -122,5 +162,8 @@ class PluginManifest:
             "config_ui": self.config_ui,
             "config_page": self.config_page,
             "config_fields": self.config_fields,
+            "accounts": list(self.accounts),
+            "log_category": self.log_category_for_ui,
+            "register_log_category": self.register_log_category,
             "path": str(self.path.parent),
         }

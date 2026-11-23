@@ -144,7 +144,21 @@ class PluginHost:
 
         stamps = _stamps(manifest)
         self._loaded[manifest.id] = LoadedPlugin(manifest, instance, ctx, module_name, stamps)
-        log.info("plugin loaded", id=manifest.id, tier=manifest.tier, version=manifest.version)
+        # The category is declared by the plugin, not inferred from whether it happened to log yet: a plugin that
+        # has not logged still has a category worth selecting, and one that will never log should not add noise.
+        if manifest.register_log_category:
+            logmod.register_category(manifest.log_category_for_ui, source="plugin",
+                                     description=f"{manifest.name}（{manifest.id}）")
+        log.info(
+            "plugin loaded",
+            id=manifest.id,
+            tier=manifest.tier,
+            version=manifest.version,
+            priority=manifest.priority,
+            hooks=",".join(self._hooks_of(instance)) or "-",
+            accounts=",".join(manifest.accounts) or "all",
+            log_category=manifest.log_category_for_ui if manifest.register_log_category else "-",
+        )
         return True
 
     async def unload(self, plugin_id: str) -> None:
@@ -160,6 +174,8 @@ class PluginHost:
         except Exception as exc:  # noqa: BLE001
             log.warn("plugin on_unload failed", id=plugin_id, error=str(exc))
         sys.modules.pop(loaded.module_name, None)
+        if loaded.manifest.register_log_category:
+            logmod.unregister_category(loaded.manifest.log_category_for_ui)
         log.info("plugin unloaded", id=plugin_id)
 
     async def reload(self, plugin_id: str) -> bool:
@@ -250,10 +266,23 @@ class PluginHost:
 
     # -------------------------------------------------------------- dispatch
 
+    @staticmethod
+    def _hooks_of(instance: Any) -> list[str]:
+        return [name for name in ("on_load", "on_message", "on_event", "on_unload")
+                if getattr(instance, name, None) is not None]
+
     async def dispatch_message(self, message: "Message") -> bool:
+        account = str(getattr(message, "account", "") or "")
         for loaded in sorted(self._loaded.values(), key=lambda item: item.manifest.priority):
             hook = getattr(loaded.instance, "on_message", None)
             if hook is None:
+                continue
+            # A manifest that claimed specific accounts does not see messages from the others. Enforced here rather
+            # than inside the hook so the plugin cannot forget it, and logged at TRACE because a filtered message is
+            # the expected case, not an incident.
+            if not loaded.ctx.account_allowed(account):
+                loaded.ctx.log.trace("message skipped: account outside this plugin's scope",
+                                     account=account, message_id=message.message_id)
                 continue
             try:
                 result = hook(message, loaded.ctx)
