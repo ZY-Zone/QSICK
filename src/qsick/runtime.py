@@ -1782,10 +1782,15 @@ class Runtime:
                 return
             for item in mapped:
                 item = await self.plugins.dispatch_event(item)
+                # `None` means a plugin dropped it: the event is consumed, nothing reaches a client.
+                if item is None:
+                    continue
                 await self._publish(item)
             return
 
         ob_event = await self.plugins.dispatch_event(ob_event)
+        if ob_event is None:
+            return
         await self._publish(ob_event)
 
     def _store_message(self, context: "InstanceContext", message: Message) -> None:

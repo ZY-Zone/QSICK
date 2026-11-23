@@ -156,6 +156,12 @@ class PluginHost:
             scope = "ALL"
         else:
             scope = ",".join(manifest.account_list)
+        # Say it at load time rather than letting the plugin receive nothing and look broken.
+        declared = set(manifest.permissions)
+        for name in ("on_message", "on_event"):
+            if getattr(instance, name, None) is not None and "events.read" not in declared:
+                log.warn("plugin implements a receive hook without events.read; it will not be called",
+                         id=manifest.id, hook=name, fix="add 'events.read' to permissions")
         log.info(
             "plugin loaded",
             id=manifest.id,
@@ -284,6 +290,11 @@ class PluginHost:
             hook = getattr(loaded.instance, "on_message", None)
             if hook is None:
                 continue
+            # `events.read` is what the manifest says grants receiving, so it has to be the thing that does. Before
+            # this, any plugin with an `on_message` received messages whether it declared the permission or not --
+            # the permission was decoration. Load-time already warns, so nothing breaks silently.
+            if not loaded.ctx.has("events.read"):
+                continue
             # A manifest that claimed specific accounts does not see messages from the others. Enforced here rather
             # than inside the hook so the plugin cannot forget it, and logged at TRACE because a filtered message is
             # the expected case, not an incident.
@@ -315,10 +326,18 @@ class PluginHost:
                 loaded.ctx.log.warn("hook returned False without events.drop; ignoring")
         return True
 
-    async def dispatch_event(self, event: dict[str, Any]) -> dict[str, Any]:
+    async def dispatch_event(self, event: dict[str, Any]) -> dict[str, Any] | None:
+        """Run the event hooks. Returns the (possibly replaced) event, or None when a plugin dropped it.
+
+        Dropping used to be an `on_message`-only idea: `ctx.drop()` inside `on_event` fell into the bare
+        `except Exception` and was logged as a failure, so the documented control-flow signal silently did nothing
+        in half the hooks that could raise it.
+        """
         for loaded in sorted(self._loaded.values(), key=lambda item: item.manifest.priority):
             hook = getattr(loaded.instance, "on_event", None)
             if hook is None:
+                continue
+            if not loaded.ctx.has("events.read"):
                 continue
             try:
                 result = hook(event, loaded.ctx)
@@ -326,6 +345,12 @@ class PluginHost:
                     result = await result
                 if isinstance(result, dict):
                     event = result
+            except DropMessage as drop:
+                loaded.ctx.log.trace("event dropped", reason=drop.reason)
+                return None
+            except PermissionDenied as exc:
+                loaded.ctx.log.error("plugin used an undeclared permission", error=str(exc))
+                continue
             except Exception as exc:  # noqa: BLE001
                 loaded.ctx.log.error("on_event failed", error=f"{type(exc).__name__}: {exc}")
         return event

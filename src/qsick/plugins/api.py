@@ -75,15 +75,25 @@ class PluginContext:
     # ------------------------------------------------------------ permissions
 
     def has(self, permission: str) -> bool:
+        """Whether this manifest declared `permission`. Answers False rather than raising -- use it to branch."""
         return permission in self.manifest.permissions
 
     def require(self, permission: str) -> None:
+        """Raise :class:`PermissionDenied` unless `permission` was declared.
+
+        Every capability method calls this first, so a plugin cannot reach an ability by forgetting to check.
+        """
         if not self.has(permission):
             raise PermissionDenied(
                 f"plugin {self.manifest.id!r} did not declare {permission!r} in basic.json"
             )
 
     def drop(self, reason: str = "") -> None:
+        """Stop the current message or event from going any further. Needs ``events.drop``.
+
+        Works in ``on_message`` (the message is never stored or published) and in ``on_event`` (the event is not
+        published). It raises instead of returning, so it must not be caught: it is control flow, not an error.
+        """
         self.require("events.drop")
         raise DropMessage(reason)
 
@@ -140,9 +150,11 @@ class PluginContext:
         self.log.info("account muted for this plugin", account=wanted)
 
     def unblock_account(self, account: Any) -> None:
+        """Undo :meth:`block_account`. Harmless when the account was not blocked."""
         self._blocked.discard(str(account or "").strip())
 
     def blocked_accounts(self) -> list[str]:
+        """The accounts this plugin has muted at runtime -- a subset of what it declared."""
         return sorted(self._blocked)
 
     # --------------------------------------------------- kernel-level restrictions
@@ -172,20 +184,29 @@ class PluginContext:
         return state
 
     def unrestrict_account(self, account: Any, *, direction: str = "both") -> str:
+        """Lift a kernel restriction, wholly or for one direction. Returns what is left (``""`` when nothing is).
+
+        Core tier only, like :meth:`restrict_account`.
+        """
         self._require_core("unrestrict_account")
         state = self._runtime.unrestrict_account(account, direction=direction)
         self.log.info("runtime account restriction lifted", account=str(account), direction=direction, left=state or "-")
         return state
 
     def restrictions(self) -> dict[str, str]:
+        """The kernel restrictions in force: ``{uin: "in" | "out" | "both"}``. Core tier only."""
         self._require_core("restrictions")
         return self._runtime.account_restrictions()
 
     def accounts(self) -> list[dict[str, Any]]:
-        """Every account the runtime currently knows, with the plugin's own verdict attached.
+        """The accounts that are logged in right now, each with this plugin's verdict attached.
 
-        Reads like a roster rather than a permission check: a plugin deciding what to do needs to see the accounts
-        it cannot touch, otherwise "nothing happened" is indistinguishable from "not logged in".
+        The same set the 账户管理 page lists as usable, and the same set the account-scoped calls accept: a stopped
+        instance, one that never signed in, and a network profile with no live login are all absent. Handing those
+        out would give a plugin a target list it cannot use.
+
+        `allowed` is the *scope* answer, not an availability one -- everything in the list is already reachable, so
+        a `False` there means "declared accounts do not include this one".
         """
         self.require("runtime.read")
         self._require_accounts("accounts")
@@ -229,10 +250,22 @@ class PluginContext:
     def _config_path(self) -> Path:
         return self._runtime.config.path("plugins", self.manifest.id, "config.json")
 
+    def _write_config_file(self, data: dict[str, Any]) -> None:
+        """Write the file with no permission check -- callers decide whether one is owed."""
+        self._config_path.parent.mkdir(parents=True, exist_ok=True)
+        self._config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
     def read_config(self, default: dict[str, Any] | None = None) -> dict[str, Any]:
+        """This plugin's own config. Needs ``config.read``; on first use the file is seeded from `default`.
+
+        Seeding does not need ``config.write`` -- it is how reading a config that has never been written works.
+        """
         self.require("config.read")
         if not self._config_path.exists():
-            self.write_config(default or {})
+            # Seeding the file from the declared defaults is part of reading it, not a write the plugin asked for.
+            # Going through `write_config` here made `config.read` alone unusable on a first run, which is the one
+            # time it matters.
+            self._write_config_file(default or {})
             return dict(default or {})
         try:
             data = json.loads(self._config_path.read_text(encoding="utf-8"))
@@ -242,9 +275,9 @@ class PluginContext:
         return data if isinstance(data, dict) else dict(default or {})
 
     def write_config(self, data: dict[str, Any]) -> None:
+        """Replace this plugin's config file. Needs ``config.write``."""
         self.require("config.write")
-        self._config_path.parent.mkdir(parents=True, exist_ok=True)
-        self._config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        self._write_config_file(data)
 
     # --------------------------------------------------------------- actions
 
@@ -268,34 +301,58 @@ class PluginContext:
         """
         self.require("actions.invoke")
         self._require_accounts("invoke_for")
+        # The account comes from the instance, not from the caller -- that is the point of naming one. A caller that
+        # also passes `account` is either repeating itself or confused, and silently dropping the value (the old
+        # behaviour) hid the second case until a send landed on the wrong number.
         account = str(params.pop("account", "") or "")
-        if account and not self.account_allowed(account):
-            raise AccountOutOfScope(
-                f"plugin {self.manifest.id!r} did not claim account {account!r} in basic.json")
+        if account:
+            if not self.account_allowed(account):
+                raise AccountOutOfScope(
+                    f"plugin {self.manifest.id!r} did not claim account {account!r} in basic.json")
+            owner = next((entry["account"] for entry in self._runtime.online_accounts()
+                          if entry["instance"] == str(instance)), "")
+            if owner and owner != account:
+                raise AccountOutOfScope(
+                    f"instance {instance!r} belongs to account {owner!r}, not {account!r}")
         if not self._runtime.is_instance_online(instance):
             raise AccountNotOnline(
                 f"plugin {self.manifest.id!r} cannot act as instance {instance!r}: it is not logged in")
         return await self._runtime.invoke_for(instance, action, params)
 
-    async def send_group_msg(self, group_id: int, message: Any, *, account: Any = "") -> dict[str, Any]:
+    @staticmethod
+    def _send_payload(key: str, target: int, message: Any, account: str,
+                      auto_escape: bool | None) -> dict[str, Any]:
+        payload: dict[str, Any] = {key: int(target), "message": message}
+        if account:
+            payload["account"] = account
+        # Passed through only when asked for: the action's default is not ours to restate, and sending
+        # `auto_escape=None` would read as "explicitly no" rather than "unset".
+        if auto_escape is not None:
+            payload["auto_escape"] = bool(auto_escape)
+        return payload
+
+    async def send_group_msg(self, group_id: int, message: Any, *, account: Any = "",
+                             auto_escape: bool | None = None) -> dict[str, Any]:
+        """Send to a group. `auto_escape` is the OneBot v11 CQ-string escape flag; leave it unset for segments."""
         self.require("messages.send")
         self._require_accounts("send_group_msg")
-        payload: dict[str, Any] = {"group_id": int(group_id), "message": message}
-        target = self._resolve_account(account)
-        if target:
-            payload["account"] = target
+        payload = self._send_payload("group_id", group_id, message, self._resolve_account(account), auto_escape)
         return await self._runtime.invoke("send_group_msg", payload)
 
-    async def send_private_msg(self, user_id: int, message: Any, *, account: Any = "") -> dict[str, Any]:
+    async def send_private_msg(self, user_id: int, message: Any, *, account: Any = "",
+                               auto_escape: bool | None = None) -> dict[str, Any]:
+        """Send to one person. `auto_escape` behaves as in :meth:`send_group_msg`."""
         self.require("messages.send")
         self._require_accounts("send_private_msg")
-        payload: dict[str, Any] = {"user_id": int(user_id), "message": message}
-        target = self._resolve_account(account)
-        if target:
-            payload["account"] = target
+        payload = self._send_payload("user_id", user_id, message, self._resolve_account(account), auto_escape)
         return await self._runtime.invoke("send_private_msg", payload)
 
     def register_action(self, spec: Any) -> None:
+        """Add or replace an action on the OneBot surface. Needs ``actions.register``.
+
+        A name that already exists is replaced rather than refused, which is what a hot reload needs; the registry's
+        own duplicate check is bypassed deliberately.
+        """
         self.require("actions.register")
         self._runtime.registry.add(spec, replace=True)
         self.log.info("registered action", action=getattr(spec, "name", "?"))
@@ -303,5 +360,6 @@ class PluginContext:
     # ----------------------------------------------------------------- status
 
     def runtime_info(self) -> dict[str, Any]:
+        """The runtime's status snapshot -- the same dict the WebUI renders. Needs ``runtime.read``."""
         self.require("runtime.read")
         return self._runtime.info()
