@@ -120,13 +120,14 @@
       "delete_qzone_msg": "ok, the post disappears from the listing",
       "get_qzone_public_capabilities": "ok, all public_qzone_* flags false",
       "get_qzone_public_feeds": "ok but total 0 (account not whitelisted)",
-      "set_qzone_msg_right": "ok, and it no longer loses the picture. Two things had to be fixed: the call rewrites the whole post, so it needs the text ('con' -- without it code -10005 '您未输入内容'), AND the richval rebuilt from the post's own detail -- sending only tid/con/ugc_right answers ok while silently deleting the attached image. ugc_right=64 (仅自己可见) is still refused by the server with code -10083 on every attempt."
+      "set_qzone_msg_right": "ok, and it no longer loses the picture. Two things had to be fixed: the call rewrites the whole post, so it needs the text ('con' -- without it code -10005 '您未输入内容'), AND the richval rebuilt from the post's own detail -- sending only tid/con/ugc_right answers ok while silently deleting the attached image. ugc_right=64 (仅自己可见) is still refused by the server with code -10083 on every attempt.",
+      "set_qzone_profile": "ok: renamed the space to SICKCC and read it back as spacename=SICKCC. The CGI needs a *bitmap* -- `mb`=2048 for the name, 4096 for the description -- and ignores any field not flagged: the first attempt sent `spacename` without `mb`, answered code 0, and changed nothing. Field names are `spacename` / `desc`, and `pageindex=3` is part of the expected form."
     },
     "unverified": [
-      "set_qzone_profile / set_qzone_ban: implemented, not exercised -- they change account state",
+      "set_qzone_ban: reachable and answers ok on the release path (a no-op while nobody is banned); the ban path itself was not exercised because it would block a real friend",
       "ugc_right 64/128 on set_qzone_msg_right: refused by the server (-10083), see verified_live",
       "the 12 public-qzone actions: implemented on the same gateway, unverifiable while the account is outside the whitelist",
-      "get_qzone_share_ark: needs the Ark API, not implemented"
+      "get_qzone_share_ark: needs the Ark API, not implemented; NapCat has no such action either"
     ],
     "alignment_with_napcat": {
       "napcat_actions": 28,
@@ -206,5 +207,11 @@
       "snowluma": "not implemented: feed list via feeds3_html_more HTML, its stateful cursor (page positions), and the SnowLuma return schemas SlQzoneFeedSchema / SlQzoneMsgListReturnSchema / SlQzoneCommentSchema. NapCat defaults to it, so a caller relying on the default gets an explicit error rather than native data in disguise.",
       "cursor_binding": "NapCat issues opaque account-bound cursors with a TTL; this passes H5's `attach_info` through as `next_cursor`. Same use, weaker guarantees."
     }
+  },
+  "silent_no_ops_found": {
+    "note": "Calls that answer success while doing nothing are the theme of this endpoint set; three so far.",
+    "set_profile_without_mb": "code 0, nothing changed -- fixed by sending the bitmap",
+    "set_msg_right_without_richval": "ok, and the attached picture was deleted -- fixed by rebuilding the whole form",
+    "typo_param_profile": "`get_qzone_profile` with `vuin` answers for the logged-in account instead of the one asked for"
   }
 }

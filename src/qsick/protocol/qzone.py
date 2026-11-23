@@ -682,15 +682,28 @@ class QzoneClient:
         return {"tid": tid, "deleted": True, "raw": answer}
 
     async def set_profile(self, *, name: str = "", description: str = "") -> dict[str, Any]:
-        fields: dict[str, Any] = {"format": "json"}
+        """Rename the space or change its description.
+
+        The CGI takes a **bitmap** of which fields are being set -- 2048 for the name, 4096 for the description --
+        and ignores anything not flagged. Measured: sending `spacename` without `mb` answers `code 0` and changes
+        nothing, which reads like success until the profile is read back. The field names are `spacename` and `desc`,
+        not `name`/`signature`, and `pageindex=3` is part of the expected form.
+        """
+        fields: dict[str, Any] = {"pageindex": "3", "fupdate": "1", "format": "json"}
+        bitmap = 0
         if name:
-            fields["spacename"] = name
+            fields["spacename"] = str(name).replace("\r", "")
+            bitmap |= 2048
         if description:
-            fields["signature"] = description
-        if len(fields) == 1:
+            fields["desc"] = str(description).replace("\r", "")
+            bitmap |= 4096
+        if bitmap == 0:
             raise QzoneError("set_profile needs a name or a description")
-        answer = await self.cgi("set_profile", fields, post=True)
-        return {"name": name, "description": description, "raw": answer}
+        fields["mb"] = str(bitmap)
+        credentials = await self.credentials()
+        fields["uin"] = credentials.uin
+        answer = await self.cgi("set_profile", fields, post=True, full=True)
+        return {"name": name, "description": description, "mb": bitmap, "raw": answer}
 
     async def own_msg_detail(self, tid: str) -> dict[str, Any]:
         """The legacy detail of one of *this account's* posts, read via `emotion_cgi_msgdetail_v6`.

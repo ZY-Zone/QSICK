@@ -335,3 +335,43 @@ class TestRightRewrite:
 
 async def _resolved(value):
     return value
+
+
+class TestProfileRename:
+    """The profile CGI takes a bitmap of which fields are being set, and ignores anything unflagged.
+
+    Measured: sending `spacename` without `mb` answers `code 0` and changes nothing -- indistinguishable from
+    success until the profile is read back.
+    """
+
+    async def _body(self, **kwargs) -> dict:
+        client = FakeClient([(200, '{"code":0}')])
+        await client.set_profile(**kwargs)
+        _method, _url, _headers, body = client.requests[0]
+        import urllib.parse
+        return dict(urllib.parse.parse_qsl(body.decode("utf-8"), keep_blank_values=True))
+
+    async def test_the_name_sets_its_bit(self):
+        body = await self._body(name="SICKCC")
+        assert body["spacename"] == "SICKCC"
+        assert body["mb"] == "2048"
+
+    async def test_the_description_sets_its_own_bit(self):
+        body = await self._body(description="hi")
+        assert body["desc"] == "hi"
+        assert body["mb"] == "4096"
+
+    async def test_both_fields_combine_into_one_bitmap(self):
+        body = await self._body(name="a", description="b")
+        assert body["mb"] == str(2048 | 4096)
+
+    async def test_the_form_carries_what_the_cgi_expects(self):
+        body = await self._body(name="a")
+        assert body["pageindex"] == "3"
+        assert body["fupdate"] == "1"
+        assert body["uin"] == "3905548034"
+
+    async def test_nothing_to_set_is_refused(self):
+        client = FakeClient([])
+        with pytest.raises(qzone.QzoneError):
+            await client.set_profile()
