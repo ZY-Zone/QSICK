@@ -1,8 +1,11 @@
 """协议注册表与消息处理器。
 
 这两块是新增的跨界层：注册表决定"这台机器上有哪些协议"，处理器决定"消息怎么
-从内部形状翻译成对端协议的形状"。它们出错的后果是静默的——表情照样发出去，
+从内部形状翻译成对端协议的形状"。它们出错的后果是静默的——消息照样发出去，
 只是语义错了——所以要有测试盯着。
+
+EXTemotions 聊天协议已移除（2026-11-24）。这里保留的都是与"有几个协议"无关的
+通用契约：注册表的清单语义、处理器的编码/摘要/回落、未知段透传。
 """
 
 from __future__ import annotations
@@ -21,10 +24,9 @@ from protocols import registry
 from protocols.processor import DispatchError, MessageProcessor, processor_for
 
 
-def test_registry_lists_both_chat_protocols_and_hides_the_store():
+def test_registry_lists_the_chat_protocols_and_hides_the_store():
     ids = registry.chat_protocol_ids()
     assert "onebotv11" in ids
-    assert "onebotv11-EXTemotions" in ids
     # maxStore 是存储协议，绝不能作为聊天协议被选中。
     assert registry.STORE_PROTOCOL not in ids
 
@@ -46,54 +48,39 @@ def test_unregistered_protocol_is_refused():
         registry.load_protocol("definitely-not-a-protocol")
 
 
-def test_extemotions_keeps_what_plain_v11_drops():
-    """这是两个协议的全部差别所在。"""
+def test_plain_v11_keeps_only_the_face_id():
+    """纯 v11 的 face 段只有一个 id 字段，其余语义在编码时被丢掉。
+
+    这条曾经是"两个协议的差别所在"的对照；EXTemotions 移除后它变成一条
+    单边事实的记录——降级会发生，且只丢协议表达不了的东西，id 必须留住。
+    """
     parts = [{"kind": "emotion", "emotion": {
         "id": "392", "format": "animated", "fileType": "lottie",
         "pack_id": "1", "sticker_id": "38", "sticker_type": 3, "name": "龙年快乐"}}]
-
     plain = registry.load_protocol("onebotv11").encode_message(parts)
-    rich = registry.load_protocol("onebotv11-EXTemotions").encode_message(parts)
-
-    # 纯 v11 只留得住 id。
+    assert plain[0]["type"] == "face"
     assert plain[0]["data"] == {"id": "392"}
-    # EXTemotions 把动态性与文件类型都带上了。
-    data = rich[0]["data"]
-    assert data["format"] == "animated"
-    assert data["file_type"] == "lottie"
-    assert data["sticker_type"] == 3
-    assert data["name"] == "龙年快乐"
 
 
-def test_extemotions_declares_richer_capabilities():
+def test_capabilities_of_the_default_protocol_are_honest_about_emotions():
     plain = registry.load_protocol("onebotv11").capabilities()
-    rich = registry.load_protocol("onebotv11-EXTemotions").capabilities()
     assert plain.get("emotion_rich_fields") is False
-    assert rich.get("emotion_rich_fields") is True
-    assert "super" in rich.get("emotion_types", [])
 
 
-def test_roundtrip_preserves_emotion_semantics():
-    protocol = registry.load_protocol("onebotv11-EXTemotions")
+def test_roundtrip_preserves_the_face_identity():
+    protocol = registry.load_protocol("onebotv11")
     parts = [{"kind": "text", "text": "看"},
-             {"kind": "emotion", "emotion": {"id": "364", "format": "animated",
-                                             "fileType": "lottie", "name": "超级赞"}}]
+             {"kind": "emotion", "emotion": {"id": "364"}}]
     back = protocol.decode_message(protocol.encode_message(parts))
     assert back[0] == {"kind": "text", "text": "看"}
-    emotion = back[1]["emotion"]
-    assert emotion["id"] == "364"
-    assert emotion["moveable"] is True
-    assert emotion["fileType"] == "lottie"
+    assert back[1]["emotion"]["id"] == "364"
 
 
 def test_processor_encodes_with_the_selected_protocol():
     parts = [{"kind": "emotion", "emotion": {"id": "14", "format": "static",
                                              "fileType": "png", "name": "微笑"}}]
-    rich = MessageProcessor("onebotv11-EXTemotions").encode_outbound(parts)
     plain = MessageProcessor("onebotv11").encode_outbound(parts)
-    assert rich[0]["data"]["format"] == "static"
     assert plain[0]["data"] == {"id": "14"}
-    assert rich[0]["data"]["file_type"] == "png"
 
 
 def test_processor_rejects_an_empty_message():
@@ -103,7 +90,7 @@ def test_processor_rejects_an_empty_message():
 
 
 def test_processor_summarises_faces_by_name_not_id():
-    processor = MessageProcessor("onebotv11-EXTemotions")
+    processor = MessageProcessor("onebotv11")
     parts = [{"kind": "text", "text": "好"},
              {"kind": "emotion", "emotion": {"id": "14", "name": "微笑"}}]
     assert processor.summarize(parts) == "好[微笑]"
@@ -116,15 +103,21 @@ def test_processor_falls_back_when_the_protocol_is_unknown():
 
 
 def test_processor_enriches_before_encoding():
-    """只有 id 的表情要补全成语义完整的对象，否则会退化成"不知道是否动态"。"""
-    def enrich(emotion):
-        return {**emotion, "format": "animated", "fileType": "apng", "moveable": True}
+    """只有 id 的表情要补全成语义完整的对象。
 
-    processor = MessageProcessor("onebotv11-EXTemotions", enrich=enrich)
-    segments = processor.encode_outbound([{"kind": "emotion", "emotion": {"id": "9"}}])
-    data = segments[0]["data"]
-    assert data["format"] == "animated"
-    assert data["file_type"] == "apng"
+    补全的结果未必被编码器采用（纯 v11 只留 id），但补全本身发生在协议之前，
+    将来多一个富协议时不需要再改这里。
+    """
+    captured = {}
+
+    def enrich(emotion):
+        captured.update({**emotion, "format": "animated", "fileType": "apng", "moveable": True})
+        return dict(captured)
+
+    processor = MessageProcessor("onebotv11", enrich=enrich)
+    processor.encode_outbound([{"kind": "emotion", "emotion": {"id": "9"}}])
+    assert captured["format"] == "animated"
+    assert captured["fileType"] == "apng"
 
 
 def test_processor_send_message_targets_the_right_action():
@@ -137,7 +130,7 @@ def test_processor_send_message_targets_the_right_action():
 
     import asyncio
 
-    processor = MessageProcessor("onebotv11-EXTemotions", dispatch)
+    processor = MessageProcessor("onebotv11", dispatch)
     asyncio.run(processor.send_message({"kind": "group", "id": "1057604000"},
                                        [{"kind": "text", "text": "hi"}]))
     assert captured["action"] == "send_group_msg"
@@ -162,12 +155,13 @@ def test_processor_rejects_an_unsupported_target():
 
 def test_unknown_segments_survive_the_round_trip():
     """不认识的段必须原样带过去，否则上层永远看不到"有东西来了但我不认"。"""
-    protocol = registry.load_protocol("onebotv11-EXTemotions")
+    protocol = registry.load_protocol("onebotv11")
     segments = [{"type": "poke", "data": {"id": "7"}}]
     parts = protocol.decode_message(segments)
     assert parts[0]["kind"] == "unknown"
     assert parts[0]["type"] == "poke"
     assert protocol.encode_message(parts) == segments
+
 
 def test_config_remembers_which_file_it_came_from(tmp_path):
     """保存设置必须写回启动时读的那份配置。

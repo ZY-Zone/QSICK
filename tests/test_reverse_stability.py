@@ -65,7 +65,7 @@ def build(tmp_path: Path, *, with_profile: bool = True) -> Runtime:
 class TestUnchangedTargetsAreKept:
     async def test_an_unchanged_live_client_is_not_replaced(self, tmp_path: Path):
         runtime = build(tmp_path)
-        first = ReverseWebSocketClient(runtime, [(URL, ACCOUNT, False)])
+        first = ReverseWebSocketClient(runtime, [(URL, ACCOUNT, False, "onebotv11", "p1")])
         first.start()
         runtime.reverse = first
         try:
@@ -80,7 +80,7 @@ class TestUnchangedTargetsAreKept:
         # The counterpart: a client whose loop has ended must be replaced, otherwise the connection would never
         # come back. Only a working client is preserved.
         runtime = build(tmp_path)
-        dead = ReverseWebSocketClient(runtime, [(URL, ACCOUNT, False)])
+        dead = ReverseWebSocketClient(runtime, [(URL, ACCOUNT, False, "onebotv11", "p1")])
         runtime.reverse = dead
         try:
             assert dead.alive() is False
@@ -96,13 +96,14 @@ class TestTargets:
     def test_the_owner_travels_with_the_url(self, tmp_path: Path):
         client = ReverseWebSocketClient(build(tmp_path, with_profile=False),
                                         [("ws://a/onebot", "111", False), ("ws://b/onebot", "222", True)])
-        assert client.targets == [("ws://a/onebot", "111", False), ("ws://b/onebot", "222", True)]
+        assert client.targets == [("ws://a/onebot", "111", False, "", ""),
+                                 ("ws://b/onebot", "222", True, "", "")]
         assert client.urls == ["ws://a/onebot", "ws://b/onebot"]
 
     def test_targets_come_from_the_accounts_own_profiles(self, tmp_path: Path):
         runtime = build(tmp_path)
         # The third element is the profile's `report_self_message`, so two profiles can disagree.
-        assert runtime._reverse_targets() == [(URL, ACCOUNT, False)]
+        assert runtime._reverse_targets() == [(URL, ACCOUNT, False, "onebotv11", "p1")]
 
 
 class TestAnswerRouting:

@@ -66,6 +66,10 @@
       <span>WS 服务器</span><b>{{ groups.ws_server|length }}</b>
     </button>
     <p class="faint net-side-note">当前内核使用单监听端口；同类型多个启用项时，第一个生效。</p>
+    <p class="faint net-side-note">
+      客户端要连的地址带协议前缀：OneBot v11 在 <code>/ONEBOTV11/</code> 下，
+      Milky 在 <code>/MILKY/</code> 下。前缀决定这条连接说什么协议，不做别名。
+    </p>
   </aside>
 
   <div class="net-panels">

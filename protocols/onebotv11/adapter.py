@@ -111,7 +111,7 @@ class OneBotV11Protocol(ChatProtocol):
         """告诉上层这份协议能表达什么、要降级什么。
 
         ``emotion`` 报 ``False`` 是关键：纯 v11 只有 face 段，动态表情会被降级，
-        上层可以据此选择切到 EXTemotions 协议而不是静默丢信息。
+        上层可以据此判断"这条消息有信息在编码时丢了"，而不是以为发全了。
         """
         return {
             "version": CAPABILITY_VERSION,

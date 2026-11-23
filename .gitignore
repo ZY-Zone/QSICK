@@ -187,13 +187,13 @@ instanceTemplates/
 headlessClient/
 
 # ------------------------------------------------------------- QQ face assets
-# 表情资源随仓库分发（525 张图 + Lottie 动效，共 731 个文件、约 58 MB，
-# 最大单文件 1.28 MB）。这样克隆下来就是完整的，不需要额外导入步骤。
+# 表情资源曾随仓库分发（525 张图 + Lottie 动效，共 731 个文件、约 58 MB）。
+# WebUI 聊天栏删除后它们没有任何消费方，导入工具（tools/import_from_client.py、
+# tools/import_emotions.py）也一并删除了。
 #
-# 代价是仓库变大，且这类二进制进了 Git 历史后很难再清理——如果将来要缩小
-# 仓库，只能靠 history rewrite。tools/import_from_client.py 与
-# tools/import_emotions.py 仍保留：前者能从本机 QQ 补图，后者能从语料完整
-# 重建（见 docs/PROTOCOLS.md「表情素材」）。
+# `assets/qq-faces/` 仍留在工作树里，尚未从 Git 中移除：那是 58 MB 的二进制，
+# 删掉不会缩小仓库历史（只能靠 history rewrite），所以留待单独决定。
+
 
 
 # ------------------------------------------------------------ editor / OS noise

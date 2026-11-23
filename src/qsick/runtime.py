@@ -21,6 +21,7 @@ from .onebot.context import ActionContext
 from .onebot.events import EventMapper
 from .onebot.registry import ActionRegistry
 from .onebot.reverse import ReverseWebSocketClient
+from .onebot.pipeline import ProtocolPipelines, protocol_of
 from .onebot.server import EventHub, create_app as create_onebot_app
 from .plugins.host import PluginHost
 from .protocol.media import MediaResolver
@@ -257,7 +258,12 @@ class Runtime:
         #: text every two seconds, which reads as a glitch rather than as a greeting.
         self.quote: tuple[str, str] | None = quotesmod.pick()
         self.registry: ActionRegistry = action_mod.build_registry()
-        self.hub = EventHub()
+        # 三条流水线共用一个实例：协议适配器要缓存，编码失败的原因也要汇到一处。
+        self.pipelines = ProtocolPipelines()
+        self.hub = EventHub(self.pipelines)
+        # 服务端连接（http / ws_server / sse）没有"自己的" profile 对象，只能按 kind 与 path 反查。
+        # 交给 hub 而不是让它自己读配置：hub 不该 import 配置层。
+        self.hub.resolve_protocol = self._server_protocol
         self.plugins = PluginHost(
             self, [str(path) for path in self.config.plugins.dirs], max_tier=self.config.plugins.max_tier
         )
@@ -557,14 +563,16 @@ class Runtime:
             })
 
         for index, target in enumerate(self._reverse_targets()):
-            url, account, _report = target
+            # 目标元组从三元组扩到了五元组（多了协议与配置 id），这里解包也跟着走。
+            # 顺便把协议显示出来：网络面板要回答的是"这个端点现在用什么协议说话"。
+            url, account, _report, protocol, _profile = target
             status = self.reverse.status()
             connected = bool(status.get("connected"))
             cards.append({
                 "id": f"reverse-{index}", "label": "Reverse WS", "kind": "reverse",
                 "tone": "green" if connected else "gray",
                 "state": "已连接" if connected else "未连接",
-                "detail": url,
+                "detail": f"{url} · {protocol or '默认协议'}",
                 "account": account,
                 "connections": 1 if connected else 0,
                 "show_connections": False,
@@ -975,7 +983,38 @@ class Runtime:
                            port=self.config.onebot.port, endpoints=",".join(endpoints))
         return started
 
-    def _reverse_targets(self) -> list[tuple[str, str, bool]]:
+    def _server_protocol(self, kind: str, path: str = "") -> str:
+        """Which protocol a server-side connection speaks.
+
+        服务端端口只有一套路由（`config.onebot` 那一个），但配置里可以有同 kind 的多条记录，
+        各自选了协议。规则按"越具体越优先"：
+
+        1. kind 与 path 都匹配的启用配置；
+        2. 只有 kind 匹配的启用配置；
+        3. 都没有 -> 默认协议。
+
+        取第一个匹配而不是合并：一条连接只能说一种协议。多条同 kind 配置各选不同协议时，
+        只有第一条真正决定这条连接说什么——这是这套配置模型的固有限制，写在这里而不是
+        让它静默发生。
+        """
+        if not kind:
+            return self.pipelines.default()
+        wanted = str(path or "").strip()
+        matched_kind = ""
+        try:
+            for profile in netprofiles.load(self.config):
+                if not profile.get("enabled") or profile.get("kind") != kind:
+                    continue
+                chosen = protocol_of(profile, self.pipelines.default())
+                if wanted and str(profile.get("path") or "").strip() == wanted:
+                    return chosen
+                if not matched_kind:
+                    matched_kind = chosen
+        except Exception as exc:  # noqa: BLE001 - 配置读不出来时用默认协议，别拒绝连接
+            log.warn("could not resolve server protocol from the profile store", kind=kind, error=str(exc))
+        return matched_kind or self.pipelines.default()
+
+    def _reverse_targets(self) -> list[tuple[str, str, bool, str, str]]:
         """`(url, account, report_self_message)` for every reverse connection that should exist now.
 
         A reverse connection belongs to one account: its handshake names that account, and only that account's
@@ -993,7 +1032,7 @@ class Runtime:
         """
         from . import network_profiles as netprofiles
 
-        targets: list[tuple[str, str, bool]] = []
+        targets: list[tuple[str, str, bool, str, str]] = []
         try:
             for account in self._active_accounts():
                 for profile in netprofiles.load_for(self.config, account):
@@ -1001,12 +1040,21 @@ class Runtime:
                         continue
                     url = str(profile.get("url") or "").strip()
                     if url.startswith(("ws://", "wss://")):
-                        targets.append((url, account, bool(profile.get("report_self_message"))))
+                        targets.append((
+                            url,
+                            account,
+                            bool(profile.get("report_self_message")),
+                            # 这条连接说什么协议，由它的配置决定。以前这个字段被读出来就丢了，
+                            # 于是所有反向连接收到的 JSON 一模一样。
+                            protocol_of(profile, self.pipelines.default()),
+                            str(profile.get("id") or ""),
+                        ))
         except Exception as exc:  # noqa: BLE001 - a broken store must not stop the runtime starting
             log.warn("could not read reverse ws targets from the profile store", error=str(exc))
         if targets:
             return targets
-        return [(str(url).strip(), "", True)
+        # 老配置没有 profile，也就没有协议：留空表示"用默认"。
+        return [(str(url).strip(), "", True, "", "")
                 for url in self.config.onebot.reverse_ws_urls if str(url).strip()]
 
     async def reload_reverse(self) -> bool:
@@ -1852,29 +1900,11 @@ class Runtime:
         """
         await asyncio.to_thread(self._store_message, context, message)
 
-    def encode_for_instance(self, instance: str, message: Message,
-                            protocol: str | None = None) -> list[dict[str, Any]]:
-        """按某个实例（或其某条配置）的协议，把消息编码成对端能懂的段。
-
-        ``protocol`` 为空时用该实例全部启用配置的协议：一条消息可能同时要喂给
-        「纯 v11」和「v11+EXTemotions」两类连接，各取所需。编码失败不抛出——
-        一条消息喂不了某个协议，不该让其它连接也收不到。
-        """
-        context = self.instances.instance(str(instance or "C0"))
-        protocols = [protocol] if protocol else (context.protocols_in_use() or [None])
-        out: list[dict[str, Any]] = []
-        for index, protocol_id in enumerate(protocols):
-            try:
-                processor = context.processor(protocol_id or "")
-                segments = processor.encode_outbound(_message_to_parts(message))
-            except Exception as exc:  # noqa: BLE001 - 一个协议失败只影响它自己
-                log.warn("protocol encode failed", instance=context.name,
-                         protocol=protocol_id or "", error=f"{type(exc).__name__}: {exc}")
-                continue
-            if protocol_id is None and index == 0 and len(protocols) == 1:
-                return segments
-            out.extend(segments)
-        return out
+    # 这里曾有 `encode_for_instance`：按实例把一条消息编码成"该实例所有在用协议"的段数组。
+    #
+    # 它从来没有调用方，而且在分流按连接做之后它也不再是正确的东西：一条消息该编成什么形状，
+    # 取决于**具体那一条连接**的协议，而不是该实例的协议集合。实例级的集合仍然有用（下发给
+    # 插件、显示在状态页），所以 `InstanceContext.protocols_in_use()` 保留。
 
     def _apply_pending_media(self, message_id: int, context: "InstanceContext | None" = None) -> None:
         """Apply a download that completed before its message was stored.
@@ -1901,21 +1931,28 @@ class Runtime:
                 log.debug("deferred media path attached", message_id=message_id, element_id=element_id)
 
     async def _publish(self, event: dict[str, Any]) -> None:
-        """Fan one event out to forward clients and reverse endpoints alike.
+        """Fan one event out along every pipeline that wants it.
 
-        A message also goes to the cache ingress as a copy. That is deliberate duplication: the pipe path already
-        wrote it straight to a store, but the ingress is what makes the cache fed from one place, so a message that
-        arrives by some other route is stored the same way. `put` upserts on `message_id`, so the copy cannot
-        become a second row.
+        The order is the design, not an accident:
+
+        1. **maxStore** — the cache copy. It gets the event in its canonical internal shape, before any protocol has
+           trimmed it, which is why `maxStore` is the storage protocol: a field that one protocol cannot express is
+           still preserved for the next one.
+        2. **onebotv11 / milky** — each connection gets the event encoded for *its own* protocol. Encoding is shared
+           per protocol, so N clients of the same protocol cannot see different JSON.
+
+        `maxStore` has no connection and therefore no entry in the fan-out loops: it is a sink. That is why it can be
+        a protocol without being selectable as a chat protocol.
         """
+        await self._cache_pipeline(event)
         await self.hub.broadcast(event)
         await self.reverse.broadcast(event)
-        await self._feed_cache(event)
 
-    async def _feed_cache(self, event: dict[str, Any]) -> None:
-        """Send the cache ingress a copy of this message, if it is one and the listener is on.
+    async def _cache_pipeline(self, event: dict[str, Any]) -> None:
+        """The `maxStore` pipeline: keep a copy of this message in the cache.
 
-        Never raises and never blocks the fan-out: a cache that is down is a missing copy, not a lost event.
+        Event-only by construction — there is no action side, because nothing calls a storage protocol. It never
+        raises and never blocks the fan-out below it: a cache that is down is a missing copy, not a lost event.
         """
         if not self.config.message_cache.enabled:
             return
@@ -2264,6 +2301,8 @@ class Runtime:
             "webui_auth": bool(self.config.webui.access_token),
             "chat_enabled": bool(self.config.webui.chat_enabled),
             "reverse_ws": self.reverse.status(),
+            # 分流状态：哪些协议被加载过、默认是哪个、哪个协议最近编码失败过。
+            "pipelines": self.pipelines.status(),
             "charts": self.chart_data(),
             # Counted since startup, not read off the log ring: the buffer trims, and "how many errors this run"
             # has to include the ones that have already scrolled out of view.

@@ -9,6 +9,10 @@
 
 后者曾经让**所有**消息都发不出去：编码入口对每条消息都会调用，纯文字也不例外。
 而本地用 ``python -m`` 测一切正常，所以问题只在真实启动方式下暴露。
+
+聊天栏（``chat_api.py``）已移除，原先那条"在子进程里发一条消息"的测试没有消费方了，
+改成直接在同样的导入条件下加载处理器并编码——覆盖的是同一件事：桥必须把
+``protocols`` 找回来。
 """
 
 from __future__ import annotations
@@ -16,8 +20,6 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
-
-import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -39,12 +41,12 @@ def test_bridge_makes_protocols_importable():
 
 
 def test_bridge_loads_a_working_processor():
-    processor = protocol_bridge.load_processor("onebotv11-EXTemotions")
+    processor = protocol_bridge.load_processor("onebotv11")
     segments = processor.encode_outbound([{"kind": "text", "text": "hi"}])
     assert segments == [{"type": "text", "data": {"text": "hi"}}]
 
 
-def test_sending_works_without_the_project_root_on_sys_path():
+def test_encoding_works_without_the_project_root_on_sys_path():
     """复现 ``qsick.exe`` 的导入条件：项目根不在 ``sys.path``。
 
     这条测试在子进程里跑，因为要真的把项目根从 ``sys.path`` 拿掉——在当前进程
@@ -53,9 +55,13 @@ def test_sending_works_without_the_project_root_on_sys_path():
     script = """
 import sys
 sys.path = [p for p in sys.path if p.rstrip("\\\\") != r"__ROOT__" and p != ""]
-from qsick.webui.chat_api import _encode_chat_parts
-assert _encode_chat_parts("hello") == [{"type": "text", "data": {"text": "hello"}}]
-assert _encode_chat_parts("[CQ:face,id=14]")[0]["data"]["format"] == "static"
+from qsick.protocol_bridge import load_processor
+segments = load_processor("onebotv11").encode_outbound([{"kind": "text", "text": "hello"}])
+assert segments == [{"type": "text", "data": {"text": "hello"}}], segments
+# 表情在纯 v11 里只剩 id —— 编码路径本身必须仍然可用。
+face = load_processor("onebotv11").encode_outbound(
+    [{"kind": "emotion", "emotion": {"id": "14", "moveable": True}}])
+assert face == [{"type": "face", "data": {"id": "14"}}], face
 import importlib.util
 assert importlib.util.find_spec("protocols") is not None, "bridge must restore it"
 print("ok")
@@ -65,18 +71,3 @@ print("ok")
     assert result.returncode == 0, result.stderr
     assert "ok" in result.stdout
     assert "ModuleNotFoundError" not in result.stderr
-
-
-def test_a_broken_transport_surfaces_as_a_readable_error():
-    """传输层抛非 ChatError 时，不能裸奔成 500。
-
-    早先 ``send_text`` 只捕获 ``ChatError``，任何底层异常都变成
-    "Internal Server Error"，前端再拿它当 JSON 解析，用户看到的是
-    ``Unexpected token 'I'``——真正的失败原因被埋掉了。
-    """
-    source = (ROOT / "src" / "qsick" / "webui" / "chat_api.py").read_text(encoding="utf-8")
-    marker = "async def send_text(request: Request) -> Response:"
-    body = source.split(marker, 1)[1]
-    body = body.split("\n    @app.", 1)[0]
-    assert "except Exception" in body, "send_text must catch transport failures"
-    assert "发送失败" in body

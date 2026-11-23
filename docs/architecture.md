@@ -279,7 +279,6 @@ src/qsick/
   webui/       FastAPI 应用、Jinja2 模板、静态资源
 protocols/            聊天/存储协议适配器（一个目录 = 一个协议）
 plugins/guard/        参考的白/黑名单插件
-assets/qq-faces/      WebUI 用到的 QQ 表情资源
 headlessClient/       每账号宿主实例（C0、C1……）——运行时数据
 market/               远程插件市场服务的源码
 native/qsick-payload/ C++ DLL（管道 + 跳板 + 钩子）

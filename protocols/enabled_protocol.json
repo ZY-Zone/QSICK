@@ -11,10 +11,10 @@
       "default": true
     },
     {
-      "id": "onebotv11-EXTemotions",
-      "name": "OneBot v11 + EXTemotions",
-      "description": "OneBot v11 承载消息，表情改用 EXTemotions 对象：支持小黄脸、超级表情、emoji 与自定义表情，并显式声明动态性与文件类型。",
-      "emotions": "extemotions",
+      "id": "milky",
+      "name": "Milky",
+      "description": "Milky 协议（v1.3）：POST /api/{api} 调用、GET /event 推送，带 {status,retcode,message,data} 信封。当前覆盖 33/65 个 API。",
+      "emotions": "basic",
       "default": false
     }
   ],

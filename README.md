@@ -68,7 +68,6 @@ src/qsick/
   headless*    无头宿主桥（host.js / codec / sender / media）
 protocols/            聊天/存储协议适配器（一个目录 = 一个协议）
 plugins/              插件目录
-assets/qq-faces/      QQ 表情资源（图片需用 tools/import_emotions.py 生成）
 headlessClient/       实例存放目录，headless为早期设计时命名，现在略有歧义
 market/               远程插件市场服务的源码
 native/qsick-payload/ C++ DLL（管道 + 跳板 + 钩子）

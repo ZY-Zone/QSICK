@@ -77,7 +77,6 @@
       ("dashboard", "/", "总览", "i-home"),
       ("logs", "/logs", "日志", "i-logs"),
       ("messages", "/messages", "消息", "i-chat"),
-      ("chat", "/chat", "聊天", "i-chat"),
       ("accounts", "/accounts", "账户管理", "i-plug"),
       ("plugins", "/plugins", "插件", "i-plug"),
       ("market", "/plugins/market", "市场", "i-store"),
@@ -87,7 +86,6 @@
     {% for key, href, label, icon in nav %}
       <a href="{{ href }}" class="{{ 'active' if page == key else '' }}">
         <svg aria-hidden="true"><use href="#{{ icon }}"/></svg>{{ label }}
-        {% if key == "chat" and not info.chat_enabled %}<span class="nav-badge">待启用</span>{% endif %}
       </a>
     {% endfor %}
   </nav>

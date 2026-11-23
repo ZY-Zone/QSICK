@@ -100,14 +100,14 @@ class TestFanOutCopy:
     async def test_the_copy_is_skipped_when_disabled(self, runtime):
         # Nothing is attempted when the cache is switched off, so a disabled cache cannot fill up.
         runtime.config.message_cache.enabled = False
-        await runtime._feed_cache({"post_type": "message", "message_type": "group",
+        await runtime._cache_pipeline({"post_type": "message", "message_type": "group",
                                    "self_id": ACCOUNT, "user_id": 1, "group_id": GROUP,
                                    "message_id": 777, "message": []})
         assert runtime.cache_store.recent(limit=5) == []
 
     async def test_a_message_is_recorded(self, runtime):
         runtime.config.message_cache.enabled = True
-        await runtime._feed_cache({"post_type": "message", "message_type": "group",
+        await runtime._cache_pipeline({"post_type": "message", "message_type": "group",
                                    "self_id": ACCOUNT, "user_id": 2208948865, "group_id": GROUP,
                                    "message_id": 42, "message_seq": 1, "time": 1795340000,
                                    "message": [{"type": "text", "data": {"text": "hi"}}],
@@ -123,9 +123,9 @@ class TestFanOutCopy:
                  "self_id": ACCOUNT, "user_id": 2208948865, "group_id": GROUP,
                  "message_id": 43, "message": [{"type": "text", "data": {"text": "one"}}],
                  "sender": {"uin": 2208948865}}
-        await runtime._feed_cache(event)
+        await runtime._cache_pipeline(event)
         event["message"] = [{"type": "text", "data": {"text": "two"}}]
-        await runtime._feed_cache(event)
+        await runtime._cache_pipeline(event)
         stored = runtime.cache_store.recent(limit=10)
         assert len(stored) == 1
         assert "two" in stored[0].text
@@ -134,12 +134,12 @@ class TestFanOutCopy:
         runtime.config.message_cache.enabled = True
         for event in ({"post_type": "meta_event"}, {"post_type": "notice"},
                       {"post_type": "request"}):
-            await runtime._feed_cache(event)
+            await runtime._cache_pipeline(event)
         assert runtime.cache_store.recent(limit=5) == []
 
     async def test_a_message_without_an_id_is_ignored(self, runtime):
         runtime.config.message_cache.enabled = True
-        await runtime._feed_cache({"post_type": "message", "message_type": "group",
+        await runtime._cache_pipeline({"post_type": "message", "message_type": "group",
                                    "self_id": ACCOUNT, "user_id": 1, "group_id": GROUP,
                                    "message_id": 0, "message": []})
         assert runtime.cache_store.recent(limit=5) == []

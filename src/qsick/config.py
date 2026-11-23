@@ -73,7 +73,8 @@ class WebUIConfig:
         return f"http://{host}:{int(self.port)}"
     access_token: str = ""
     log_buffer: int = 2000
-    # GUI chat layer; off by default because it exposes account actions.
+    # Gates the retained `/api/chat/send` endpoint (the chat page itself is gone). Off by default because it
+    # lets any caller that can reach the port make the logged-in account speak.
     chat_enabled: bool = False
 
 

@@ -2213,39 +2213,30 @@ def create_app(runtime: "Runtime") -> FastAPI:
         except ValueError as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
 
-    @app.get("/chat", response_class=HTMLResponse)
-    async def chat_page(request: Request) -> HTMLResponse:
-        denied = guard(request)
-        if denied:
-            return denied
-        return templates.TemplateResponse(
-            request,
-            "chat.html",
-            {
-                "page": "chat",
-                "info": runtime.info(),
-                "chat_enabled": runtime.config.webui.chat_enabled,
-            },
-        )
+    # 聊天栏（/chat 页面与 /api/chat/* 的账户级接口）已移除。
+    #
+    # 下面这三个 group-only 端点是留给外部调用方的，不服务任何页面，因此跟着留下;
+    # 它们原先借用 chat_api 的 _store_for，聊天栏删掉后这个函数搬到这里。
+    def _store_for(target: "Runtime", account: Any) -> Any:
+        """按账号找到它所属实例的数据库。
 
-    @app.post("/chat/enable")
-    async def chat_enable() -> RedirectResponse:
-        runtime.config.webui.chat_enabled = True
-        _write_setting(runtime, {"webui": {"chat_enabled": True}})
-        log.warn("GUI chat layer enabled from WebUI")
-        return RedirectResponse("/chat", status_code=303)
+        请求里的 ``account`` 是 QQ 号；这里把它映射到实例，再取那个实例自己的
+        maxStore 库。每个实例各有一个库，所以这一步不是优化而是正确性：
+        拿错库就会看到另一个号的消息。
 
-    @app.post("/chat/disable")
-    async def chat_disable() -> RedirectResponse:
-        runtime.config.webui.chat_enabled = False
-        _write_setting(runtime, {"webui": {"chat_enabled": False}})
-        log.info("GUI chat layer disabled")
-        return RedirectResponse("/chat", status_code=303)
-
-    # Account-scoped APIs coexist with the legacy group-only routes below.
-    from .chat_api import register_chat_routes
-
-    register_chat_routes(app, runtime, guard)
+        找不到对应实例时退回 ``target.store``（主实例的库），保持旧行为而不是
+        报错——升级前收到的消息都在那里。
+        """
+        instances = getattr(target, "instances", None)
+        if instances is None:
+            return target.store
+        wanted = str(account or "").strip()
+        if wanted:
+            for name in instances.names():
+                context = instances.get(name)
+                if context is not None and str(context.account) == wanted:
+                    return context.store
+        return target.store
 
     @app.get("/api/chat/groups")
     async def chat_groups(request: Request, account: str = "") -> JSONResponse:
@@ -2267,8 +2258,7 @@ def create_app(runtime: "Runtime") -> FastAPI:
         if not groups:
             # Fall back to groups observed in message history.
             # 按账号取它所属实例的库：实例各有自己的数据库，读主库会漏掉别的号。
-            from .chat_api import _store_for
-
+    
             seen: dict[int, dict[str, Any]] = {}
             for message in _store_for(runtime, account).recent(400):
                 if not message.is_group:
@@ -2287,7 +2277,6 @@ def create_app(runtime: "Runtime") -> FastAPI:
         denied = guard(request)
         if denied:
             return denied
-        from .chat_api import _store_for
 
         items = _store_for(runtime, account).recent(min(400, max(1, limit * 3)))
         messages = []
@@ -2331,7 +2320,14 @@ def create_app(runtime: "Runtime") -> FastAPI:
         account = str(payload.get("account") or "").strip() if isinstance(payload, dict) else ""
         if account:
             params["account"] = account
-        result = await runtime.invoke("send_group_msg", params)
+        try:
+            result = await runtime.invoke("send_group_msg", params)
+        except Exception as exc:  # noqa: BLE001 - 传输层异常很杂，裸 500 到浏览器只剩一行 HTML
+            return JSONResponse(
+                {"status": "failed", "retcode": 1200,
+                 "message": f"发送失败：{str(exc) or type(exc).__name__}", "data": None},
+                status_code=502,
+            )
         return JSONResponse(result)
 
     @app.get("/messages/media/{message_id}/{index}")

@@ -18,7 +18,6 @@ WebUI 是 QSICK 的操作面板，与内核同进程运行（FastAPI + Jinja2）
 | `/settings` | 管道认证、实时日志级别、消息保留、插件监视 |
 | `/config` | 脱敏后的 JSON 视图，可复制 |
 | `/metrics` | Prometheus 文本指标（受 WebUI 令牌保护） |
-| `/chat` | 聊天栏（需手动启用，见下） |
 
 设置了 `webui.access_token` 时走令牌登录页。页面吸顶导航，布局一路响应到手机宽度。
 
@@ -139,36 +138,23 @@ WebUI 是 QSICK 的操作面板，与内核同进程运行（FastAPI + Jinja2）
 - `/metrics` 也在令牌之后——它含消息量与动作统计，不适合匿名暴露。
 - 令牌用 `secrets.compare_digest` 比对，不做前缀匹配。
 
-## 聊天栏（需手动启用）
+## 聊天栏已移除
 
-导航里的 **聊天** 一项在 `webui.chat_enabled` 为 false 时带一个 `待启用` 徽标，打开会显示
-红色警告弹窗：
+WebUI 不再提供聊天界面。此前它同时带来了表情素材管线（`face_*.py`、`assets/qq-faces/`、
+EXTemotions 聊天协议）和一整套 `/api/chat/*` 账户级接口，现在一并删除。
 
-> 如果这是在公网服务器上运行的程序，可能会导致您的 QQ 号处于危险中。
+保留的是三个 group-only 老端点，给外部脚本用，不服务任何页面：
 
-确认按钮初始为 `确认启用 (3)`，三秒内灰置不可点，然后变蓝。启用会把
-`webui.chat_enabled=true` 写进配置；之后聊天页提供群列表、消息流与发送框，并带一个
-**停用聊天** 按钮。停用期间 `/api/chat/send` 会被拒绝。
+| 端点 | 用途 |
+| --- | --- |
+| `GET /api/chat/groups` | 群列表（宿主查询失败时回落到已观察到的历史） |
+| `GET /api/chat/messages` | 群消息（只读，按 `group_id` 过滤） |
+| `POST /api/chat/send` | 发一条群文本，受 `webui.chat_enabled` 控制，默认关 |
 
-### 实例切换
+`webui.chat_enabled` 仍在：它唯一的用途是给 `POST /api/chat/send` 上闸——那个端点能让
+登录的号说话，默认关闭。
 
-聊天栏右上角可以切换实例。切换后会话列表、历史、发送都落在该实例上：
-
-- **读**：历史只从它自己的库读（`data/instances/<实例>/messages.db`）；
-- **发**：动作带上该实例的账号，用它的号发出，不会落到主实例。
-
-### 增量轮询
-
-聊天栏每 3 秒轮询一次，但走的是增量接口（`/api/chat/history?after=<最新 id>`），
-只问"比已知最新一条更新的消息"。没有新消息时后端只读一小段、前端连重渲染都不触发：
-
-| 方式 | 耗时 | 返回 |
-| --- | --- | --- |
-| 全量 `limit=80` | 11.46 ms/次 | 80 条 |
-| 增量 `after=` | 1.31 ms/次 | 通常 0 条 |
-
-历史列表的查询也已下推到 SQL（`page()` 走 `(chat_type, chat_id, time)` 索引，
-`conversation_summaries()` 用窗口函数取每组最新一行），不再把整个库读进内存。
+消息内容的查看仍在 **消息** 页，图片等媒体由 `/messages/media/{id}/{index}` 提供。
 
 ## 相关接口
 
@@ -178,7 +164,7 @@ WebUI 是 QSICK 的操作面板，与内核同进程运行（FastAPI + Jinja2）
 | --- | --- |
 | `/api/network/profiles` | 网络配置的增删改与即时应用 |
 | `/api/accounts` | 实例列表、创建、启动/停止、退出登录 |
-| `/api/chat/*` | 会话、历史、发送、媒体、表情、收藏、撤回、删除 |
+| `/api/chat/groups`、`/api/chat/messages`、`/api/chat/send` | 保留的 group-only 老端点 |
 | `/api/headless/event` | 宿主上报事件（回环地址 + 每实例随机令牌） |
 | `/api/plugins/*` | 插件列表、配置读写、安装/卸载 |
 | `/api/logs` | 日志快照与 SSE 流 |

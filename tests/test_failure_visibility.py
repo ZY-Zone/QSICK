@@ -8,6 +8,9 @@
 4. 动作名对不上（``media.download`` 是宿主名，不在 OneBot registry 里）。
 
 这些都不会让程序崩溃，只会让用户看见"点了没反应"，所以必须有测试守着。
+
+聊天栏（``chat_api.py`` / ``chat.js``）已移除，第 1、2 条原先盯的是它们。规则本身
+没有失效——现在盯的是还在调用传输层的那些路由，以及剩下的前端脚本。
 """
 
 from __future__ import annotations
@@ -15,12 +18,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[1]
-CHAT_API = ROOT / "src" / "qsick" / "webui" / "chat_api.py"
 APP = ROOT / "src" / "qsick" / "webui" / "app.py"
-CHAT_JS = ROOT / "src" / "qsick" / "webui" / "static" / "chat.js"
+STATIC = ROOT / "src" / "qsick" / "webui" / "static"
 
 
 def _routes(source: str) -> list[tuple[str, str]]:
@@ -34,7 +34,7 @@ def test_every_transport_calling_route_has_a_generic_guard():
     裸 500 到浏览器那里就是 "Internal Server Error" 这么一行 HTML，前端再当
     JSON 解析，用户看到的是 ``Unexpected token 'I'``——和真实原因毫无关系。
     """
-    source = CHAT_API.read_text(encoding="utf-8")
+    source = APP.read_text(encoding="utf-8")
     unguarded = [
         name for name, body in _routes(source)
         if ("runtime.invoke" in body or "runtime.send" in body)
@@ -49,7 +49,7 @@ def test_no_route_returns_ok_true_together_with_an_error():
     曾经下载失败返回 ``{"ok": true, "url": "", "error": "..."}``，界面据此判定
     成功、照常替换内容，于是什么都没发生。
     """
-    source = CHAT_API.read_text(encoding="utf-8")
+    source = APP.read_text(encoding="utf-8")
     offenders = re.findall(r'\{"ok": True[^}]*"error"', source)
     assert offenders == [], f"contradictory success/failure payloads: {offenders}"
 
@@ -62,21 +62,19 @@ def test_the_action_api_does_not_leak_a_bare_500():
     assert "except Exception" in body
 
 
-@pytest.mark.parametrize("snippet", [
-    "await response.json()",          # 前端裸解析，HTML 会抛 Unexpected token
-])
-def test_the_frontend_never_bare_parses_a_response(snippet):
+def test_the_frontend_never_bare_parses_a_response():
     """前端必须容忍非 JSON 响应。
 
     服务端出错时可能返回 HTML 错误页；``response.json()`` 会抛
     ``Unexpected token 'I'``，把真正的失败盖掉。允许的形式是先取 text 再试解析，
     或者带 ``.catch()`` 兜底。
     """
-    source = CHAT_JS.read_text(encoding="utf-8")
-    for line in source.splitlines():
-        if snippet in line and ".catch(" not in line:
-            # 前面必须已经有 text() + JSON.parse 的容错写法。
-            raise AssertionError(f"bare response.json() at: {line.strip()}")
+    offenders: list[str] = []
+    for path in sorted(STATIC.glob("*.js")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if "await response.json()" in line and ".catch(" not in line:
+                offenders.append(f"{path.name}: {line.strip()}")
+    assert offenders == [], f"bare response.json() at: {offenders}"
 
 
 def test_host_actions_used_by_the_webui_really_exist():
@@ -90,7 +88,7 @@ def test_host_actions_used_by_the_webui_really_exist():
     aliases = dict(re.findall(r"^\s*'?([a-z][a-z0-9_.]+)'?:\s*'([a-z][a-z0-9_.]+)'", host, re.M))
     known = declared | set(aliases.values())
 
-    source = CHAT_API.read_text(encoding="utf-8")
+    source = APP.read_text(encoding="utf-8")
     asked = set(re.findall(r'runtime\.send\("([^"]+)"', source))
     unknown = sorted(name for name in asked if name not in known)
     assert unknown == [], f"these host action names do not exist: {unknown}"

@@ -19,20 +19,18 @@ Point 3 has a practical consequence worth stating: nothing here rejects an unkno
 carrying fields this project has never heard of is passed through untouched, because rejecting on
 surprise input is how a client that adds a field breaks a server that never needed it.
 
-Scope: only the OneBot v11 and OneBot v11 + EXTemotions protocols. The EXT side keeps its own shapes;
-this module only touches the OneBot v11 layer they share.
+Scope: only the OneBot v11 protocol. A protocol this table does not describe is returned untouched --
+rewriting params into a shape its owner never asked for is worse than not normalising at all.
 """
 from __future__ import annotations
 
 from typing import Any
 
-#: Protocols whose params get normalised. EXTemotions rides on OneBot v11, so it is included -- its
-#: EXT-specific request shapes are untouched, since they are not OneBot actions at all.
+#: Protocols whose params get normalised.
 #:
-#: Stored lower-cased because the comparison lower-cases the incoming protocol id. The registry writes
-#: it as ``onebotv11-EXTemotions``; keeping the camel case here and lower-casing only one side is what
-#: made EXTemotions fail to match despite being listed.
-ONEBOT_PROTOCOLS = frozenset({"onebotv11", "onebotv11-extemotions"})
+#: Stored lower-cased because the comparison lower-cases the incoming protocol id -- mixing the two
+#: cases is what once made a listed protocol fail to match anyway, and that failure is silent.
+ONEBOT_PROTOCOLS = frozenset({"onebotv11"})
 
 #: Per-action alias tables: canonical (NapCat) name -> other spellings SnowLuma accepts.
 #:

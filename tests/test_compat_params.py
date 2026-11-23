@@ -38,12 +38,14 @@ class TestScope:
         out = compat.normalize("move_group_file", params, "onebotv11")
         assert out["folder_id"] == "/"
 
-    def test_extemotions_is_normalised(self) -> None:
-        # EXTemotions rides on OneBot v11, so the OneBot layer behaves identically for it. The EXT
-        # request shapes themselves are not OneBot actions and never reach this function.
+    def test_extemotions_is_no_longer_a_protocol_it_knows(self) -> None:
+        # The EXTemotions chat protocol was removed; its name must now fall outside the table rather
+        # than being silently normalised. A stale answer here would rewrite params for a protocol that
+        # no longer exists.
         params = {"group_id": GROUP, "file_id": "/f", "parent_directory": "/", "target_directory": "/a"}
         out = compat.normalize("move_group_file", params, "onebotv11-EXTemotions")
-        assert out["folder_id"] == "/"
+        assert out == params
+        assert "folder_id" not in out
 
     def test_other_protocol_is_untouched(self) -> None:
         params = {"group_id": GROUP, "parent_directory": "/", "target_directory": "/a"}

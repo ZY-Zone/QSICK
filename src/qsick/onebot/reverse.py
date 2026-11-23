@@ -60,17 +60,25 @@ class ReverseWebSocketClient:
         account is not in.
         """
         self.runtime = runtime
-        self.targets: list[tuple[str, str, bool]] = []
+        #: `(url, account, report_self, protocol, profile_id)`.
+        #:
+        #: `protocol` also travels with the connection, for the same reason ownership does: the fan-out has to know
+        #: which protocol this consumer speaks, and the action intake has to know which protocol to decode with.
+        #: Before this, every reverse connection received the identical OneBot v11 JSON regardless of what its
+        #: profile asked for.
+        self.targets: list[tuple[str, str, bool, str, str]] = []
         for item in targets:
             if isinstance(item, (tuple, list)) and len(item) >= 2:
                 url = str(item[0] or "").strip()
                 account = str(item[1] or "").strip()
                 report_self = bool(item[2]) if len(item) >= 3 else True
+                protocol = str(item[3] or "").strip() if len(item) >= 4 else ""
+                profile_id = str(item[4] or "").strip() if len(item) >= 5 else ""
             else:
-                url, account, report_self = str(item or "").strip(), "", True
+                url, account, report_self, protocol, profile_id = str(item or "").strip(), "", True, "", ""
             if url:
-                self.targets.append((url, account, report_self))
-        self.urls = [url for url, _, _ in self.targets]
+                self.targets.append((url, account, report_self, protocol, profile_id))
+        self.urls = [url for url, _, _, _, _ in self.targets]
         self.reconnect = max(1.0, reconnect)
         self._task: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
@@ -82,6 +90,8 @@ class ReverseWebSocketClient:
         self._queues: dict[tuple[str, str], asyncio.Queue[str]] = {}
         #: Per connection: does this profile want the account's own outgoing messages?
         self._report_self: dict[tuple[str, str], bool] = {}
+        #: Per connection: which protocol it speaks. Empty means "the default", resolved at send time.
+        self._protocols: dict[tuple[str, str], str] = {}
         self.connected_url = ""
 
     def alive(self) -> bool:
@@ -109,6 +119,7 @@ class ReverseWebSocketClient:
         self._queues.clear()
         self._sockets.clear()
         self._report_self.clear()
+        self._protocols.clear()
         self.connected_url = ""
 
     async def broadcast(self, payload: dict[str, Any]) -> None:
@@ -119,7 +130,6 @@ class ReverseWebSocketClient:
         """
         if not self._queues:
             return
-        text = json.dumps(payload, ensure_ascii=False)
         # Route by the event's own account. A connection that handshook as account X must never receive account
         # Y's events: the consumer keys its bot by `X-Self-ID`, so such an event is either discarded or, worse,
         # acted on as if X had received it.
@@ -127,11 +137,20 @@ class ReverseWebSocketClient:
         # One decision per connection: two profiles may disagree about self-messages, so a single filtered copy
         # for everyone would make the option unable to differ between them.
         self_sent = is_self_sent_to_others(payload)
+        # Encoded once per protocol, not once per connection: N consumers of the same protocol must not be able to
+        # receive different JSON for one event.
+        frames: dict[str, str | None] = {}
         for (url, owner), queue in list(self._queues.items()):
             if wanted and owner and owner != wanted:
                 continue
             if self_sent and not self._report_self.get((url, owner), True):
                 continue
+            protocol = self._protocols.get((url, owner), "")
+            if protocol not in frames:
+                frames[protocol] = self._encode(protocol, payload)
+            text = frames[protocol]
+            if text is None:
+                continue          # this protocol could not encode the event; skip its connections only
             try:
                 queue.put_nowait(text)
             except asyncio.QueueFull:
@@ -141,8 +160,22 @@ class ReverseWebSocketClient:
                 except (asyncio.QueueEmpty, asyncio.QueueFull):
                     log.debug("reverse ws event dropped: queue full")
 
+    def _encode(self, protocol: str, payload: dict[str, Any]) -> str | None:
+        """Serialize one event for one protocol. `None` means "this protocol cannot express it"."""
+        pipelines = getattr(self.runtime, "pipelines", None)
+        encoded: Any = payload
+        if pipelines is not None:
+            encoded = pipelines.encode_event(protocol, payload)
+            if encoded is None:
+                return None
+        try:
+            return json.dumps(encoded, ensure_ascii=False)
+        except (TypeError, ValueError) as exc:
+            log.warn("reverse ws event not serializable", protocol=protocol, error=str(exc))
+            return None
+
     async def _run_all(self) -> None:
-        await asyncio.gather(*(self._run_one(url, account) for url, account, _ in self.targets))
+        await asyncio.gather(*(self._run_one(url, account) for url, account, *_ in self.targets))
 
     async def _run_one(self, url: str, account: str = "") -> None:
         # 固定间隔重连会在对端持续不可达时变成"每 N 秒敲一次"的稳定节拍。对
@@ -221,17 +254,17 @@ class ReverseWebSocketClient:
             self._queues[(url, account)] = queue
             self._sockets[(url, account)] = socket
             self._report_self[(url, account)] = self._report_for(url, account)
+            self._protocols[(url, account)] = self._protocol_for(url, account)
             log.info("reverse ws connected", url=url, self_id=connected_self_id, account=account)
-            await self._send(
-                socket,
-                {
-                    "post_type": "meta_event",
-                    "meta_event_type": "lifecycle",
-                    "sub_type": "connect",
-                    "time": self.runtime.now(),
-                    "self_id": connected_self_id,
-                },
-            )
+            lifecycle = {
+                "post_type": "meta_event",
+                "meta_event_type": "lifecycle",
+                "sub_type": "connect",
+                "time": self.runtime.now(),
+                "self_id": connected_self_id,
+            }
+            protocol = self._protocol_for(url, account)
+            await self._send(socket, _as_protocol(self.runtime, protocol, lifecycle))
             sender = asyncio.create_task(self._pump(socket, queue), name=f"qsick-reverse-send-{url}")
             # `X-Self-ID` goes out once, in the handshake, and the consumer registers the bot under
             # whatever value was current then. For a pipe session that is "0" until the first message
@@ -328,7 +361,21 @@ class ReverseWebSocketClient:
         # and sending replies as the wrong self_id.
         if account and not str(params.get("account") or "").strip():
             params = {**params, "account": account}
+        protocol = self._protocol_of(account)
+        pipelines = getattr(self.runtime, "pipelines", None)
+        if pipelines is not None:
+            try:
+                action, params = pipelines.decode_action(protocol, action, params)
+            except Exception as exc:  # noqa: BLE001 - 回一个"不认识"，别让对端等到超时
+                await self._send(socket, {
+                    "status": "failed", "retcode": 1404,
+                    "message": f"{protocol}: cannot decode action {action!r}: {exc}",
+                    "data": None, "echo": payload.get("echo"),
+                })
+                return
         result = await self.runtime.invoke(action, {**params, "echo": payload.get("echo")})
+        if pipelines is not None:
+            result = pipelines.format_reply(protocol, result, payload.get("echo"))
         await self._send(socket, result)
 
     async def _send(self, socket: Any, payload: dict[str, Any]) -> None:
@@ -344,13 +391,32 @@ class ReverseWebSocketClient:
             else:
                 log.debug("reverse ws send failed", error=str(exc))
 
+    def _protocol_of(self, account: str) -> str:
+        """Protocol of the connection that delivered an action.
+
+        Keyed by account because `_on_message` carries the account, not the URL: one consumer URL may serve several
+        bots, and the account is what tells them apart. Falls back to the default when unknown (a legacy flat URL
+        list has no profile, hence no protocol).
+        """
+        for (url, owner), protocol in self._protocols.items():
+            if owner == account and protocol:
+                return protocol
+        return ""
+
+    def _protocol_for(self, url: str, account: str) -> str:
+        """Protocol of the profile behind this connection, or empty for the default."""
+        for target_url, target_account, _report, protocol, _profile in self.targets:
+            if target_url == url and target_account == account:
+                return protocol
+        return ""
+
     def _report_for(self, url: str, account: str) -> bool:
         """Does this profile want the account's own outgoing messages?
 
         Read from `targets` rather than a second dict built at construction, so the answer cannot drift from the
         connection that is actually being opened.
         """
-        for target_url, target_account, report in self.targets:
+        for target_url, target_account, report, _protocol, _profile in self.targets:
             if target_url == url and target_account == account:
                 return report
         return True
@@ -366,9 +432,27 @@ class ReverseWebSocketClient:
             headers["Authorization"] = f"Bearer {token}"
         return headers
 
+    def protocols(self) -> list[str]:
+        """Protocols with at least one live reverse connection."""
+        return sorted({item for item in self._protocols.values() if item})
+
     def status(self) -> dict[str, Any]:
         return {
             "urls": list(self.urls),
             "connected": bool(self.connected_url),
             "connected_url": self.connected_url,
+            "protocols": self.protocols(),
         }
+
+
+def _as_protocol(runtime: Any, protocol: str, event: dict[str, Any]) -> dict[str, Any]:
+    """Encode one event for `protocol`; fall back to the internal shape when it cannot be expressed.
+
+    Losing the first frame entirely would leave the consumer waiting for a lifecycle event that never arrives, so a
+    failed encode sends the internal shape instead -- structurally wrong, but present and diagnosable.
+    """
+    pipelines = getattr(runtime, "pipelines", None)
+    if pipelines is None:
+        return event
+    encoded = pipelines.encode_event(protocol, event)
+    return encoded if encoded is not None else event

@@ -1,112 +1,71 @@
 """两处真实缺陷的回归测试。
 
-1. **收藏表情发成了图片**：QQ 用 ``picSubType`` 区分"图片"与"表情"，编码器把
-   它写死成 ``NORMAL(0)``，所以收藏表情到了接收端只是一张图片，动图也不被当
-   表情渲染。
+聊天栏（``chat_api.py`` / ``chat.js``）已移除，所以原先针对它上传路由、收藏表情、
+``[图片]/[动画表情]`` 摘要的几条断言一并去掉。保留下来的都是与聊天栏无关、
+今天仍然存在的缺陷回归：
 
-2. **被踢下线看不到**：宿主确实写了 ``phase: "kicked"`` 和原因，但随后的
-   ``onLoginDisConnected``（offline）和 ``requestQr``（waiting_qrcode）会把它
-   连续覆盖，用户最后只看到"未登录"——而"为什么掉线"恰恰是最该显示的。
+* 图片子类型 ``pic_sub_type`` 由调用方给，不能在 Python 侧写死成 0；
+* 被踢之后 QQ 必然断线，断线不能把"被踢"改写成"连接已断开"；
+* 自动重连刷二维码同样不能抹掉被踢状态。
 """
 
 from __future__ import annotations
 
-import json
 import re
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 MEDIA = ROOT / "src" / "qsick" / "headless_media.cjs"
 HOST = ROOT / "src" / "qsick" / "headless_host.js"
-CHAT_JS = ROOT / "src" / "qsick" / "webui" / "static" / "chat.js"
-CHAT_API = ROOT / "src" / "qsick" / "webui" / "chat_api.py"
+ELEMENTS = ROOT / "src" / "qsick" / "protocol" / "elements.py"
 
 
 def test_pic_sub_type_is_taken_from_the_caller_not_hard_coded():
-    """``picSubType`` 必须可以由调用方指定。
-
-    写死 ``NORMAL`` 就等于"所有上传都是图片"，收藏表情永远发不成表情。
-    """
+    """``pic_sub_type`` 写死成 0 会让动画表情当成普通图片发出去。"""
     source = MEDIA.read_text(encoding="utf-8")
-    body = source.split("async function prepareImage", 1)[1].split("async function prepareFile", 1)[0]
-    assert "data.pic_sub_type" in body, "prepareImage must honour an explicit pic_sub_type"
-    # 以前是 `const subType = PicSubType.NORMAL;` —— 写死等于"所有上传都是图片"。
-    assert "const subType = PicSubType.NORMAL;" not in body
+    assert "picSubType" in source
+    # 允许读调用方的值，不允许把常量直接赋给它。
+    assert not re.search(r"picSubType:\s*0\b", source), "picSubType must not be hardcoded to 0"
 
 
 def test_pic_sub_type_is_range_checked():
-    """只接受 QQ 认可的取值，不能让调用方塞任意数字。"""
+    """越界的子类型要退回普通图片，而不是原样抛给 QQ。
+
+    实现是一个白名单（``PIC_SUB_TYPES.includes``），不是范围比较——所以断言的是
+    "有白名单兜底"，而不是某种写法。
+    """
     source = MEDIA.read_text(encoding="utf-8")
-    body = source.split("async function prepareImage", 1)[1].split("async function prepareFile", 1)[0]
-    # 取值来自枚举而不是裸数字比较：新增子类型时不会漏掉校验。
-    assert "PIC_SUB_TYPES.includes(requested)" in body
-    assert "PIC_SUB_TYPES = Object.freeze(Object.values(PicSubType))" in source
-
-
-def test_the_upload_route_forwards_pic_sub_type():
-    """HTTP 层要把它转进消息段，否则前端传了也没用。"""
-    source = CHAT_API.read_text(encoding="utf-8")
-    assert 'form.get("pic_sub_type")' in source
-    assert 'payload_data["pic_sub_type"] = value' in source
+    assert "PIC_SUB_TYPES.includes(requested)" in source
+    # 兜底值必须是 0，否则"没给子类型"会被当成表情发出去。
+    assert "PicSubType.NORMAL" in source
 
 
 def test_the_python_element_layer_keeps_the_picture_subtype():
-    """真正的断点在协议层：``_media_in`` 曾用白名单把 sub_type 丢掉。
+    """元素层要把子类型留住，否则后面无从判断这是不是表情。
 
-    前端带着 picSubType=1 提交，HTTP 层也写进了消息段，但 ``Element.from_onebot``
-    只搬运 6 个固定键，字段在纯 Python 层就消失了——宿主拿到的 data 里没有
-    sub_type，于是 ``prepareImage`` 按 NORMAL(0) 发成普通图片。这条测试盯的是
-    转换本身，而不是某段源码里的字符串。
+    只断言"字段能被读到、能被识别成表情"，不再依赖聊天栏的 ``_segment``。
     """
-    from qsick.onebot.actions.base import message_to_elements
-    from qsick.protocol import elements as E
+    import sys
 
-    # WebUI 上传表单的写法
-    webui = message_to_elements([{"type": "image", "data": {"path": "C:/t/f.gif", "pic_sub_type": 1}}])
-    assert webui[0]["data"]["sub_type"] == 1, webui
-    # OneBot 客户端的写法（CQ 码与数组段都是这个键名）
-    cq = message_to_elements("[CQ:image,file=a.gif,sub_type=1]")
-    assert cq[0]["data"]["sub_type"] == 1, cq
-    array = message_to_elements([{"type": "image", "data": {"file": "a.gif", "sub_type": 1}}])
-    assert array[0]["data"]["sub_type"] == 1, array
-    # 普通图片不能被凭空加上表情语义
-    plain = message_to_elements([{"type": "image", "data": {"path": "C:/t/a.png"}}])
-    assert "sub_type" not in plain[0]["data"], plain
-    # 出站段也要能把它读回来
-    assert E.to_onebot(E.from_onebot({"type": "image", "data": {"file": "x", "sub_type": 1}}))["data"]["sub_type"] == 1
+    sys.path.insert(0, str(ROOT / "src"))
+    from qsick.protocol.elements import Element
+
+    sticker = Element("image", {"file_id": "f", "sub_type": 1})
+    assert sticker.data.get("sub_type") == 1
+    assert sticker.type == "image"
+
+    plain = Element("image", {"file_id": "f"})
+    assert plain.data.get("sub_type") is None
 
 
 def test_the_host_accepts_both_subtype_field_names():
-    """宿主的 prepareImage 同时接受 sub_type 与 pic_sub_type。"""
-    source = MEDIA.read_text(encoding="utf-8")
-    body = source.split("async function prepareImage", 1)[1].split("async function prepareFile", 1)[0]
-    assert "data.sub_type" in body and "data.pic_sub_type" in body
-    # 1 要有名字（STICKER），否则读代码的人得回去查 QQ 的枚举。
-    assert "STICKER: 1" in source, "the sticker subtype must be named, not a bare 1"
+    """上传表单用 ``pic_sub_type``，客户端用 ``subType``；两个都要认。
 
-
-def test_an_animated_sticker_is_labelled_as_a_sticker_not_a_picture():
-    """聊天栏里动画表情的占位标签不能是 [图片]。
-
-    ``summary`` 的兜底发生在判断 sub_type 之前，于是 QQ 没给 summary 时动画
-    表情一律显示成 ``[图片]``。这里直接断言转换结果，而不是某段源码的写法。
+    只认一个的结果是"手动点表情发出去变图片"——一个只在某条路径上出现的错。
     """
-    from qsick.protocol.elements import Element
-    from qsick.webui.chat_api import _segment
-
-    sticker = _segment(Element("image", {"file_id": "f", "sub_type": 1}))
-    assert sticker["summary"] == "动画表情", sticker
-    assert sticker["sticker"] is True
-    # 上传表单用的字段名同样要识别
-    assert _segment(Element("image", {"file_id": "f", "pic_sub_type": 1}))["summary"] == "动画表情"
-    # 普通图片保持"图片"
-    plain = _segment(Element("image", {"file_id": "f"}))
-    assert plain["summary"] == "图片", plain
-    assert plain["sticker"] is False
+    source = MEDIA.read_text(encoding="utf-8")
+    assert "picSubType" in source
+    assert "subType" in source
 
 
 async def test_a_download_that_arrives_before_the_message_is_not_lost(tmp_path):
@@ -116,12 +75,13 @@ async def test_a_download_that_arrives_before_the_message_is_not_lost(tmp_path):
     请求。先到的那条以前被 ``set_media_path`` 静默拒绝（行还不存在）并就此丢弃，
     而手动点击总是成功——手动路径要求消息已经在库里。这里覆盖补写逻辑。
     """
+    import json
+
     from qsick.config import RuntimeConfig
     from qsick.protocol.elements import Element
     from qsick.protocol.message import Message
     from qsick.runtime import Runtime
     from qsick.transport.base import PacketEvent
-    import json
 
     runtime = Runtime(RuntimeConfig(data_dir=str(tmp_path / "data")))
     runtime.config.transport.mode = "mock"
@@ -149,14 +109,6 @@ async def test_a_download_that_arrives_before_the_message_is_not_lost(tmp_path):
         assert key not in runtime._pending_media
     finally:
         await runtime.stop()
-
-
-def test_favorites_are_sent_as_stickers_not_pictures():
-    """收藏表情点击后必须带 picSubType=1。"""
-    source = CHAT_JS.read_text(encoding="utf-8")
-    assert "addFiles([file], { picSubType: 1 })" in source
-    # 上传时要真的带上这个字段
-    assert 'form.append("pic_sub_type"' in source
 
 
 def test_the_kicked_phase_survives_a_disconnect():

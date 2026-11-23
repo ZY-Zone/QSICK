@@ -1042,7 +1042,15 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: id }),
         });
-        var result = await response.json();
+        // 先取文本再解析：服务端出错时返回的是 HTML，直接 .json() 抛
+        // "Unexpected token 'I'"，把真正的原因盖掉。
+        var body = await response.text();
+        var result;
+        try {
+          result = JSON.parse(body);
+        } catch (_) {
+          throw new Error(body.slice(0, 120) || ("HTTP " + response.status));
+        }
         if (result.ok) {
           renderCachePanel(result.items || []);
           if (typeof window.qsickToast === "function") {

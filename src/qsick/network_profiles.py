@@ -6,7 +6,7 @@ its HTTP/WS/Reverse endpoints on the new page.
 
 Each profile also picks the **chat protocol** it speaks (``protocols`` 下的目录名）。
 协议决定消息怎么编码：纯 OneBot v11 只能表达基础黄脸，而
-``onebotv11-EXTemotions`` 能带上动态性与文件类型。可选清单由
+目前只有 ``onebotv11`` 一份实现。可选清单由
 ``protocols/enabled_protocol.json`` 维护，``maxStore`` 是存储协议，永远不会出现
 在这个下拉框里。
 """
@@ -145,7 +145,7 @@ def default_protocol() -> str:
 def _valid_protocol(value: object) -> str:
     """校验协议 id。非法值一律报错，不静默回落到默认值。
 
-    静默回落会让用户以为选的是 EXTemotions，实际却在按纯 v11 发消息——表情
+    静默回落会让用户以为选的是某个富协议，实际却在按纯 v11 发消息——表情
     依旧是对的 id、错的语义，问题会以"偶尔画错"的形式重现，极难查。
     """
     identifier = str(value or "").strip()

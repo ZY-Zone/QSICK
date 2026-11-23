@@ -352,22 +352,30 @@ async def test_webui_token_change_is_live(tmp_path: Path):
         await runtime.stop()
 
 
-async def test_chat_requires_three_second_confirmation(tmp_path: Path, monkeypatch):
+async def test_the_chat_page_is_gone(tmp_path: Path, monkeypatch):
+    """聊天栏已移除：页面、导航项、启停路由都不应再存在。
+
+    ``/api/chat/*`` 下留了三个 group-only 老端点给外部调用方，所以这里只断言
+    ``/chat`` 本身是 404，而不是整个前缀消失。
+    """
     monkeypatch.setenv("QSICK_CONFIG", str(tmp_path / "qsick.json"))
     runtime = await make_runtime(tmp_path)
     try:
         async with client(runtime) as web:
-            page = await web.get("/chat")
-            assert page.status_code == 200
-            assert "如果这是在公网服务器上运行的程序，可能会导致您的 QQ 号处于危险中" in page.text
-            assert "确认启用 (3)" in page.text
-            assert 'id="chat-enable-btn" class="btn" disabled' in page.text
-            assert "待启用" in (await web.get("/")).text
+            assert (await web.get("/chat", follow_redirects=False)).status_code == 404
+            assert (await web.post("/chat/enable", follow_redirects=False)).status_code in (404, 405)
+            home = await web.get("/")
+            assert 'href="/chat"' not in home.text
+            assert "待启用" not in home.text
     finally:
         await runtime.stop()
 
 
-async def test_chat_enable_and_send(tmp_path: Path, monkeypatch):
+async def test_the_retained_chat_send_endpoint_is_still_gated(tmp_path: Path, monkeypatch):
+    """保留的 ``/api/chat/send`` 仍受 ``webui.chat_enabled`` 控制。
+
+    聊天栏没了，但这个端点能替登录的号发言，所以开关必须还在、默认仍关。
+    """
     monkeypatch.setenv("QSICK_CONFIG", str(tmp_path / "qsick.json"))
     runtime = await make_runtime(tmp_path)
     try:
@@ -377,14 +385,7 @@ async def test_chat_enable_and_send(tmp_path: Path, monkeypatch):
             )
             assert blocked.status_code == 403
 
-            response = await web.post("/chat/enable", follow_redirects=False)
-            assert response.status_code == 303
-            assert runtime.config.webui.chat_enabled is True
-
-            page = await web.get("/chat")
-            assert 'id="chat-form"' in page.text
-            assert "当前核心" not in page.text
-
+            runtime.config.webui.chat_enabled = True
             groups = await web.get("/api/chat/groups")
             assert groups.status_code == 200 and groups.json()["groups"]
 

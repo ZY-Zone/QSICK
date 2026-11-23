@@ -168,5 +168,5 @@ class TestTargetsCarryTheOption:
              "report_self_message": True},
         ])
         targets = runtime._reverse_targets()
-        assert (URL, ACCOUNT, False) in targets
-        assert ("ws://127.0.0.1:9999/onebot", ACCOUNT, True) in targets
+        assert (URL, ACCOUNT, False, "onebotv11", "p1") in targets
+        assert ("ws://127.0.0.1:9999/onebot", ACCOUNT, True, "onebotv11", "p2") in targets

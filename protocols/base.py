@@ -1,7 +1,7 @@
 """协议适配层的公共契约：内部部件表示 + :class:`ChatProtocol` 抽象基类。
 
-为什么要有这一层：``protocols/`` 下同时存在多份实现（纯 OneBot v11、EXTemotions
-表情、maxStore……）。如果每份实现各自定义消息结构，上层每接一个协议就要加一个
+为什么要有这一层：``protocols/`` 下可以有**多份**实现（当前是纯 OneBot v11
+与 maxStore 存储）。如果每份实现各自定义消息结构，上层每接一个协议就要加一个
 分支，抽象就等于没做。所以这里固定一套**与协议无关**的“部件”（part）表示，
 各适配器只负责把它翻译成自己协议的消息段。
 
@@ -20,11 +20,11 @@
 
 几条约定：
 
-* ``emotion`` 是“表情”的统一表示，字段沿用 EXTemotion 协议（``id`` /
-  ``format`` / ``file_type`` / ``pack_id`` / ``sticker_id`` / ``sticker_type`` /
-  ``animated`` / ``text``）。纯 OneBot v11 只支持基础黄脸，所以它把 emotion
-  降级成 face 段；EXTemotions 适配器则原样保留这些字段——这正是“内部表示与
-  协议无关”的价值所在。
+* ``emotion`` 是“表情”的统一表示（``id`` / ``format`` / ``file_type`` /
+  ``pack_id`` / ``sticker_id`` / ``sticker_type`` / ``animated`` / ``text``）。
+  纯 OneBot v11 的 face 段只装得下 ``id``，所以它把 emotion 降级成 face 段，
+  其余字段在编码时丢掉。字段在这里仍然保留完整形状：将来接一个能表达动态性的
+  协议时，不需要回头重解析历史。
 * ``face`` 可以作为 emotion 的别名传入，照顾 OneBot 客户端的既有习惯。
 * ``unknown`` 段永远保留原始 ``type`` 与 ``data``：任何协议都不许静默丢弃
   自己不认识的段，否则上层永远看不到“有东西来了但我不认”。
@@ -86,6 +86,37 @@ class ChatProtocol(abc.ABC):
     @abc.abstractmethod
     def capabilities(self) -> dict[str, Any]:
         """能力声明：上层据此决定要不要降级（例如表情是否走富协议）。"""
+
+    # -------------------------------------------------------------- 事件与调用
+    #
+    # 下面三个方法有默认实现，默认实现就是"OneBot v11 原样"，所以老适配器不需要
+    # 改任何一行。它们存在的原因是：协议不只是消息段的形状，还包括**事件推送的
+    # 形状**和**动作调用的入口形状**。分流点只看这三个方法，不认识具体协议。
+
+    def encode_event(self, event: dict[str, Any]) -> dict[str, Any]:
+        """内部事件（已是 OneBot v11 形状）-> 本协议推给客户端的事件。
+
+        默认原样返回。转换失败时应当抛异常而不是返回半个事件——调用方会捕获它并
+        只跳过这一条连接，而不是把坏数据喂给对端。
+        """
+        return event
+
+    def decode_action(self, name: str, params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        """本协议的调用名与参数 -> 内部动作名与参数。
+
+        默认原样返回（v11 的 ``action`` 名字就是内部动作名）。名字未知时应当抛
+        :class:`PartError`，让调用方回一个"不认识这个动作"，而不是猜一个近似的。
+        """
+        return str(name or ""), dict(params or {})
+
+    def format_reply(self, result: dict[str, Any], echo: Any = None) -> dict[str, Any]:
+        """内部动作结果 -> 本协议的应答信封。默认是 v11 的形状（原样）。
+
+        ``echo`` 只作为提示传进来：内部动作层已经把它放进了结果信封（``registry``
+        从参数里取，失败路径也用 ``models.fail(..., echo=echo)``），所以默认实现不再
+        补一次。需要的协议（Milky 的 ``{status,retcode,message,data}``）自己重建。
+        """
+        return dict(result or {})
 
 
 def normalize_part(part: Any) -> dict[str, Any]:
