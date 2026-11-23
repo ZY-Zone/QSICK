@@ -29,10 +29,12 @@
           <span class="badge tier-{{ plugin.tier }}">{{ plugin.tier }}</span>
           <span class="badge {{ 'ok' if plugin.loaded else 'warn' }}">{{ "运行中" if plugin.loaded else "未加载" }}</span>
           <span class="badge">{{ "自定义配置页" if plugin.config_ui == "custom" else "默认配置页" }}</span>
-          {% if plugin.accounts %}
-          <span class="badge" title="只能收发这些账号的消息">{{ plugin.accounts|join(", ") }}</span>
+          {% if not plugin.accounts_declared %}
+          <span class="badge" title="清单未声明 accounts：账号无关，只旁观，不能用按账号的收发接口">账号无关</span>
+          {% elif plugin.allows_all_accounts %}
+          <span class="badge" title="清单声明了 accounts: [ALL]">全账号</span>
           {% else %}
-          <span class="badge" title="未限定账号">全账号</span>
+          <span class="badge" title="只能收发这些账号的消息">{{ plugin.accounts|join(", ") }}</span>
           {% endif %}
           {% if plugin.register_log_category %}
           <span class="badge" title="日志分类已登记到日志页筛选">{{ plugin.log_category }}</span>

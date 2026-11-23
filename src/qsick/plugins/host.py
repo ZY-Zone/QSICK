@@ -149,6 +149,13 @@ class PluginHost:
         if manifest.register_log_category:
             logmod.register_category(manifest.log_category_for_ui, source="plugin",
                                      description=f"{manifest.name}（{manifest.id}）")
+        # "account-agnostic" and "every account" are different declarations, so the log says which one it read.
+        if not manifest.accounts_declared:
+            scope = "account-agnostic"
+        elif manifest.allows_all_accounts:
+            scope = "ALL"
+        else:
+            scope = ",".join(manifest.account_list)
         log.info(
             "plugin loaded",
             id=manifest.id,
@@ -156,7 +163,7 @@ class PluginHost:
             version=manifest.version,
             priority=manifest.priority,
             hooks=",".join(self._hooks_of(instance)) or "-",
-            accounts=",".join(manifest.accounts) or "all",
+            accounts=scope,
             log_category=manifest.log_category_for_ui if manifest.register_log_category else "-",
         )
         return True

@@ -38,6 +38,15 @@ class AccountOutOfScope(PermissionDenied):
     """Raised when a plugin reaches for an account its manifest did not claim."""
 
 
+class AccountScopeUndeclared(PermissionDenied):
+    """Raised when an account-scoped API is used without declaring `accounts` at all.
+
+    Distinct from :class:`AccountOutOfScope` on purpose: one says "you named an account you did not claim", the
+    other says "you never said anything about accounts". The fix is different -- add the uin to the list, versus add
+    the list (or ``["ALL"]``) -- so the errors should not read the same.
+    """
+
+
 class DropMessage(Exception):
     """Raised by ``ctx.drop()``: stop this message here, quietly."""
 
@@ -73,29 +82,49 @@ class PluginContext:
 
     @property
     def account_scope(self) -> list[str]:
-        """The accounts this plugin declared, empty meaning "all of them"."""
+        """The accounts this plugin declared; ``["ALL"]`` means every one of them."""
         return list(self.manifest.accounts)
+
+    def _require_accounts(self, what: str) -> None:
+        """Refuse an account-scoped call from a manifest that never said which accounts it uses.
+
+        This is the whole point of declaring ``["ALL"]`` instead of leaving the field out: an omission and a
+        deliberate "all accounts" have to look different, or the manifest stops being an audit trail.
+        """
+        if not self.manifest.accounts_declared:
+            raise AccountScopeUndeclared(
+                f"plugin {self.manifest.id!r} called {what} without declaring `accounts` in basic.json; "
+                f'add the QQ numbers it may use, or "accounts": ["ALL"]')
 
     def account_allowed(self, account: Any) -> bool:
         """Whether this plugin may act on, or receive from, `account`.
 
-        Two filters, in order: the manifest's declared scope, then whatever the plugin has muted at runtime. An
-        empty account means "unknown", which is allowed -- messages that arrive without one (a synthetic event, a
-        transport that does not report it) must not vanish because of a scope check they cannot satisfy.
+        An undeclared manifest is *account-agnostic*, not account-blind: it sees every account, the way a spam
+        filter that never mentions accounts should. Declaring accounts is what turns the plugin account-aware, and
+        the account-scoped APIs demand it -- via :meth:`_require_accounts` -- because those are the calls that
+        actually target one account on purpose.
+
+        An empty account means "unknown", which is allowed: messages that arrive without one (a synthetic event, a
+        transport that does not report it) must not vanish over a scope check they cannot satisfy.
         """
         wanted = str(account or "").strip()
         if not wanted:
             return True
-        if self.manifest.accounts and wanted not in self.manifest.accounts:
+        if wanted in self._blocked:
             return False
-        return wanted not in self._blocked
+        if self.manifest.allows_all_accounts:
+            return True
+        if not self.manifest.accounts_declared:
+            return True
+        return wanted in self.manifest.account_list
 
     def block_account(self, account: Any) -> None:
         """Mute one account for this plugin. Narrowing only -- the host re-checks the declared scope."""
+        self._require_accounts("block_account")
         wanted = str(account or "").strip()
         if not wanted:
             raise ValueError("block_account needs an account")
-        if self.manifest.accounts and wanted not in self.manifest.accounts:
+        if not self.account_allowed(wanted):
             raise AccountOutOfScope(
                 f"plugin {self.manifest.id!r} may not block {wanted!r}: not in its declared accounts")
         self._blocked.add(wanted)
@@ -107,6 +136,42 @@ class PluginContext:
     def blocked_accounts(self) -> list[str]:
         return sorted(self._blocked)
 
+    # --------------------------------------------------- kernel-level restrictions
+
+    def _require_core(self, what: str) -> None:
+        """A restriction that reaches past this plugin is a core-tier privilege.
+
+        Tier, not permission: the manifest's `tier` already says how much of the kernel the plugin is trusted with,
+        and a separate permission for the same decision would let a `standard` plugin ask for the ability the tier
+        was there to withhold.
+        """
+        if not self.manifest.is_core:
+            raise PermissionDenied(
+                f"plugin {self.manifest.id!r} called {what}, which only core-tier plugins may use "
+                f"(its tier is {self.manifest.tier!r})")
+
+    def restrict_account(self, account: Any, *, direction: str = "both") -> str:
+        """Block an account's traffic for the whole runtime. Core tier only.
+
+        `direction` is ``in``, ``out`` or ``both``. Inbound means the message never reaches storage, a plugin or a
+        client -- the same consequence `events.drop` has. Outbound means the send action is refused for every
+        caller: this plugin, another plugin, a OneBot client, the WebUI.
+        """
+        self._require_core("restrict_account")
+        state = self._runtime.restrict_account(account, direction=direction)
+        self.log.warn("account restricted for the whole runtime", account=str(account), direction=state)
+        return state
+
+    def unrestrict_account(self, account: Any, *, direction: str = "both") -> str:
+        self._require_core("unrestrict_account")
+        state = self._runtime.unrestrict_account(account, direction=direction)
+        self.log.info("runtime account restriction lifted", account=str(account), direction=direction, left=state or "-")
+        return state
+
+    def restrictions(self) -> dict[str, str]:
+        self._require_core("restrictions")
+        return self._runtime.account_restrictions()
+
     def accounts(self) -> list[dict[str, Any]]:
         """Every account the runtime currently knows, with the plugin's own verdict attached.
 
@@ -114,6 +179,7 @@ class PluginContext:
         it cannot touch, otherwise "nothing happened" is indistinguishable from "not logged in".
         """
         self.require("runtime.read")
+        self._require_accounts("accounts")
         out: list[dict[str, Any]] = []
         for entry in self._runtime.instances_online():
             account = str(entry.get("uin") or "")
@@ -169,6 +235,7 @@ class PluginContext:
         """
         self.require("actions.invoke")
         if "account" in params:
+            self._require_accounts("call(account=...)")
             params["account"] = self._resolve_account(params["account"])
         return await self._runtime.invoke(action, params)
 
@@ -179,6 +246,7 @@ class PluginContext:
         it exists: with several sessions live, primary changes as they log in and out.
         """
         self.require("actions.invoke")
+        self._require_accounts("invoke_for")
         account = str(params.pop("account", "") or "")
         if account and not self.account_allowed(account):
             raise AccountOutOfScope(
@@ -187,6 +255,7 @@ class PluginContext:
 
     async def send_group_msg(self, group_id: int, message: Any, *, account: Any = "") -> dict[str, Any]:
         self.require("messages.send")
+        self._require_accounts("send_group_msg")
         payload: dict[str, Any] = {"group_id": int(group_id), "message": message}
         target = self._resolve_account(account)
         if target:
@@ -195,6 +264,7 @@ class PluginContext:
 
     async def send_private_msg(self, user_id: int, message: Any, *, account: Any = "") -> dict[str, Any]:
         self.require("messages.send")
+        self._require_accounts("send_private_msg")
         payload: dict[str, Any] = {"user_id": int(user_id), "message": message}
         target = self._resolve_account(account)
         if target:

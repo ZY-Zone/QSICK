@@ -13,6 +13,11 @@ from pathlib import Path
 
 TIERS = {"sandbox": 0, "standard": 1, "core": 2}
 
+#: The token that means "every account". Declared explicitly rather than by leaving `accounts` out, because the
+#: absence of the field has to mean "this plugin never touches accounts" -- otherwise there is no way to tell a
+#: plugin that forgot to declare a scope from one that deliberately covers all of them.
+ALL_ACCOUNTS = "ALL"
+
 MANIFEST_NAME = "basic.json"
 
 PERMISSIONS = {
@@ -135,14 +140,44 @@ class PluginManifest:
         for item in self.config_fields:
             if not item.get("key"):
                 raise ManifestError(f"{self.id}: every config_fields entry needs a key")
+        scopes = [account for account in self.accounts if account.upper() == ALL_ACCOUNTS]
+        if scopes and len(self.accounts) > 1:
+            # "ALL and also 10001" has no meaning; refusing it beats silently picking one reading.
+            raise ManifestError(
+                f"{self.id}: accounts cannot mix {ALL_ACCOUNTS} with specific numbers")
         for account in self.accounts:
+            if account.upper() == ALL_ACCOUNTS:
+                continue
             if not account.isdigit():
                 # An instance id would look like a valid scope but never match a message's `account`, which is a uin.
-                raise ManifestError(f"{self.id}: accounts must be QQ numbers, got {account!r}")
+                raise ManifestError(f"{self.id}: accounts must be QQ numbers or {ALL_ACCOUNTS}, got {account!r}")
 
     @property
     def tier_level(self) -> int:
         return TIERS[self.tier]
+
+    @property
+    def accounts_declared(self) -> bool:
+        """Whether the manifest said anything about accounts at all.
+
+        Account-scoped APIs require this: a plugin that sends needs to state which accounts it may send through, and
+        "I forgot" must not be indistinguishable from "all of them". Saying ``["ALL"]`` is how a plugin asks for all.
+        """
+        return bool(self.accounts)
+
+    @property
+    def allows_all_accounts(self) -> bool:
+        return any(account.upper() == ALL_ACCOUNTS for account in self.accounts)
+
+    @property
+    def account_list(self) -> list[str]:
+        """The concrete accounts, with ``ALL`` expanded to an empty list meaning "everything"."""
+        return [account for account in self.accounts if account.upper() != ALL_ACCOUNTS]
+
+    @property
+    def is_core(self) -> bool:
+        """Core-tier plugins alone may apply a restriction that reaches past their own scope."""
+        return self.tier == "core"
 
     @property
     def log_category_for_ui(self) -> str:
@@ -163,6 +198,8 @@ class PluginManifest:
             "config_page": self.config_page,
             "config_fields": self.config_fields,
             "accounts": list(self.accounts),
+            "accounts_declared": self.accounts_declared,
+            "allows_all_accounts": self.allows_all_accounts,
             "log_category": self.log_category_for_ui,
             "register_log_category": self.register_log_category,
             "path": str(self.path.parent),

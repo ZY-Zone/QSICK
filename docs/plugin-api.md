@@ -35,7 +35,7 @@
 | `tier` | — | `sandbox` < `standard` < `core`（默认 `standard`） |
 | `permissions` | — | 下表的子集；出现其他值即加载错误 |
 | `hooks` | — | 说明该类实现了哪些钩子 |
-| `accounts` | — | 允许收发的 QQ 号数组；空或省略 = 全部账号 |
+| `accounts` | — | 允许收发的 QQ 号数组，或 `["ALL"]`。**省略 = 账号无关**（见 §3） |
 | `log` | — | 是否把自己的日志分类登记到日志页筛选（见 §6） |
 | `priority` | — | 数值越小越先运行（守卫使用 10） |
 | `enabled` | — | 为 `false` 时跳过该插件；运行时状态同时存入 `data/plugins/state.json` |
@@ -65,15 +65,40 @@ tier 是一道上限检查：`plugins.max_tier`（默认 `core`）会拒绝要�
 
 ## 3. 账号
 
-QSICK 同时驱动多个 QQ 账号，而"当前主账号"会随会话登录、掉线而变化。所以：
+QSICK 同时驱动多个 QQ 账号，而"当前主账号"会随会话登录、掉线而变化。所以账号要能点名，
+范围要能声明。
 
-- **发送时可以点名账号**：`ctx.send_group_msg(30001, msg, account="10001")`。
-- **清单可以限定范围**：`"accounts": ["10001"]` 表示这个插件只看、也只发这个号。
-  空数组或省略表示不限定。
-- **限定由宿主强制**，不靠插件自觉：收到的消息若不在范围内，`on_message` 根本不会被调用；
-  发送时若点名了范围外的账号，抛 `AccountOutOfScope`（`PermissionDenied` 的子类）。
+### 三种状态，别混淆
 
-插件可以在运行时**进一步收窄**，但不能放宽：
+| `accounts` | 含义 | 能调账号类接口吗 |
+| --- | --- | --- |
+| 省略 / `[]` | **账号无关**：这个插件不参与账号维度，`on_message` 照常收到**所有**账号的消息 | ❌ |
+| `["10001", "20002"]` | 只看、也只发这两个号 | ✅ 仅限这两个 |
+| `["ALL"]` | 明确表示全部账号 | ✅ 全部 |
+
+省略与 `["ALL"]` **不是一回事**：前者是"这个插件跟账号没关系"，后者是"我知道有多个账号，
+全都要"。按账号收发的接口要求你必须说清是哪一种——"忘了写"不该和"故意要全部"长得一样。
+
+`["ALL"]` 不能和具体号码混写（`["ALL", "10001"]` 无意义），会加载失败。
+
+### 接口
+
+```python
+await ctx.send_group_msg(30001, msg, account="10001")   # 点名；不点名 → 主账号
+await ctx.send_private_msg(20002, msg)
+await ctx.invoke_for("C1", "send_group_msg", ...)        # 点名实例，不依赖主实例
+ctx.accounts()                                            # 全部账号 + 本插件的 allowed 判定
+```
+
+未声明 `accounts` 时调用这些会抛 `AccountScopeUndeclared`（`PermissionDenied` 子类），
+错误信息会告诉你要写 `["ALL"]` 还是写号码。点名了范围外的账号则抛 `AccountOutOfScope` ——
+两者分开是因为修法不同。
+
+**范围由宿主强制**，不靠插件自觉：收到的消息若不在范围内，`on_message` 根本不会被调用。
+
+### 运行时收窄（仅影响本插件）
+
+
 
 ```python
 ctx.block_account("20002")      # 这个号的消息以后不再进本插件
@@ -82,8 +107,7 @@ ctx.blocked_accounts()          # ['20002']
 ```
 
 `block_account` 只能作用于自己已声明的范围内——想借它绕过清单声明的账号会被拒绝。
-
-查看当前有哪些账号（`runtime.read`）：
+它只让**本插件**不再看/不再发某个号，别的插件和 OneBot 客户端照旧。
 
 ```python
 for entry in ctx.accounts():
@@ -95,6 +119,31 @@ for entry in ctx.accounts():
 
 `accounts` 返回**全部**账号并附上本插件的判定，而不是只返回允许的那些：
 否则"什么都没发生"和"这个号没在线"在插件看来完全一样。
+
+### 内核级全局限制（仅 `tier: "core"`）
+
+上面两节都只影响插件自己。如果你要拦的是**整个运行时**——包括其他插件、OneBot 客户端、
+WebUI 的发送——那是内核级的，只有 `core` 级插件能设：
+
+```python
+ctx.restrict_account("10001", direction="out")   # 'in' / 'out' / 'both'
+ctx.unrestrict_account("10001", direction="in")  # 只解一个方向，剩下的仍是 'out'
+ctx.restrictions()                               # {'10001': 'out'}
+```
+
+| 方向 | 后果 |
+| --- | --- |
+| `in` | 该账号的消息**不落库、不发插件、不发客户端**——和 `events.drop` 的后果一样 |
+| `out` | 发送动作被拒，**不论谁发起**：本插件、其他插件、OneBot HTTP/WS、WebUI |
+
+要点：
+
+- **门槛是 tier，不是权限。** `tier` 本来就是"这个插件被信任到什么程度"，再要一个权限去表达
+  同一件事，等于让 `standard` 插件申请那件 tier 本来就想不给它的能力。
+- **不需要声明 `accounts`。** 这个接口管的是别人的调用，不是本插件能用哪些号。
+- **只在内存里**，进程重启即清空——插件在 `on_load` 里重新施加即可。它不该是那种在写它的插件
+  卸载之后还悄悄生效的配置。
+- 两个方向相加而不是互相覆盖：先 `in` 再 `out` 得到 `both`。
 
 ## 4. 生命周期钩子
 
@@ -130,7 +179,7 @@ ctx.read_config(default) / ctx.write_config(data)
 # 消息流
 ctx.drop(reason)                                    # 需要 events.drop
 
-# 发送（需要 messages.send；account 可选）
+# 发送（需要 messages.send + 声明 accounts；account 可选）
 await ctx.send_group_msg(30001, "hi", account="10001")
 await ctx.send_private_msg(20002, "hi")             # 不点名 → 主账号
 
@@ -143,12 +192,17 @@ ctx.register_action(spec)
 
 # 状态（需要 runtime.read）
 ctx.runtime_info()
-ctx.accounts()
+ctx.accounts()               # 需要声明 accounts
 
-# 账号范围
-ctx.account_scope            # ['10001'] 或 []（不限）
-ctx.account_allowed("10001") # 静态范围 + 运行时屏蔽的综合判定
-ctx.block_account / unblock_account / blocked_accounts
+# 账号范围（本插件）
+ctx.account_scope            # ['10001'] / ['ALL'] / []（未声明 = 账号无关）
+ctx.account_allowed("10001") # 声明范围 + 运行时屏蔽的综合判定
+ctx.block_account / unblock_account / blocked_accounts   # 需要声明 accounts
+
+# 内核级全局限制（仅 tier=core，见 §3）
+ctx.restrict_account("10001", direction="out")
+ctx.unrestrict_account("10001")
+ctx.restrictions()
 
 # 权限自查
 ctx.has("events.drop")
@@ -317,4 +371,6 @@ ctx.register_action(spec)
 | 只声明 `messages.send` 却收到 `PermissionDenied` | 已修复，`messages.send` 足够 | 文档与实现不一致 |
 | 无账号概念的 `send_group_msg(gid, msg)` | 仍然可用；要指定账号时加 `account=` | 默认落到主账号，多账号下不可靠 |
 | 靠"主账号"猜身份 | `ctx.invoke_for(instance, …)` 或 `account=` | 主账号随登录变化 |
+| 用 `send_*` / `accounts()` 但没写 `accounts` | 会抛 `AccountScopeUndeclared`；写号码或 `["ALL"]` | 省略与"全部"必须可区分 |
+| 想拦别的插件/客户端的收发 | `ctx.restrict_account(…)`（仅 core） | 每插件 `block_account` 只管自己 |
 | 日志分类要等首次输出才出现 | 清单写 `"log": {"register": true}` | 空分类也需要可筛选 |

@@ -241,6 +241,14 @@ class Runtime:
         # fed by forwarding and is meant to be readable whether or not any session is running, so its
         # records must not live somewhere that only exists once an instance context does.
         self.cache_store: MessageStore = create_store(self.config)
+        #: Kernel-level account restrictions, keyed by uin, valued "in", "out" or "both".
+        #:
+        #: Distinct from a plugin's own `accounts` scope, which only narrows what that plugin participates in. These
+        #: reach everyone: an inbound restriction stops the message before any plugin or client sees it, and an
+        #: outbound one refuses the send action no matter who asked -- plugin, OneBot client or the WebUI. Only a
+        #: core-tier plugin may set them, and they live for this process only: a restriction is state a plugin
+        #: re-applies on load, not configuration that quietly outlives the plugin that wrote it.
+        self._account_restrictions: dict[str, str] = {}
         self.registry: ActionRegistry = action_mod.build_registry()
         self.hub = EventHub()
         self.plugins = PluginHost(
@@ -375,6 +383,61 @@ class Runtime:
 
     def logins(self) -> dict[str, LoginState]:
         return dict(self._logins)
+
+    # ------------------------------------------------------- account restrictions
+
+    def restrict_account(self, account: Any, *, direction: str = "both") -> str:
+        """Apply a kernel-level restriction to one account and return the resulting state.
+
+        `direction` is ``in``, ``out`` or ``both``; restrictions merge, so restricting inbound on an account that is
+        already outbound-restricted leaves it fully blocked rather than replacing one with the other.
+        """
+        wanted = str(account or "").strip()
+        if not wanted.isdigit():
+            raise ValueError(f"restrict_account needs a QQ number, got {account!r}")
+        wanted_direction = str(direction or "both").strip().lower()
+        if wanted_direction not in ("in", "out", "both"):
+            raise ValueError(f"direction must be in/out/both, got {direction!r}")
+        current = self._account_restrictions.get(wanted, "")
+        merged = wanted_direction
+        if current and current != wanted_direction:
+            merged = "both"
+        self._account_restrictions[wanted] = merged
+        log.warn("account restricted at the kernel level", account=wanted, direction=merged)
+        return merged
+
+    def unrestrict_account(self, account: Any, *, direction: str = "both") -> str:
+        """Lift a restriction (all of it, or just one direction). Returns what is left."""
+        wanted = str(account or "").strip()
+        wanted_direction = str(direction or "both").strip().lower()
+        current = self._account_restrictions.get(wanted, "")
+        if not current:
+            return ""
+        if wanted_direction == "both" or wanted_direction == current:
+            left = ""
+        elif current == "both":
+            left = "out" if wanted_direction == "in" else "in"
+        else:
+            left = current
+        if left:
+            self._account_restrictions[wanted] = left
+        else:
+            self._account_restrictions.pop(wanted, None)
+        if left != current:
+            log.info("account restriction lifted", account=wanted, direction=wanted_direction, left=left or "-")
+        return left
+
+    def account_restricted(self, account: Any, direction: str) -> bool:
+        """Whether `direction` (``in`` or ``out``) is blocked for `account`."""
+        state = self._account_restrictions.get(str(account or "").strip(), "")
+        side = "in" if str(direction).lower().startswith("in") else "out"
+        return state in (side, "both")
+
+    def account_restrictions(self) -> dict[str, str]:
+        return dict(self._account_restrictions)
+
+    def clear_account_restrictions(self) -> None:
+        self._account_restrictions.clear()
 
     def instances_online(self) -> list[dict[str, str]]:
         """每个实例的登录摘要，供 WebUI 展示多账号状态。"""
@@ -1632,6 +1695,15 @@ class Runtime:
     async def _dispatch_event(self, event: PacketEvent) -> None:
         if event.cmd in MESSAGE_CMDS:
             message = Message.from_payload(event.json())
+            # Kernel-level inbound restriction, checked before the plugin chain and before storage. A core plugin
+            # that restricted an account means "nothing from this account reaches anything" -- the message cache
+            # included, which is the same consequence `events.drop` has and therefore the same meaning to expect.
+            blocked_account = str(getattr(message, "account", "") or "")
+            if blocked_account and self.account_restricted(blocked_account, "in"):
+                self.events_dropped += 1
+                log.warn("message refused: account restricted at the kernel level",
+                         account=blocked_account, message_id=message.message_id)
+                return
             if not await self.plugins.dispatch_message(message):
                 self.events_dropped += 1
                 return
@@ -1818,6 +1890,15 @@ class Runtime:
             if known and requested not in known:
                 from .onebot.models import fail, CONFLICT
                 return fail("selected account does not match any active session", CONFLICT)
+        # A kernel-level outbound restriction is checked here, at the one place every send passes through, rather
+        # than in each caller: a plugin, a OneBot client and the WebUI all reach a send action through `invoke`, so
+        # a check anywhere else would leave a way around it.
+        if action in SEND_ACTIONS:
+            sender = requested or self.primary_account
+            if sender and self.account_restricted(sender, "out"):
+                from .onebot.models import fail, FORBIDDEN
+                log.warn("send refused: account restricted at the kernel level", action=action, account=sender)
+                return fail(f"account {sender} may not send: blocked by a core plugin", FORBIDDEN)
         lock = self._send_lock(action, payload)
         started = time.perf_counter()
         # Read-only lookups: answer repeats from cache.
