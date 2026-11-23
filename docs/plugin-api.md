@@ -81,18 +81,43 @@ QSICK 同时驱动多个 QQ 账号，而"当前主账号"会随会话登录、�
 
 `["ALL"]` 不能和具体号码混写（`["ALL", "10001"]` 无意义），会加载失败。
 
+### 账号的来源：只认「已在线」
+
+`ctx.accounts()` 和按账号的接口，用的是**账户管理页那条线**——`logged_in` 为真的账号：
+
+    pipe session 的登录状态
+    无头实例的登录状态
+
+不包含：注册了但没登录的实例、已停止的 session、只有网络配置没有登录的账号。
+这些在磁盘上看着像账号，但都够不着——把它们交给插件，等于发一份用不了的目标清单；
+接受它们，只是把失败推迟到一次没人应答的发送上。
+
+`ctx.accounts()` 只用内存里的登录状态（不读 `instance.json` / `status.json`），
+所以可以在每条消息里调用而不变成磁盘基准测试。
+
+点名一个登记过但没登录的账号会抛 `AccountNotOnline`（也是 `PermissionDenied` 子类 ——
+从插件看它就是一次被拒绝的调用，不是崩溃），错误信息会列出**当前**在线的是哪些。
+
+判断顺序是：**先范围，后在线**。声明外 + 离线 → 报 `AccountOutOfScope`（先犯的错先报）。
+
 ### 接口
 
 ```python
 await ctx.send_group_msg(30001, msg, account="10001")   # 点名；不点名 → 主账号
 await ctx.send_private_msg(20002, msg)
-await ctx.invoke_for("C1", "send_group_msg", ...)        # 点名实例，不依赖主实例
-ctx.accounts()                                            # 全部账号 + 本插件的 allowed 判定
+await ctx.invoke_for("C1", "send_group_msg", ...)        # 点名实例（须在线），不依赖主实例
+ctx.accounts()                                            # 在线的账号 + 本插件的 allowed 判定
 ```
 
 未声明 `accounts` 时调用这些会抛 `AccountScopeUndeclared`（`PermissionDenied` 子类），
 错误信息会告诉你要写 `["ALL"]` 还是写号码。点名了范围外的账号则抛 `AccountOutOfScope` ——
-两者分开是因为修法不同。
+两者分开是因为修法不同。三种拒绝的区分：
+
+| 异常 | 什么时候 | 怎么修 |
+| --- | --- | --- |
+| `AccountScopeUndeclared` | 没声明 `accounts` | 写号码或 `["ALL"]` |
+| `AccountOutOfScope` | 点名了声明外的账号 | 加进 `accounts` |
+| `AccountNotOnline` | 账号在范围内但没登录 | 等它登录，或改用在线的号 |
 
 **范围由宿主强制**，不靠插件自觉：收到的消息若不在范围内，`on_message` 根本不会被调用。
 
@@ -192,7 +217,7 @@ ctx.register_action(spec)
 
 # 状态（需要 runtime.read）
 ctx.runtime_info()
-ctx.accounts()               # 需要声明 accounts
+ctx.accounts()               # 需要声明 accounts；只列在线账号
 
 # 账号范围（本插件）
 ctx.account_scope            # ['10001'] / ['ALL'] / []（未声明 = 账号无关）
@@ -372,5 +397,6 @@ ctx.register_action(spec)
 | 无账号概念的 `send_group_msg(gid, msg)` | 仍然可用；要指定账号时加 `account=` | 默认落到主账号，多账号下不可靠 |
 | 靠"主账号"猜身份 | `ctx.invoke_for(instance, …)` 或 `account=` | 主账号随登录变化 |
 | 用 `send_*` / `accounts()` 但没写 `accounts` | 会抛 `AccountScopeUndeclared`；写号码或 `["ALL"]` | 省略与"全部"必须可区分 |
+| 拿 `ctx.accounts()` 当"所有实例"用 | 只返回**已登录**的账号 | 够不着的账号不该出现在目标清单里 |
 | 想拦别的插件/客户端的收发 | `ctx.restrict_account(…)`（仅 core） | 每插件 `block_account` 只管自己 |
 | 日志分类要等首次输出才出现 | 清单写 `"log": {"register": true}` | 空分类也需要可筛选 |

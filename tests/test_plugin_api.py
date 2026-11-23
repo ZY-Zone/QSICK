@@ -23,6 +23,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 from qsick import log as logmod  # noqa: E402
 from qsick.plugins.api import (  # noqa: E402
+    AccountNotOnline,
     AccountOutOfScope,
     AccountScopeUndeclared,
     PermissionDenied,
@@ -62,11 +63,21 @@ class FakeRuntime:
         self.for_instance.append((instance, action, dict(params)))
         return {"status": "ok"}
 
-    def instances_online(self):
+    #: Accounts the fake runtime considers logged in. Tests flip this to exercise the offline path.
+    online: list[str] = ["10001", "20002"]
+
+    def online_accounts(self):
         return [
-            {"instance": "C0", "uin": "10001", "nickname": "a", "logged_in": True, "online": True},
-            {"instance": "C1", "uin": "20002", "nickname": "b", "logged_in": True, "online": True},
+            {"account": uin, "uin": uin, "nickname": uin, "instance": f"C{index}", "session": f"C{index}",
+             "kind": "headless", "logged_in": True, "online": True, "kicked": False, "reason": ""}
+            for index, uin in enumerate(self.online)
         ]
+
+    def is_account_online(self, account):
+        return str(account or "").strip() in self.online
+
+    def is_instance_online(self, instance):
+        return str(instance or "").strip() in [f"C{i}" for i in range(len(self.online))]
 
     def restrict_account(self, account, *, direction="both"):
         self.restrictions[str(account)] = direction
@@ -266,6 +277,70 @@ class TestSendPermissions:
         assert runtime.calls[-1][1]["account"] == "10001"
         with pytest.raises(AccountOutOfScope):
             await ctx.call("get_group_list", account="20002")
+
+
+class TestOnlineOnly:
+    """The roster and the gate both use the accounts that are logged in right now.
+
+    Not every registered instance: a stopped one, one that never signed in, and a network profile with no live
+    login all look like accounts on disk and none of them can be reached. Handing them to a plugin would give it a
+    target list it cannot use, and accepting them would defer the failure to a send nobody answers.
+    """
+
+    def ctx(self, tmp_path, online, **overrides):
+        runtime = FakeRuntime()
+        runtime.online = list(online)
+        return PluginContext(runtime, a_manifest(tmp_path, accounts=[ALL_ACCOUNTS], **overrides)), runtime
+
+    def test_the_roster_lists_only_online_accounts(self, tmp_path):
+        ctx, _ = self.ctx(tmp_path, online=["10001"])
+        assert [entry["account"] for entry in ctx.accounts()] == ["10001"]
+
+    def test_an_empty_roster_is_a_valid_answer(self, tmp_path):
+        ctx, _ = self.ctx(tmp_path, online=[])
+        assert ctx.accounts() == []
+
+    async def test_sending_to_a_signed_out_account_is_refused(self, tmp_path):
+        ctx, runtime = self.ctx(tmp_path, online=["10001"])
+        with pytest.raises(AccountNotOnline):
+            await ctx.send_group_msg(30001, "hi", account="20002")
+        assert runtime.calls == []
+
+    async def test_the_refusal_names_what_is_available(self, tmp_path):
+        ctx, _ = self.ctx(tmp_path, online=["10001"])
+        with pytest.raises(AccountNotOnline) as caught:
+            await ctx.send_private_msg(20002, "hi", account="20002")
+        assert "10001" in str(caught.value)
+
+    async def test_the_primary_is_dropped_when_it_is_signed_out(self, tmp_path):
+        runtime = FakeRuntime(primary="10001")
+        runtime.online = []
+        ctx = PluginContext(runtime, a_manifest(tmp_path, accounts=[ALL_ACCOUNTS]))
+        await ctx.send_group_msg(30001, "hi")
+        # Nothing is named rather than naming an account that cannot answer.
+        assert "account" not in runtime.calls[-1][1]
+
+    async def test_invoke_for_a_signed_out_instance_is_refused(self, tmp_path):
+        ctx, runtime = self.ctx(tmp_path, online=["10001"])
+        with pytest.raises(AccountNotOnline):
+            await ctx.invoke_for("C1", "get_group_list")
+        assert runtime.for_instance == []
+
+    async def test_invoke_for_an_online_instance_works(self, tmp_path):
+        ctx, runtime = self.ctx(tmp_path, online=["10001", "20002"])
+        await ctx.invoke_for("C1", "get_group_list")
+        assert runtime.for_instance[-1][0] == "C1"
+
+    async def test_scope_still_comes_first(self, tmp_path):
+        # Two ways to be refused, and they must not be confused: an account outside the declaration is a scope
+        # mistake, an account inside it that is signed out is an availability one.
+        runtime = FakeRuntime()
+        runtime.online = ["10001"]
+        ctx = PluginContext(runtime, a_manifest(tmp_path, accounts=["10001", "99999"]))
+        with pytest.raises(AccountOutOfScope):
+            await ctx.send_group_msg(30001, "hi", account="20002")
+        with pytest.raises(AccountNotOnline):
+            await ctx.send_group_msg(30001, "hi", account="99999")
 
 
 class TestKernelRestrictions:

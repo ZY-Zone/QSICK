@@ -1,34 +1,30 @@
-QSICK is licensed under the GNU Affero General Public License v3.0 or later
-(AGPL-3.0-or-later), **except for the native payload binary** described below.
+有限再分发许可证
 
-The canonical AGPL text is available at:
+版权所有 © 2024 SICKCC754
 
-    https://www.gnu.org/licenses/agpl-3.0.txt
+1. 许可证文本的公开可用性
+本许可证文本公开可用，其固定副本见 https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge/LICENSE。任何人可为引用、存档或适用本许可证之目的复制和分发本许可证全文，但不得修改其条款。
 
-In short: you may use, study, modify and redistribute the Python and WebUI sources,
-provided that derivative works and network-served deployments remain under the same
-license and that copyright notices are preserved. There is NO WARRANTY.
+2. 使用与复制
+除本许可证第 3 条允许的情形外，未经本项目主要作者（以下简称“作者”）明确书面许可，任何人不得使用、复制、修改或分发本代码。
 
-A full copy of the AGPL text must be shipped with binary distributions. If you
-received this project without it, obtain it from the URL above.
+3. 再分发
+允许再分发本代码，但必须同时满足以下条件：
 
----------------------------------------------------------------------------
-Native components (separate terms)
----------------------------------------------------------------------------
+再分发时须完整附上本许可证全文；
 
-`native/qsick-payload/qsick_payload.dll` is a proprietary binary component. It is
-NOT licensed under the AGPL. It is distributed only as part of QSICK, only in the
-precompiled form provided, and only for the non-commercial use permitted by this
-project's license. No rights are granted to reverse engineer, decompile, modify,
-repackage, redistribute separately or relicense it. Its source is not distributed.
+须清晰标明源代码来源及版权信息；
 
-This mirrors how other QQ interoperability projects ship their native hooks. If you
-need source-level access to the native component, contact the maintainers for a
-separate written agreement.
+允许为再分发目的进行轻微修改和扩展，但修改后的代码不得公开 release。
 
-Third-party components retain their own licenses:
+4. 非商业使用
+本代码不得用于任何商业目的。
 
-  - FastAPI, Starlette, Uvicorn, Jinja2, Pydantic, websockets: MIT / BSD / Apache-2.0
+5. 附加许可
+本许可证未明确授予的任何权利，均须向作者申请并获得作者明确授权后方可行使。
 
-QQ and Tencent are trademarks of their respective owners. QSICK is an independent
-interoperability project and is not affiliated with or endorsed by Tencent.
+6. 违约与准据法
+任何违反本许可证条款的行为均构成违约。对于该等违约行为，应适用违规者所在国家之法律予以认定与处理；本条款不排除依据其他可适用的强制性法律规范追究责任的权利。
+
+7. 免责声明
+本代码按“原样”提供，不附带任何明示或默示的保证，包括但不限于对适销性和特定用途适用性的默示保证。在任何情况下，作者均不对因使用或分发本代码而产生的或与之相关的任何损害或其他责任承担责任。

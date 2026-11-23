@@ -448,6 +448,57 @@ class Runtime:
             for name, state in sorted(self._logins.items())
         ]
 
+    # ------------------------------------------------------------ online accounts
+
+    def online_accounts(self) -> list[dict[str, Any]]:
+        """The accounts that are logged in **right now** — the same line the 账户管理 page draws.
+
+        That page lists a session as usable when `logged_in` is true, and so does this: an instance that is
+        registered but never signed in, a stopped session, and a network profile with no live login are all absent.
+        Anything a plugin is allowed to act on has to be an account it could actually reach, so this is the roster
+        the plugin API hands out *and* the set it validates against.
+
+        Deliberately built from `_logins` only, which is in-memory: a plugin may call this per message, and reading
+        `instance.json`/`status.json` off disk for every call would turn a filter into a disk benchmark. The kind is
+        inferred the way the rest of the codebase does it — a pipe session keys its login by the uin itself.
+        """
+        found: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for name, state in sorted(self._logins.items()):
+            uin = str(state.uin or "").strip()
+            if not uin or uin == "0" or not state.logged_in or uin in seen:
+                continue
+            seen.add(uin)
+            is_pipe = name == uin
+            found.append({
+                "account": uin,
+                "uin": uin,
+                "nickname": state.nickname,
+                "instance": name,
+                "session": name,
+                "kind": "pipe" if is_pipe else "headless",
+                "logged_in": True,
+                "online": bool(state.online),
+                "kicked": bool(state.kicked),
+                "reason": state.kick_reason,
+            })
+        found.sort(key=lambda item: (item["kind"] != "pipe", item["account"]))
+        return found
+
+    def is_account_online(self, account: Any) -> bool:
+        wanted = str(account or "").strip()
+        if not wanted:
+            return False
+        return any(item["account"] == wanted for item in self.online_accounts())
+
+    def is_instance_online(self, instance: str) -> bool:
+        name = str(instance or "").strip()
+        state = self._logins.get(name)
+        if state is not None:
+            return bool(state.logged_in and str(state.uin or "").strip() not in ("", "0"))
+        # A pipe session reports its login under the uin, so the instance id and the account are the same string.
+        return self.is_account_online(name)
+
     def network_cards(self) -> list[dict[str, Any]]:
         """At most three configured network endpoints for the dashboard."""
         cfg = self.config.onebot

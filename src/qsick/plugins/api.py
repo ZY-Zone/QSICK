@@ -38,6 +38,15 @@ class AccountOutOfScope(PermissionDenied):
     """Raised when a plugin reaches for an account its manifest did not claim."""
 
 
+class AccountNotOnline(PermissionDenied):
+    """Raised when a plugin names an account that is not logged in right now.
+
+    The cause is availability, not permissions -- but it subclasses `PermissionDenied` because from the plugin's
+    side it is the same situation: the call was refused, nothing happened, and the next event will get the same
+    answer until the account comes back. Handling it as a crash would be wrong.
+    """
+
+
 class AccountScopeUndeclared(PermissionDenied):
     """Raised when an account-scoped API is used without declaring `accounts` at all.
 
@@ -180,27 +189,39 @@ class PluginContext:
         """
         self.require("runtime.read")
         self._require_accounts("accounts")
-        out: list[dict[str, Any]] = []
-        for entry in self._runtime.instances_online():
-            account = str(entry.get("uin") or "")
-            out.append({
-                **entry,
-                "account": account,
-                "allowed": self.account_allowed(account),
-            })
-        return out
+        # Online accounts only -- the same set the 账户管理 page lists, and the same set the account-scoped calls
+        # will accept. Returning signed-out instances here would invite a plugin to build a target list it cannot
+        # use; `allowed` then only has to answer the scope question.
+        return [{**entry, "allowed": self.account_allowed(entry["account"])}
+                for entry in self._runtime.online_accounts()]
 
     def _resolve_account(self, account: Any) -> str:
-        """Turn the caller's `account` into one this plugin may use, or raise."""
+        """Turn the caller's `account` into one this plugin may use, or raise.
+
+        Two separate questions, asked in this order: may this plugin touch the account at all (its declared scope),
+        and is the account actually reachable right now (logged in). Only online accounts can be acted on -- naming
+        a registered-but-signed-out one is a mistake worth reporting, not a call to buffer until it returns.
+        """
         wanted = str(account or "").strip()
-        if wanted and not self.account_allowed(wanted):
-            raise AccountOutOfScope(
-                f"plugin {self.manifest.id!r} did not claim account {wanted!r} in basic.json")
         if wanted:
+            if not self.account_allowed(wanted):
+                raise AccountOutOfScope(
+                    f"plugin {self.manifest.id!r} did not claim account {wanted!r} in basic.json")
+            if not self._runtime.is_account_online(wanted):
+                raise AccountNotOnline(self._online_hint(wanted))
             return wanted
-        # No account named: fall back to the primary one, but only if this plugin is allowed to use it.
+        # No account named: fall back to the primary one, but only if this plugin may use it and it is online.
         primary = str(getattr(self._runtime, "primary_account", "") or "")
-        return primary if self.account_allowed(primary) else ""
+        if not primary or not self.account_allowed(primary):
+            return ""
+        return primary if self._runtime.is_account_online(primary) else ""
+
+    def _online_hint(self, account: str) -> str:
+        """Say which accounts *are* available, because "not online" alone leaves the caller guessing."""
+        live = [item["account"] for item in self._runtime.online_accounts()]
+        available = ", ".join(live) if live else "none"
+        return (f"plugin {self.manifest.id!r} cannot use account {account!r}: it is not logged in "
+                f"(online now: {available})")
 
     # ----------------------------------------------------------------- config
 
@@ -251,6 +272,9 @@ class PluginContext:
         if account and not self.account_allowed(account):
             raise AccountOutOfScope(
                 f"plugin {self.manifest.id!r} did not claim account {account!r} in basic.json")
+        if not self._runtime.is_instance_online(instance):
+            raise AccountNotOnline(
+                f"plugin {self.manifest.id!r} cannot act as instance {instance!r}: it is not logged in")
         return await self._runtime.invoke_for(instance, action, params)
 
     async def send_group_msg(self, group_id: int, message: Any, *, account: Any = "") -> dict[str, Any]:
