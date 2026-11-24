@@ -166,6 +166,10 @@ def _notice(event: dict[str, Any]) -> dict[str, Any] | None:
     # 分开的依据就是有没有 group_id —— 与 OneBot 的约定一致。
     if notice_type == "notify":
         return _nudge(event)
+    if notice_type in ("peer_pin", "peer_pin_change"):
+        # 会话置顶不在本程序范围内，没有对应的 Milky 事件可发。返回 None 让分流点跳过这条连接，
+        # 而不是编一个字段不全的。
+        return None
     if notice_type == "group_disband":
         out = _envelope("group_disband", event)
         out["data"] = {
@@ -181,6 +185,10 @@ def _notice(event: dict[str, Any]) -> dict[str, Any] | None:
         "group_ban": _member_mute,
         "group_whole_ban": _whole_mute,
         "group_name": _name_change,
+        "group_upload": _file_upload,
+        "group_title": _title_change,
+        "group_essence": _essence_change,
+        "group_msg_emoji_like": _reaction,
     }
     build = builders.get(notice_type)
     if build is None:
@@ -270,6 +278,76 @@ def _name_change(event: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _file_upload(event: dict[str, Any]) -> dict[str, Any]:
+    """OneBot `notice.group_upload` -> Milky `group_file_upload`。
+
+    OneBot 的文件是一个 `{id, name, size, busid}` 对象；Milky 摊平成四个字段，且**没有**
+    busid —— 那是 QQ 自己的业务类型，规范里不表达。
+    """
+    file = event.get("file") if isinstance(event.get("file"), dict) else {}
+    out = _envelope("group_file_upload", event)
+    out["data"] = {
+        "group_id": _uin(event.get("group_id")),
+        "user_id": _uin(event.get("user_id")),
+        "file_id": str(file.get("id") or ""),
+        "file_name": str(file.get("name") or ""),
+        "file_size": int(file.get("size") or 0),
+    }
+    return out
+
+
+def _title_change(event: dict[str, Any]) -> dict[str, Any]:
+    """群成员专属头衔。Milky 的 `group_member_special_title` 形态是 `{group_id, user_id, title}`。
+
+    空标题是合法值（表示取消），所以不判空。
+    """
+    out = _envelope("group_member_special_title_change", event)
+    out["data"] = {
+        "group_id": _uin(event.get("group_id")),
+        "user_id": _uin(event.get("user_id")),
+        "title": str(event.get("title") or ""),
+    }
+    return out
+
+
+def _essence_change(event: dict[str, Any]) -> dict[str, Any]:
+    """群精华消息变更。Milky 只有 `message_seq`，没有 OneBot 的 `message_id`。
+
+    OneBot 的精华事件靠 `sub_type=add/delete` 表示方向；Milky 用 `is_set` 布尔。
+    """
+    out = _envelope("group_essence_message_change", event)
+    sub = str(event.get("sub_type") or "add")
+    seq = event.get("message_seq")
+    out["data"] = {
+        "group_id": _uin(event.get("group_id")),
+        "message_seq": _uin_or_zero(seq),
+        "operator_id": _uin_or_zero(event.get("operator_id")),
+        "is_set": sub != "delete",
+    }
+    return out
+
+
+def _reaction(event: dict[str, Any]) -> dict[str, Any] | None:
+    """表情回应。OneBot 给 `likes: [{emoji_id, count}]`，Milky 只要一个 `face_id` 与 `count`。
+
+    多项时取第一项：Milky 的事件是一条回应，而 OneBot 的 likes 是一组汇总。取第一而不求和，
+    因为求和会造出一个"若干人同时回应了同一个表情"的假象。
+    """
+    likes = event.get("likes") if isinstance(event.get("likes"), list) else []
+    first = likes[0] if likes and isinstance(likes[0], dict) else {}
+    out = _envelope("group_message_reaction", event)
+    out["data"] = {
+        "group_id": _uin(event.get("group_id")),
+        "user_id": _uin(event.get("user_id")),
+        "message_seq": _uin_or_zero(event.get("message_seq")),
+        "face_id": str(first.get("emoji_id") or ""),
+        # Milky 区分 face 与 emoji；OneBot 不区分，表情回应本身就来自 emoji 接口，报 face。
+        "reaction_type": "face",
+        "is_add": bool(event.get("is_add", True)),
+    }
+    return out
+
+
 def _nudge(event: dict[str, Any]) -> dict[str, Any] | None:
     """OneBot 的 `notice.notify`(poke) -> Milky 的 `friend_nudge` / `group_nudge`。"""
     if str(event.get("sub_type") or "") != "poke":
@@ -284,10 +362,10 @@ def _nudge(event: dict[str, Any]) -> dict[str, Any] | None:
             "group_id": group,
             "sender_id": sender,
             "receiver_id": receiver,
-            # Milky 要显示用的文案与图片，OneBot 的 poke 事件不带。给空串而不是编一个。
-            "display_action": "",
-            "display_suffix": "",
-            "display_action_img_url": "",
+            # 文案与图片来自包推送的模板参数；灰条路径没有它们，那时是空串。
+            "display_action": str(event.get("display_action") or ""),
+            "display_suffix": str(event.get("display_suffix") or ""),
+            "display_action_img_url": str(event.get("display_action_img_url") or ""),
         }
         return out
     out = _envelope("friend_nudge", event)
@@ -295,9 +373,9 @@ def _nudge(event: dict[str, Any]) -> dict[str, Any] | None:
         "user_id": sender,
         "is_self_send": bool(self_id and sender == self_id),
         "is_self_receive": bool(self_id and receiver == self_id),
-        "display_action": "",
-        "display_suffix": "",
-        "display_action_img_url": "",
+        "display_action": str(event.get("display_action") or ""),
+        "display_suffix": str(event.get("display_suffix") or ""),
+        "display_action_img_url": str(event.get("display_action_img_url") or ""),
     }
     return out
 

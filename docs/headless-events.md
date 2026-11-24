@@ -9,85 +9,110 @@
 
 ```
 QQ NT 内核
-   │  ① 宿主把它变成 OneBot v11 形状   ← src/qsick/headless_host.js
+   │  ① 宿主把它变成 OneBot v11 形状
    ▼   {post_type, notice_type/request_type, ...}
-传输层 → runtime → onebot/events.py
-   │  ② 协议层把它变成各条连接要的形状   ← protocols/*/events.py
+传输层 → runtime → 三条流水线
+   │  ② 协议层把它变成各条连接要的形状
    ▼  onebotv11: 原样   milky: 事件名与字段都换
 ```
 
 第 ② 步是通用的：`onebot/events.py` 把 `cmd` 首个点之后的部分直接当成 `notice_type`，所以
 宿主只要抛 `notice.group_name`，v11 客户端就收到 `notice_type=group_name`，Milky 连接则收到
-`group_name_change`。
+`group_name_change`。**一个事件来源喂所有协议**，不存在"只给 Milky 做"的事件。
 
-## ① 宿主能产出的东西，取决于它挂在哪个通道上
+## ① 宿主能产出什么，取决于它挂在哪个通道上
 
-QQ NT 有两种推送方式，宿主只接了第一种。
+QQ NT 有三条推送路径，前两条已接，第三条已解码但未接线。
 
 ### 通道 A：消息里的灰条（已接）
 
 系统提示（"某某 修改了群名"、"某某 被禁言"）不是独立回调，而是**一条只含灰条元素的消息**
-（`elementType` 8）。宿主已经通过 `addKernelMsgListener` 收到这条消息，所以直接解析它。
+（`elementType` 8）。宿主通过 `addKernelMsgListener` 已经收到这条消息，直接解析它。
 
-`src/qsick/headless_notices.cjs` 读这些结构：
+`src/qsick/headless_notices.cjs`：
 
-| `subElementType` | 结构 | 变成 |
-| ---: | --- | --- |
-| 4 | `groupElement.type` 5，`.groupName` | `notice.group_name` |
-| 4 | `groupElement.type` 8，`.shutUp.{duration, member.uid, admin.uid}` | `notice.group_ban`（有 member）/ `notice.group_whole_ban`（无 member） |
-| 4 | `groupElement.type` 1，`.memberUid`、`.adminUid` | `notice.group_increase`（**仅当被加的是自己**） |
-| 4 | `groupElement.type` 3，`.memberUid` | `notice.group_decrease`，`sub_type=leave` |
-| 4 | `groupElement.type` 2 / 10 | `notice.group_disband` |
-| 17 | `jsonGrayTipElement.busiId` `"1061"`，`.jsonStr.items[].uid` | `notice.notify`，`sub_type=poke` |
+| 来源 | 结构 | 变成 |
+| --- | --- | --- |
+| `groupElement.type` 5 | `.groupName` | `notice.group_name` |
+| `groupElement.type` 8 | `.shutUp.{duration, member.uid, admin.uid}` | `notice.group_ban`（有 member）/ `group_whole_ban`（无 member） |
+| `groupElement.type` 1 | `.memberUid`、`.adminUid` | `notice.group_increase`（**仅自己被拉入群**） |
+| `groupElement.type` 3 | `.memberUid` | `notice.group_decrease`，`sub_type=leave` |
+| `groupElement.type` 2 / 10 | — | `notice.group_disband` |
+| json tip `busiId` `"1061"` | `.jsonStr.items[].uid` | `notice.notify`，`sub_type=poke` |
+| json tip 尾项文本 `头衔` | `.items[1].param[0]`、`.items[3].txt` | `notice.group_title` |
+| json tip 首项 `jp` URL | `?groupCode=&msgSeq=` | `notice.group_essence`，`sub_type=add` |
+| xml tip `templId` `10382` | `<qq jp>`、`<url msgseq>`、`<face id>` | `notice.group_msg_emoji_like` |
 
-另外：**纯灰条消息不再作为聊天消息下发**。以前它会被编码成一堆 `unknown` 段然后当成一条
-`message` 事件发出去，客户端看到的是"[未知消息]"。现在只发通知。
+**纯灰条消息不再作为聊天消息下发**。以前它被编码成一堆 `unknown` 段然后当成一条 `message`
+事件发出去，客户端看到的是"[未知消息]"。
 
-### 通道 B：包推送（未接）
+### 通道 B：群文件型消息（已接）
 
-成员**被踢**、**别人入群**、**管理员任免**、**好友/入群请求**都只从
-`trpc.msg.olpush.OlPushService.MsgPush` 出来，按 `contentHead.type` 分：
+群文件上传没有独立通知：上传本身就是**一条带 `fileElement` 的消息**（`elementType` 3）。
 
-| `contentHead.type` | 内容 | 对应事件 |
-| ---: | --- | --- |
-| 33 | 成员增加 | `group_member_increase` |
-| 34 | 成员减少（含被踢） | `group_member_decrease`，`sub_type=kick` |
-| 44 | 管理员任免 | `group_admin_change` |
-| — | 通知列表推送 | `friend_request` / `group_join_request` / … |
+`headless_notices.cjs` 把 `{fileName, fileSize, fileUuid, fileBizId}` 转成 OneBot 的
+`notice.group_upload`（`file: {id, name, size, busid}`）。消息本身照常下发——上传事件与消息
+并存，不是二选一。
 
-QSICK **没有**包级别的钩子（全仓没有 `packetHandler` / `onCmd` 之类），所以这一整类事件目前
-发不出来。它们不是"忘了解析"，是缺一条订阅通道。
+### 通道 C：OLPush 包推送（已解码，未接线）
 
-要接上，宿主需要拿到 QQ NT 的 packet handler 并按 `contentHead.type` 解 protobuf——每种 type
-都有自己的字段布局，没有真实报文时写出来的只会是猜的。
+被踢出群、别人入群、管理员任免、好友申请、入群申请只从
+`trpc.msg.olpush.OlPushService.MsgPush` 出来，按 `contentHead.type` 分派。
 
-## ② 已经做完但宿主不产生的
+**解码器已完整实现并测试**（`src/qsick/olpush.py` + `tests/test_olpush.py`，32 项），字段号来自
+两份独立实现的交叉验证：
 
-协议层的转换写好了，宿主一旦开始抛对应 `cmd` 就立刻生效，不用再改协议层：
-
-| 事件 | 缺什么 |
+| 来源 | 提供什么 |
 | --- | --- |
-| `group_admin_change` | 通道 B（type 44） |
-| `group_member_increase`（别人） | 通道 B（type 33）；灰条 only 说自己 |
-| `group_member_decrease`（被踢） | 通道 B（type 34）；灰条只说自愿退群 |
-| `friend_request` / `group_join_request` / `group_invited_join_request` / `group_invitation` | 通道 B（通知列表） |
-| `group_essence_message_change` | 灰条里有一个 busiId，但要拿消息 seq 才能对齐 |
-| `group_message_reaction` | 灰条是 XML，回应人和表情 id 在文档内部，离线无法确认形状 |
-| `friend_file_upload` / `group_file_upload` / `peer_pin_change` | 没有任何来源 |
+| NapCat `packages/napcat-core/packet/transformer/proto/message/{message,groupAdmin,notify}.ts` | `PushMsgBody`、`ContentHead`、`GroupChange`、`GroupAdmin`、`GroupInvite` 的字段号与类型 |
+| Lagrange `Internal/Packets/Notify/*.cs` | 同一批结构的 `[ProtoMember(n)]`，以及 `FriendRequest`、`GroupJoin`、`Event0x20D`、`GroupReaction`、`NotifyMessageBody` |
+| Lagrange `Internal/Logic/PushLogic.cs` | `MsgType` 枚举：type 与事件的对应关系 |
 
-`group_essence_message_change` 与 `group_message_reaction` 的取舍写在
-`headless_notices.cjs` 顶部的注释里：**宁可不发，也不发一个错账号的事件**。
+两者对 `GroupChange` 完全一致（1 群号、2 flag、3 成员 uid、4 类型、5 操作人），这是照着实现的
+依据。
 
-## `notice.group_disband` 不是 v11 标准事件
+| `contentHead.type` | subType | 事件 |
+| ---: | ---: | --- |
+| 33 | — | `group_increase`（130 批准 / 131 邀请） |
+| 34 | — | `group_decrease`（130 退群 / 131 被踢 / 3 自己被踢） |
+| 44 | — | `group_admin`（`extraEnable` = 任命，`extraDisable` = 撤职） |
+| 84 | — | `request.group`（入群申请） |
+| 87 / 525 | 87 | `request.group`，`sub_type=invite` |
+| 528 | 35 | `request.friend` |
+| 732 | 20 + 内层 19 | `notify(poke)`，带文案与表情图 |
+| 732 | 16 + 内层 35 | `group_msg_emoji_like` |
 
-发出去时严格客户端会忽略它，宽松的会显示它。保留的理由是：丢掉这条信息没有任何好处，而标准之外
-的 `notice_type` 本来就是可以被忽略的。Milky 侧它是规范事件 `group_disband`。
+**没接线的原因**：拿帧需要 QQ 侧的包钩子。`native/inithook` 确实钩了 send/recv，但只观察、
+不把字节交出来；`native/qsick-payload` 的 `Capture` 有个通用的 `trace.call`，需要用环境变量
+指定"第几个参数是指针、第几个是长度"，而那个签名没有真实报文可以验证。
+
+接入点是现成的：`runtime.feed_packet(data, instance=, account=)`。喂进去之后插件过滤、协议
+分流、各连接编码全部复用灰条那条路径，不需要改协议层一行。
+
+## 明确不实现
+
+| 能力 | 原因 |
+| --- | --- |
+| 会话置顶（`get_peer_pins` / `set_peer_pin` / `peer_pin_change`） | 不在本程序范围内。QSICK 侧直接回"没有相关 API"，而不是"不支持" |
+| 转存永久群文件 | QQ 侧没有这个接口 |
+| 重命名群文件夹 | 宿主只有 create / delete |
+
+## 已知的限制（不是缺通道，是缺证据）
+
+- **`group_member_increase` 的"别人入群"**：灰条不写邀请人，也不写是否申请通过。通道 C 接上后
+  这个限制消失。
+- **"某人加入群"（`busiId` 51）**：这条灰条不写是谁。要认出来只能对比前后成员列表，那是异步
+  服务调用。发一个猜的账号比不发更糟。
+- **`group_member_decrease` 的"被踢"**：灰条只说自愿退群。同上。
+- **`friend_file_upload`**：没有任何来源。
+- **`group_card`（群名片变更）**：NapCat 靠"消息里的 `sendMemberName` 与缓存对比"来识别。缓存
+  是异步的，第一次见到某人会误报，所以不做。
 
 ## 怎么验证
 
-`tests/test_headless_notices.py` 用按上表构造的报文跑真实提取器，`tests/test_protocol_milky.py`
-验证到 Milky 事件。这两组是**形状**测试：证明"字段这么放会得到这个事件"，证明不了
-"QQ 一定这么放"。
+- `tests/test_headless_notices.py`（33 项）：按上表的字段构造报文，跑**真实提取器**（Node）。
+- `tests/test_olpush.py`（32 项）：按字段号手写编码，跑**真实解码器**与事件映射。
+- `tests/test_protocol_milky.py`：验证到 Milky 事件的字段名与规范一致。
 
-补上真实抓包后应当加一组回归用例；在那之前，任何关于"这个事件一定能收到"的说法都超出了现有
-证据。
+这三组是**形状**测试：证明"字段这么放会得到这个事件"，证明不了"QQ 一定这么放"。补上真实抓包
+后应当加一组回归用例；在那之前，任何关于"这个事件一定能收到"的说法都超出了现有证据。

@@ -205,3 +205,132 @@ class TestSystemOnlyDetection:
         out = _run({"raw": {"chatType": "2", "peerUid": "1", "peerUin": "1", "elements": []},
                     "mapped": {"chat": {"type": "group", "id": 1}}})
         assert out["systemOnly"] is False
+
+
+class TestFileUpload:
+    def _file(self, **body) -> dict:
+        return {"elementType": 3, "fileElement": dict(body)}
+
+    def test_a_file_message_becomes_a_group_upload_notice(self):
+        """群文件上传没有独立通知，它就是一条带 fileElement 的消息。
+
+        转译它才让 `notice.group_upload` 存在；不转译的话客户端只看到一条"[文件]"，永远不知道
+        这是一个可下载的上传事件。
+        """
+        out = _run(message(self._file(fileName="a.zip", fileSize="1234",
+                                      fileUuid="uuid-1", fileBizId="102")))
+        notice = out["notices"][0]
+        assert notice["cmd"] == "notice.group_upload"
+        assert notice["payload"]["group_id"] == "2169010946"
+        assert notice["payload"]["user_id"] == "300"
+        assert notice["payload"]["file"] == {
+            "id": "uuid-1", "name": "a.zip", "size": 1234, "busid": 102,
+        }
+
+    def test_a_file_without_a_name_is_skipped(self):
+        out = _run(message(self._file(fileSize="10")))
+        assert out["notices"] == []
+
+    def test_a_file_in_a_private_chat_is_not_a_group_upload(self):
+        payload = {
+            "raw": {"chatType": "1", "peerUid": "u_friend", "senderUid": "u_sender",
+                    "senderUin": "300", "msgId": "1", "elements": [self._file(fileName="a.zip")]},
+            "mapped": {"chat": {"type": "private", "id": 300}},
+        }
+        out = _run(payload)
+        assert out["notices"] == []
+
+    def test_a_file_message_is_still_a_chat_message(self):
+        """上传事件与消息本身并存，不是二选一。"""
+        out = _run(message(self._file(fileName="a.zip")))
+        assert out["systemOnly"] is False
+
+
+class TestTitleChange:
+    def _tip(self, items: list[dict]) -> dict:
+        return {"elementType": 8, "grayTipElement": {
+            "subElementType": 17,
+            "jsonGrayTipElement": {"busiId": "0", "jsonStr": json.dumps({"items": items})},
+        }}
+
+    def test_a_title_change_is_read_from_the_fixed_slots(self):
+        # The tail item's text is what identifies the tip -- it carries no busiId worth matching on.
+        out = _run(message(self._tip([
+            {"txt": "x"}, {"txt": "", "param": ["u_member"]}, {"txt": "x"},
+            {"txt": "大佬"}, {"txt": "头衔"}])))
+        notice = out["notices"][0]
+        assert notice["cmd"] == "notice.group_title"
+        assert notice["payload"]["user_id"] == "100"
+        assert notice["payload"]["title"] == "大佬"
+
+    def test_an_empty_title_is_a_real_value(self):
+        """清空头衔是一条真实的事件，不是"没有标题"——丢掉它会让客户端一直显示旧头衔。"""
+        out = _run(message(self._tip([
+            {"txt": "x"}, {"txt": "", "param": ["u_member"]}, {"txt": "x"},
+            {"txt": ""}, {"txt": "头衔"}])))
+        assert out["notices"][0]["payload"]["title"] == ""
+
+    def test_a_tip_whose_tail_is_not_the_title_marker_is_not_a_title_change(self):
+        out = _run(message(self._tip([
+            {"txt": "x"}, {"txt": "", "param": ["u_member"]}, {"txt": "x"}, {"txt": "大佬"}])))
+        assert out["notices"] == []
+
+
+class TestReaction:
+    def _xml(self, uin: str, seq: str, face: str) -> dict:
+        content = (f'<gtip><qq jp="{uin}"/><url msgseq="{seq}"/><face id="{face}"/></gtip>')
+        return {"elementType": 8, "grayTipElement": {
+            "subElementType": 12, "xmlElement": {"templId": "10382", "content": content},
+        }}
+
+    def test_a_reaction_is_read_out_of_the_xml_attributes(self):
+        out = _run(message(self._xml("100", "555", "14")))
+        notice = out["notices"][0]
+        assert notice["cmd"] == "notice.group_msg_emoji_like"
+        assert notice["payload"]["user_id"] == "100"
+        assert notice["payload"]["message_seq"] == "555"
+        assert notice["payload"]["likes"] == [{"emoji_id": "14", "count": 1}]
+
+    def test_single_quoted_attributes_also_work(self):
+        content = "<gtip><qq jp='100'/><url msgseq='555'/><face id='14'/></gtip>"
+        element = {"elementType": 8, "grayTipElement": {
+            "subElementType": 12, "xmlElement": {"templId": "10382", "content": content}}}
+        out = _run(message(element))
+        assert out["notices"][0]["payload"]["message_seq"] == "555"
+
+    def test_a_tip_without_a_sequence_is_skipped(self):
+        element = {"elementType": 8, "grayTipElement": {
+            "subElementType": 12,
+            "xmlElement": {"templId": "10382", "content": '<gtip><qq jp="100"/></gtip>'}}}
+        out = _run(message(element))
+        assert out["notices"] == []
+
+    def test_a_different_template_produces_nothing(self):
+        element = {"elementType": 8, "grayTipElement": {
+            "subElementType": 12, "xmlElement": {"templId": "9999", "content": "<gtip/>"}}}
+        out = _run(message(element))
+        assert out["notices"] == []
+
+
+class TestEssence:
+    def _tip(self, url: str) -> dict:
+        return {"elementType": 8, "grayTipElement": {
+            "subElementType": 17,
+            "jsonGrayTipElement": {"busiId": "0", "jsonStr": json.dumps({"items": [{"jp": url}]})},
+        }}
+
+    def test_an_essence_change_reads_the_sequence_out_of_the_url(self):
+        out = _run(message(self._tip(
+            "https://x/y?groupCode=2169010946&msgSeq=555")))
+        notice = out["notices"][0]
+        assert notice["cmd"] == "notice.group_essence"
+        assert notice["payload"]["message_seq"] == "555"
+        assert notice["payload"]["group_id"] == "2169010946"
+
+    def test_an_essence_url_for_another_group_is_ignored(self):
+        out = _run(message(self._tip("https://x/y?groupCode=999&msgSeq=555")))
+        assert out["notices"] == []
+
+    def test_a_url_without_a_sequence_produces_nothing(self):
+        out = _run(message(self._tip("https://x/y?groupCode=2169010946")))
+        assert out["notices"] == []

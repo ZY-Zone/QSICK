@@ -71,6 +71,18 @@ const notices = createNoticeExtractor({
   selfUin: () => activeUin,
 });
 
+// The uid -> uin facts this process has learned, capped so one notice does not carry megabytes.
+// Python merges them into its own table; the cap keeps the last N, which are the ones most likely to be
+// relevant to an event that just arrived.
+function uidTable() {
+  const out = {};
+  const entries = Array.from(uinByUid.entries());
+  const start = Math.max(0, entries.length - UID_TABLE_LIMIT);
+  for (let index = start; index < entries.length; index += 1) out[entries[index][0]] = entries[index][1];
+  return out;
+}
+const UID_TABLE_LIMIT = 500;
+
 function rememberRawMessage(raw) {
   for (const pair of [[raw.senderUid, raw.senderUin], [raw.peerUid, raw.peerUin]]) {
     const [uid, uin] = pair;
@@ -141,7 +153,10 @@ function emitMessage(raw, uin, sent) {
   for (const notice of notices.inspect(raw, mapped)) {
     // postCore wants the cmd inside the payload for kind "notice" -- it forwards `payload.cmd` as the
     // envelope's cmd, and the Python side derives `notice_type` from it.
-    postCore("notice", Object.assign({ cmd: notice.cmd }, notice.payload));
+    //
+    // The uid->uin pairs collected so far ride along: the Python side has to resolve uids in packet
+    // pushes too, and this host is where the facts actually get learned.
+    postCore("notice", Object.assign({ cmd: notice.cmd }, notice.payload, { uin_by_uid: uidTable() }));
   }
   if (systemOnly) {
     debug("system tip carried no chat content; posted as notice only");

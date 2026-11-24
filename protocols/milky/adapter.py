@@ -190,6 +190,8 @@ class MilkyProtocol(ChatProtocol):
             "apis_supported": len(actions.SUPPORTED) + len(actions.DYNAMIC),
             "apis_needs_translation": len(actions.NEEDS_TRANSLATION),
             "apis_no_action": len(actions.NO_ACTION),
+            # 按设计不支持的那一组单独计数：它与"底层没做"是两种缺口。
+            "apis_unsupported_by_design": len(actions.UNSUPPORTED_BY_DESIGN),
             "apis_local": len(actions.LOCAL),
             "events_supported": 3,
             "events_pending_host": 7,

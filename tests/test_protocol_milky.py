@@ -163,10 +163,11 @@ class TestActions:
 
     def test_the_same_api_is_never_mapped_twice(self):
         from protocols.milky.actions import (
-            DYNAMIC, LOCAL, NEEDS_TRANSLATION, NO_ACTION, SUPPORTED,
+            DYNAMIC, LOCAL, NEEDS_TRANSLATION, NO_ACTION, SUPPORTED, UNSUPPORTED_BY_DESIGN,
         )
 
-        groups = [set(SUPPORTED), set(DYNAMIC), set(NEEDS_TRANSLATION), set(NO_ACTION), set(LOCAL)]
+        groups = [set(SUPPORTED), set(DYNAMIC), set(NEEDS_TRANSLATION), set(NO_ACTION),
+                  set(LOCAL), set(UNSUPPORTED_BY_DESIGN)]
         total = sum(len(group) for group in groups)
         union: set[str] = set()
         for group in groups:
@@ -174,6 +175,17 @@ class TestActions:
             union |= group
         # 规范是 65 个 API；每一类都必须被归进去，一个不漏也不多。
         assert total == len(union) == 65, f"covered {len(union)} of 65"
+
+    def test_the_design_level_refusal_is_a_separate_category(self):
+        """`UNSUPPORTED_BY_DESIGN` 与 `NO_ACTION` 分开记，因为对调用方要说的话不同。
+
+        前者是"本程序不提供这个能力"，后者是"QQ 侧没有这个接口"。混在一起，失败信息就只能说
+        "不支持"，而那没法让人判断该不该再等。
+        """
+        from protocols.milky.actions import NO_ACTION, UNSUPPORTED_BY_DESIGN
+
+        assert set(UNSUPPORTED_BY_DESIGN) == {"get_peer_pins", "set_peer_pin"}
+        assert not (set(NO_ACTION) & set(UNSUPPORTED_BY_DESIGN))
 
 
 class TestEvents:

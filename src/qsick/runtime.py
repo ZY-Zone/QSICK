@@ -260,6 +260,10 @@ class Runtime:
         self.registry: ActionRegistry = action_mod.build_registry()
         # 三条流水线共用一个实例：协议适配器要缓存，编码失败的原因也要汇到一处。
         self.pipelines = ProtocolPipelines()
+        #: uid (`u_...`) -> uin。包推送里的每个主体都是 uid，OneBot 的 `user_id` 要号，所以必须
+        #: 有一张反查表。由传输层在学到新映射时补充（`note_uid`），查不到就返回空 —— 编一个 0
+        #: 会让客户端看到一个不存在的用户。
+        self._uid_to_uin: dict[str, str] = {}
         self.hub = EventHub(self.pipelines)
         # 服务端连接（http / ws_server / sse）没有"自己的" profile 对象，只能按 kind 与 path 反查。
         # 交给 hub 而不是让它自己读配置：hub 不该 import 配置层。
@@ -1846,6 +1850,7 @@ class Runtime:
             # 顺序不能反：分发是"按协议裁剪成对方能懂的形状"，一旦先裁剪再存，
             # 历史数据就只剩当时那个协议要的字段，将来别的协议要别的字段时
             # 已经无从找回。这就是 maxStore 存在的理由。
+            self.note_uid(message.sender_uid, message.sender_uin)
             context = self.instances.instance(str(getattr(event, "instance", "") or "C0"))
             # 写库只有一处：实例自己的 maxStore 库。mapper.message 内部会调
             # store.put，所以把它的目标临时指到实例库，写完立即还原——事件
@@ -1864,6 +1869,9 @@ class Runtime:
             mapped = await self.mapper.map(event)
             if not mapped:
                 return
+            # 通知可能自带一批 uid -> uin 事实（宿主每次都会带上它已经知道的那些）。先并进表，
+            # 再分发：同一条事件里可能有别的字段要靠它解析。
+            self._merge_uid_table(event.json().get("uin_by_uid"))
             for item in mapped:
                 item = await self.plugins.dispatch_event(item)
                 # `None` means a plugin dropped it: the event is consumed, nothing reaches a client.
@@ -1876,6 +1884,79 @@ class Runtime:
         if ob_event is None:
             return
         await self._publish(ob_event)
+
+    async def feed_packet(self, data: bytes, *, instance: str = "", account: str = "") -> int:
+        """一帧 OLPush -> 事件 -> 三条流水线。返回产出的事件数。
+
+        这是包推送的**唯一入口**：挪到这里而不是塞进传输层，是因为它要和灰条事件走完全相同的
+        后续路径 —— 插件过滤（`dispatch_event`）、协议分流（`_publish`）、各连接的编码。包推送
+        与灰条的区别只在于"消息怎么来的"，从这一行往下不该有任何分叉。
+
+        `account` 决定用哪个号的 uid 映射表；不传就用该实例的登录号。解不出来的事件直接丢弃，
+        不做补全 —— 见 `olpush.PushEventMapper`。
+        """
+        from .olpush import PushEventMapper
+
+        owner = str(account or "").strip()
+        if not owner and instance:
+            state = self._logins.get(str(instance))
+            owner = str(getattr(state, "uin", "") or "")
+        mapper = PushEventMapper(self._resolve_uid, self_uin=owner, now=self.now)
+        published = 0
+        for event in mapper.map_bytes(data):
+            item = await self.plugins.dispatch_event(event)
+            if item is None:
+                # A plugin dropped it. Counted the same way灰条 events are, so "插件吃掉了多少"
+                # 的统计在两条通道上是可比的。
+                self.events_dropped += 1
+                continue
+            await self._publish(item)
+            published += 1
+        return published
+
+    def _merge_uid_table(self, pairs: Any) -> None:
+        """把宿主交来的 `{uid: uin}` 并进反查表。形状不对就整批忽略。"""
+        if not isinstance(pairs, dict):
+            return
+        for uid, uin in pairs.items():
+            self.note_uid(uid, uin)
+
+    def note_uid(self, uid: str, uin: Any) -> None:
+        """记住一条 uid -> uin 事实。
+
+        包推送里的主体全是 uid，而 OneBot 的 `user_id` 是号。学习点只放在"消息里同时带上两者"
+        的地方：一条消息的 `sender` 正是这种记录，所以每收到一条消息就多一组已知事实，不需要
+        额外的查询。
+
+        表会无限增长，所以设了上限：一个号能见到的 uid 数量级是"好友 + 群成员"，几千足够，
+        超出后淘汰最早的——它只是一张缓存，不是账本。
+        """
+        key = str(uid or "").strip()
+        value = str(uin or "").strip()
+        if not key or not value or value == "0" or key == value:
+            return
+        table = self._uid_to_uin
+        table.pop(key, None)          # 重新插入以刷新顺序
+        table[key] = value
+        while len(table) > 20000:
+            table.pop(next(iter(table)))
+
+    def _resolve_uid(self, uid: str) -> str:
+        """uid -> uin。取不到就返回空串。
+
+        映射表是逐实例的（`InstanceContext` 里那份），这里按"任一实例认得就行"查：同一个
+        uid 在不同实例上指向同一个号，所以先命中先用不会张冠李戴。
+        """
+        key = str(uid or "")
+        if not key:
+            return ""
+        lookup = getattr(self, "_uid_to_uin", None)
+        if lookup is None:
+            return ""
+        try:
+            return str(lookup.get(key) or "")
+        except Exception:  # noqa: BLE001 - 映射表坏了不该让包推送断掉
+            return ""
 
     def _store_message(self, context: "InstanceContext", message: Message) -> None:
         """先把原始 payload 完整写进该实例的 maxStore 库（同步版本）。

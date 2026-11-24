@@ -127,12 +127,18 @@ QQ 宿主 ──▶ runtime._dispatch_event ──▶ runtime._publish
 
 ### 事件覆盖
 
-21 个 Milky 事件里，能从宿主真正产生的事件转出 3 个（`message_receive`、`message_recall`、
-`bot_offline`）；另有 7 个的转换已写好但宿主今天不产生（`group_member_increase`、
-`group_admin_change`、`group_mute`、`friend_request`、`group_join_request` 等），宿主一旦开始发
-`notice.group_*` / `request.*` 就立刻生效；其余 11 个内部连槽位都没有。
+21 个 Milky 事件里，宿主今天能产出 **11 个**：3 个基础事件（消息、撤回、离线）加 8 个从灰条或
+文件型消息里读出来的群事件（群名、禁言、全员禁言、解散、头衔、精华、表情回应、文件上传）。
+戳一戳两条（好友与群）也在，群那条来自包推送。
 
-这个中间状态写在这里而不是藏起来：加一个事件不是改协议层，是先让宿主产生它。
+另有 5 个的**解码器已完成并测试**，只缺接线：管理员变更、好友请求、入群请求、邀请他人入群、
+被邀请入群。它们的 payload 定义来自 NapCat 与 Lagrange 两份独立实现的交叉验证，代码在
+src/qsick/olpush.py，接入点是 
+untime.feed_packet()。
+
+剩下的：会话置顶不实现（QSICK 侧直接回没有相关 API），好友文件上传两边都没有。
+
+完整来源分类见 [docs/headless-events.md](headless-events.md)。
 
 ## 加一个协议
 

@@ -230,10 +230,18 @@ NEEDS_TRANSLATION: dict[str, str] = {
 
 #: 内部连动作名都没有，因为 QQ 侧没有对应接口。
 NO_ACTION: dict[str, str] = {
-    "get_peer_pins": "QQ 侧没有读取置顶列表的接口",
-    "set_peer_pin": "QQ 侧没有设置置顶的接口",
     "persist_group_file": "QQ 侧没有转存永久文件的接口",
     "rename_group_folder": "宿主只有 group.folder.create / delete，没有 rename",
+}
+
+#: 明确**不实现**的一组。
+#:
+#: 与 `NO_ACTION` 的区别是态度而不是原因：`NO_ACTION` 是"QQ 没有这个能力，也许将来会有"，
+#: 这里是"这条能力不在本程序范围内"。分开记的理由是失败信息要能如实回答调用方：
+#: 前者的答案是"底层没做"，后者的答案是"本程序没有这个 API"。
+UNSUPPORTED_BY_DESIGN: dict[str, str] = {
+    "get_peer_pins": "本程序不提供会话置顶能力，没有对应 API",
+    "set_peer_pin": "本程序不提供会话置顶能力，没有对应 API",
 }
 
 
@@ -258,6 +266,8 @@ def canonical(api: str) -> str:
         raise UnknownAction(name, NEEDS_TRANSLATION[name])
     if name in NO_ACTION:
         raise UnknownAction(name, NO_ACTION[name])
+    if name in UNSUPPORTED_BY_DESIGN:
+        raise UnknownAction(name, UNSUPPORTED_BY_DESIGN[name])
     if name in LOCAL:
         raise UnknownAction(name, "由适配器本地回答，不经过动作层")
     raise UnknownAction(name, "不是 Milky 规范里的 API，或本适配器未收录")
