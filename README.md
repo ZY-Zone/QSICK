@@ -87,6 +87,7 @@ tests/                pytest 套件 + Node 宿主测试
 | [docs/payload-abi.md](docs/payload-abi.md)                                     | 原生 payload 的帧协议、op 契约、偏移表                 |
 | [docs/payload-ops.md](docs/payload-ops.md)                                     | 242 个动作的清单与 QQ 侧实现状态                      |
 | [docs/headless-capabilities.md](docs/headless-capabilities.md)                 | 无头宿主的能力边界与已知限制                            |
+| [docs/headless-events.md](docs/headless-events.md)                             | 事件从哪来：哪些有、哪些缺通道、为什么                      |
 | [docs/instances.md](docs/instances.md)                                         | 实例类型（headless / pipe）、创建对话框、模板与硬链接        |
 | [docs/onebot-action-audit-summary.md](docs/onebot-action-audit-summary.md)     | 动作实现状态的静态审计结论                             |
 | [docs/audit-onebot11-protocol-notes.md](docs/audit-onebot11-protocol-notes.md) | OneBot v11 协议与本地实现的差异记录                   |

@@ -43,6 +43,12 @@ def _envelope(event_type: str, event: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _uin_or_zero(value: Any) -> int:
+    """A required int64 field when the value may be absent: 0 is the spec's "nobody"."""
+    resolved = _uin(value)
+    return resolved if isinstance(resolved, int) else 0
+
+
 def _uin(value: Any) -> int | str:
     text = str(value if value is not None else "").strip()
     if text.isdigit():
@@ -156,44 +162,143 @@ def _notice(event: dict[str, Any]) -> dict[str, Any] | None:
         }
         return out
 
-    # 下面几个是"转换已写好、宿主今天不产生"的那批。留着不是死代码：
-    # 宿主一旦开始发 notice.group_increase 之类，它们立刻生效。
-    mapping = {
-        "group_increase": "group_member_increase",
-        "group_decrease": "group_member_decrease",
-        "group_admin": "group_admin_change",
-        "group_ban": "group_mute",
-        "group_whole_ban": "group_whole_mute",
-        "group_name": "group_name_change",
-    }
-    event_type = mapping.get(notice_type)
-    if not event_type:
-        # group_card / group_upload / notify(poke) 等：Milky 没有对应事件，
-        # 或者要为它另造一个结构体。跳过而不是硬塞进 message_receive。
-        return None
+    # 戳一戳在 OneBot 里是 `notice.notify` + `sub_type=poke`，Milky 把它分成好友与群两个事件。
+    # 分开的依据就是有没有 group_id —— 与 OneBot 的约定一致。
+    if notice_type == "notify":
+        return _nudge(event)
+    if notice_type == "group_disband":
+        out = _envelope("group_disband", event)
+        out["data"] = {
+            "group_id": _uin(event.get("group_id")),
+            "operator_id": _uin(event.get("operator_id")),
+        }
+        return out
 
-    out = _envelope(event_type, event)
-    base: dict[str, Any] = {"group_id": _uin(event.get("group_id"))}
-    if notice_type == "group_increase":
-        base["user_id"] = _uin(event.get("user_id"))
-        base["operator_id"] = _uin(event.get("operator_id"))
-    elif notice_type == "group_decrease":
-        base["user_id"] = _uin(event.get("user_id"))
-        base["operator_id"] = _uin(event.get("operator_id"))
-    elif notice_type == "group_admin":
-        base["user_id"] = _uin(event.get("user_id"))
-        base["is_set"] = bool(event.get("is_set", event.get("set")))
-        base["operator_id"] = _uin(event.get("operator_id"))
-    elif notice_type in ("group_ban", "group_whole_ban"):
-        base["operator_id"] = _uin(event.get("operator_id"))
-        base["is_ban"] = int(event.get("duration") or 0) > 0
-        base["duration"] = int(event.get("duration") or 0)
-        if notice_type == "group_ban":
-            base["user_id"] = _uin(event.get("user_id"))
-    elif notice_type == "group_name":
-        base["group_name"] = str(event.get("group_name") or "")
-        base["operator_id"] = _uin(event.get("operator_id"))
-    out["data"] = base
+    builders = {
+        "group_increase": _member_increase,
+        "group_decrease": _member_decrease,
+        "group_admin": _admin_change,
+        "group_ban": _member_mute,
+        "group_whole_ban": _whole_mute,
+        "group_name": _name_change,
+    }
+    build = builders.get(notice_type)
+    if build is None:
+        # group_card / group_upload 等：Milky 没有对应事件。跳过而不是硬塞进邻近的类型——
+        # 一个 catch-all 会把禁言当成入群，客户端只能看见错的东西。
+        return None
+    return build(event)
+
+
+#: 字段名一律以 Milky 规范为准（见规范的事件表），不从 OneBot 的名字照搬：
+#: OneBot 说 `group_name`，Milky 说 `new_group_name`；OneBot 说 `duration` 的正负，
+#: Milky 用显式的 `is_mute`。照搬的结果是客户端读到一个不存在的字段，然后显示空白。
+
+
+def _member_increase(event: dict[str, Any]) -> dict[str, Any]:
+    out = _envelope("group_member_increase", event)
+    out["data"] = {
+        "group_id": _uin(event.get("group_id")),
+        "user_id": _uin(event.get("user_id")),
+        "operator_id": _uin(event.get("operator_id")),
+        # OneBot 的 `group_increase` 不区分邀请人；有就带上，没有就给 0。
+        "invitor_id": _uin_or_zero(event.get("invitor_id")),
+    }
+    return out
+
+
+def _member_decrease(event: dict[str, Any]) -> dict[str, Any]:
+    out = _envelope("group_member_decrease", event)
+    out["data"] = {
+        "group_id": _uin(event.get("group_id")),
+        "user_id": _uin(event.get("user_id")),
+        "operator_id": _uin_or_zero(event.get("operator_id")),
+    }
+    return out
+
+
+def _admin_change(event: dict[str, Any]) -> dict[str, Any]:
+    out = _envelope("group_admin_change", event)
+    out["data"] = {
+        "group_id": _uin(event.get("group_id")),
+        "user_id": _uin(event.get("user_id")),
+        "operator_id": _uin(event.get("operator_id")),
+        "is_set": bool(event.get("is_set", event.get("set"))),
+    }
+    return out
+
+
+def _member_mute(event: dict[str, Any]) -> dict[str, Any]:
+    out = _envelope("group_mute", event)
+    out["data"] = {
+        "group_id": _uin(event.get("group_id")),
+        "user_id": _uin(event.get("user_id")),
+        "operator_id": _uin(event.get("operator_id")),
+        # 规范里是「秒」，解除禁言就是 0；没有单独的 is_mute 字段。
+        "duration": int(event.get("duration") or 0),
+    }
+    return out
+
+
+def _whole_mute(event: dict[str, Any]) -> dict[str, Any]:
+    out = _envelope("group_whole_mute", event)
+    duration = int(event.get("duration") or 0)
+    is_mute = event.get("is_mute")
+    if is_mute is None:
+        # OneBot 用两种方式表达开关：`sub_type` 是 ban/lift_ban，或者 duration 为正。
+        # 两者都在时以 sub_type 为准 —— 它是专门表达开关的那个字段。
+        sub = str(event.get("sub_type") or "")
+        if sub in ("ban", "lift_ban"):
+            is_mute = sub == "ban"
+        else:
+            is_mute = duration > 0
+    out["data"] = {
+        "group_id": _uin(event.get("group_id")),
+        "operator_id": _uin_or_zero(event.get("operator_id")),
+        "is_mute": bool(is_mute),
+    }
+    return out
+
+
+def _name_change(event: dict[str, Any]) -> dict[str, Any]:
+    out = _envelope("group_name_change", event)
+    out["data"] = {
+        "group_id": _uin(event.get("group_id")),
+        "new_group_name": str(event.get("group_name") or ""),
+        "operator_id": _uin(event.get("operator_id")),
+    }
+    return out
+
+
+def _nudge(event: dict[str, Any]) -> dict[str, Any] | None:
+    """OneBot 的 `notice.notify`(poke) -> Milky 的 `friend_nudge` / `group_nudge`。"""
+    if str(event.get("sub_type") or "") != "poke":
+        return None
+    sender = _uin(event.get("user_id"))
+    receiver = _uin(event.get("target_id"))
+    group = _uin(event.get("group_id"))
+    self_id = _uin(event.get("self_id"))
+    if group:
+        out = _envelope("group_nudge", event)
+        out["data"] = {
+            "group_id": group,
+            "sender_id": sender,
+            "receiver_id": receiver,
+            # Milky 要显示用的文案与图片，OneBot 的 poke 事件不带。给空串而不是编一个。
+            "display_action": "",
+            "display_suffix": "",
+            "display_action_img_url": "",
+        }
+        return out
+    out = _envelope("friend_nudge", event)
+    out["data"] = {
+        "user_id": sender,
+        "is_self_send": bool(self_id and sender == self_id),
+        "is_self_receive": bool(self_id and receiver == self_id),
+        "display_action": "",
+        "display_suffix": "",
+        "display_action_img_url": "",
+    }
     return out
 
 
@@ -201,36 +306,44 @@ def _notice(event: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _request(event: dict[str, Any]) -> dict[str, Any] | None:
+    """OneBot 的 `request.*` -> Milky。
+
+    这里的字段名按 Milky 规范，**不**保留 OneBot 的 `flag`：规范和本仓库的动作层用的是两套
+    标识（`notification_seq` / `initiator_uid` 对 `flag`），照搬会把一个不透明字符串塞进
+    int64 字段。转换不出的事件返回 ``None``，而不是发一个字段对不上的。
+    """
     request_type = str(event.get("request_type") or "")
     if request_type == "friend":
         out = _envelope("friend_request", event)
+        initiator = _uin(event.get("user_id"))
         out["data"] = {
-            "initiator_id": _uin(event.get("user_id")),
+            "initiator_id": initiator,
+            "initiator_uid": str(event.get("user_id_uid") or ""),
             "comment": str(event.get("comment") or ""),
             "via": str(event.get("via") or ""),
-            "flag": str(event.get("flag") or ""),
         }
         return out
     if request_type == "group":
         sub = str(event.get("sub_type") or "")
-        # Milky 把"申请入群"和"被邀请入群"分成两个事件。
+        seq = event.get("notification_seq")
         if sub == "invite":
+            # 「他人邀请自身入群」——Milky 的 group_invitation 用自己的序号，不是群通知序号。
             out = _envelope("group_invitation", event)
             out["data"] = {
                 "group_id": _uin(event.get("group_id")),
+                "invitation_seq": _uin_or_zero(event.get("invitation_seq") or seq),
                 "initiator_id": _uin(event.get("user_id")),
-                "comment": str(event.get("comment") or ""),
-                "flag": str(event.get("flag") or ""),
+                "source_group_id": _uin_or_zero(event.get("source_group_id")),
             }
-        else:
-            out = _envelope("group_join_request", event)
-            out["data"] = {
-                "group_id": _uin(event.get("group_id")),
-                "initiator_id": _uin(event.get("user_id")),
-                "comment": str(event.get("comment") or ""),
-                "is_filtered": bool(event.get("is_filtered")),
-                "flag": str(event.get("flag") or ""),
-            }
+            return out
+        out = _envelope("group_join_request", event)
+        out["data"] = {
+            "group_id": _uin(event.get("group_id")),
+            "notification_seq": _uin_or_zero(seq),
+            "is_filtered": bool(event.get("is_filtered")),
+            "initiator_id": _uin(event.get("user_id")),
+            "comment": str(event.get("comment") or ""),
+        }
         return out
     return None
 

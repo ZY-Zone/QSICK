@@ -12,6 +12,7 @@ const { createActionDispatcher, ActionError } = require("./headless_actions.cjs"
 const { createMessageSender } = require("./headless_sender.cjs");
 const { createQuickLogin } = require("./headless_login.cjs");
 const { createMediaPreparer } = require("./headless_media.cjs");
+const { createNoticeExtractor } = require("./headless_notices.cjs");
 
 const configPath = process.argv[process.argv.indexOf("--config") + 1];
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
@@ -61,6 +62,14 @@ const sentSeen = new Set();
 let nativeMessageListener = null;
 let nativeMessageService = null;
 let nativeMessageListenerId = null;
+
+// System notices arrive as messages whose only element is a gray tip, so the extractor reads the same raw
+// message the codec does. See headless_notices.cjs for which structures it trusts.
+const notices = createNoticeExtractor({
+  resolveUin: uid => uinByUid.get(uid),
+  debug: message => debug(message),
+  selfUin: () => activeUin,
+});
 
 function rememberRawMessage(raw) {
   for (const pair of [[raw.senderUid, raw.senderUin], [raw.peerUid, raw.peerUin]]) {
@@ -125,6 +134,19 @@ function emitMessage(raw, uin, sent) {
     onSkip: reason => debug("message skipped: " + JSON.stringify(codec.toJsonSafe(reason)))
   });
   if (!mapped) return;
+  // A message that carries nothing but a system tip is a notice, not a chat message. Posting it as a
+  // message put "[未知消息]" in front of clients for every group rename and every mute; the notice below
+  // is the honest representation of the same event.
+  const systemOnly = notices.isSystemOnly(raw);
+  for (const notice of notices.inspect(raw, mapped)) {
+    // postCore wants the cmd inside the payload for kind "notice" -- it forwards `payload.cmd` as the
+    // envelope's cmd, and the Python side derives `notice_type` from it.
+    postCore("notice", Object.assign({ cmd: notice.cmd }, notice.payload));
+  }
+  if (systemOnly) {
+    debug("system tip carried no chat content; posted as notice only");
+    return;
+  }
   // 自己发出的消息同样要知道图片在哪：从手机发出的图在电脑侧只是"已发送"，
   // 本地并没有副本，聊天栏因此显示 [图片]。以前这里写成 ``if (!sent)``，等于
   // 假定"自己发的图一定已经有本地文件"——只有从 WebUI 发出去的那条成立。
