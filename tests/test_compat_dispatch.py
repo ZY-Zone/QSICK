@@ -56,7 +56,9 @@ class _Rename(PayloadAction):
 
 class _Root(PayloadAction):
     name = "get_group_root_files"
-    op = "group.files.root"
+    # The real op name. It used to say `group.files.root`, which no layer declares — the action now calls
+    # the host's `group.file.list` directly instead of being a PayloadAction at all.
+    op = "group.file.list"
 
 
 def _run(action: PayloadAction, params: dict, protocol: str = "onebotv11") -> dict:
