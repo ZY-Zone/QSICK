@@ -16,13 +16,23 @@ QQ 的**另一条**推送路径。灰条走的是"收到一条消息"，包推�
   `FriendRequest` / `GroupJoin` / `Event0x20D` / `GroupReaction` 的定义；
 * Lagrange `Internal/Logic/PushLogic.cs` 的 `MsgType` 枚举，给出 type 与事件的对应关系。
 
-两者对 `GroupChange` 的字段完全一致（1 groupUin, 2 flag, 3 memberUid, 4 type/decreaseType,
-5 operator），这是可以照着实现的依据。
+三份实现对 `GroupChange` 的字段号完全一致（1 groupUin, 2 flag, 3 memberUid, 4 decreaseType,
+5 operatorInfo, 6 increaseType, 7 其它），这是可以照着实现的依据。
 
 ## 当前状态
 
 **解码器已完整、已测；还没有接线。** 喂它一个帧就能得到事件，但把帧拿进来需要 QQ 侧的一个
 包钩子，那条路（`native/qsick-payload`）今天还是脚手架。见 `docs/headless-events.md`。
+
+33/34/44/84/85/87 已用 QQ 9.9.33-52230 的实抓帧核对（2026-11-24，23:37:30–23:42:14，39 帧）。
+实抓改写了三处认知：
+
+* 34 的 `operatorInfo` **全部**是内嵌 protobuf（包括 131 他人被踢）；33 的是纯 uid 字符串；
+* 群主解散群时，解散者自己收到的是 **34 / decreaseType 1**（参考实现只知道 129）；
+* 本号经管理员批准 / 接受邀请入群时发的是 **85（SelfJoinInGroup）**，33 不发。
+
+decreaseType 2（本号自己退群）来自上一轮抓包，但那份文件已丢失、本轮 39 帧里没有复现，暂按
+待复核处理（映射保留，见 :data:`CHANGE_TYPE_SELF_LEFT`）。
 
 ## 为什么解码不放在 DLL 里
 
@@ -41,6 +51,7 @@ TYPE_GROUP_MEMBER_INCREASE = 33
 TYPE_GROUP_MEMBER_DECREASE = 34
 TYPE_GROUP_ADMIN = 44
 TYPE_GROUP_MESSAGE = 82
+TYPE_GROUP_SELF_JOINED = 85
 TYPE_GROUP_JOIN_NOTIFICATION = 84
 TYPE_GROUP_INVITE = 87
 TYPE_EVENT_0X20D = 525
@@ -50,13 +61,27 @@ TYPE_EVENT_0X2DC = 732
 #: `GroupChange` 的 4 号字段。**同一个字段号在 33 与 34 上语义相反**，这是最容易写错的地方：
 #:
 #:     33 (成员增加)  increaseType: 130 = 管理员批准, 131 = 被邀请
-#:     34 (成员减少)  decreaseType: 3 = 自己被踢, 130 = 自己退群, 131 = 被踢
+#:     34 (成员减少)  decreaseType: 1 = 群主解散（实抓）, 2 = 本号主动退群（上一轮抓包，待复核）,
+#:                                  3 = 本号被踢, 129 = 群解散（参考实现）, 130 = 他人退群,
+#:                                  131 = 他人被踢
 #:
-#: 两份实现给的是同一组数（Lagrange `DecreaseType` + `GroupMemberIncreaseProcessor` 的
-#: switch，NapCat 的 `groupChangDecreseType2String`），所以这里按语义命名而不是按方向。
+#: 3/130/131 三份参考实现一致（Lagrange 的 `DecreaseType`、NapCat 的
+#: `groupChangDecreseType2String`、SnowLuma 的 leave decoder），129 来自 NapCat 与 SnowLuma。
+#: 1 是 2026-11-24 在 9.9.33-52230 上实抓到的：本号作为群主解散群时 memberUid 与 operatorInfo
+#: 里都是本号（member == operator == self），参考实现都没有这个值，会落进默认分支当成 kick。
+#: 2 来自 2026-11-22 上一轮抓包（本号自己退群时 operatorInfo 是空的 `{2: {1: 0}}`），但那份抓包
+#: 文件已丢失、2026-11-24 的 39 帧里没有复现，所以先保留映射、结论待复核。
+CHANGE_TYPE_DISSOLVED_BY_OWNER = 1
+CHANGE_TYPE_SELF_LEFT = 2
 CHANGE_TYPE_SELF_REMOVED = 3
+CHANGE_TYPE_DISBANDED = 129
 CHANGE_TYPE_LEFT = 130
 CHANGE_TYPE_INVITED = 131
+
+#: 本号入群后多少秒内，同群的 87 视为"入群的余波"而不是待审批的邀请。2026-11-24 实抓：33 到
+#: 同群 87 相隔 429 ms；取 30 秒留出推送乱序与延迟的余量。33（群主直接拉人）与 85（批准 /
+#: 接受邀请）都算"本号刚入群"。
+SELF_JOIN_INVITE_WINDOW = 30.0
 
 #: `Event0x210` 的 `subType`。
 SUB_FRIEND_RECALL = 138
@@ -384,6 +409,12 @@ def decode_group_invite(data: bytes) -> GroupInvite:
 
 
 def decode_group_join(data: bytes) -> GroupJoin:
+    """`GroupJoin`（84）：2026-11-24 实抓帧是
+    `{1 群, 2=1（Lagrange 把它叫 Type）, 3 申请人 uid, 4=30（参考实现都没有命名）, 5 附言, 6, 8}`。
+
+    这里按 Lagrange 的字段表读 2 号作 `join_type`；4 号的值（30）目前没有可靠语义，先不解 ——
+    事件映射只用到群号、申请人与附言。
+    """
     fields = decode_fields(data)
     return GroupJoin(
         group_uin=_int(fields, 1),
@@ -470,15 +501,50 @@ def decode_push(data: bytes) -> Frame:
     return frame
 
 
+def frame_identity(data: bytes) -> dict[str, str]:
+    """从一帧 `PushMsg` 的 `ResponseHead` 里读身份字段。
+
+    实抓（9.9.33-52230）里 `ResponseHead` 是
+    `{1 fromUin, 2 fromUid, 3 type, 4 sigMap, 5 toUin, 6 toUid, ...}`：字段 5/6 是**本号**
+    （收到这一帧的账号），字段 1/2 是这条推送的主体——普通消息里是发送者，群事件里是群号。
+
+    本号身份在每一帧里都带着，所以即使还没收到过本号的消息、uid→uin 表还是冷的，也能在解码
+    之前先把这一条补进去。否则"主体是本号"的事件（33 本号被拉入、85 本号进群、44 给本号设
+    管理员、3 本号被踢）会因解析不出 uin 被丢弃，而紧随 33/85 之后的 87 余波还会被误报成一条
+    待审批的入群邀请。
+
+    返回的键可能缺省（空串）：`self_uin` / `self_uid` / `from_uin` / `from_uid`。群事件的
+    `fromUid` 是群号字符串（不是 `u_` 开头的 uid），此时 `from_uid` 为空——那是群号，不能当
+    用户 uid 记进映射表。
+    """
+    try:
+        push = decode_fields(data)
+        body = decode_fields(_bytes(push, 1))
+        head = decode_fields(_bytes(body, 1))
+    except (DecodeError, ValueError):
+        return {}
+    self_uin = _int(head, 5)
+    self_uid = _text(head, 6)
+    from_uin = _int(head, 1)
+    from_uid = _text(head, 2)
+    return {
+        "self_uin": str(self_uin) if self_uin else "",
+        "self_uid": self_uid if self_uid.startswith("u_") else "",
+        "from_uin": str(from_uin) if from_uin else "",
+        "from_uid": from_uid if from_uid.startswith("u_") else "",
+    }
+
+
 # ---------------------------------------------------------------- 事件映射
 
 
 def decode_operator(operator_raw: bytes) -> str:
     """`GroupChange.operatorInfo` -> 操作人 uid。
 
-    这个字段**不是**稳定的字符串。被踢（decreaseType 3）时它是内嵌的 protobuf
-    `GroupChangeInfo {1: {1: operatorUid}}`；其余情况常常是纯 UTF-8 的 `u_...`。NapCat 靠
-    「以 0a 开头就当 protobuf」来猜，这里改成按结构判断：能解出合法 uid 就用，否则按字符串读。
+    这个字段**不是**稳定的字符串。2026-11-24 的实抓里：33 的操作人是纯 UTF-8 的 `u_...`；
+    **34 的操作人全部是内嵌的 protobuf** `GroupChangeInfo {1: {1: operatorUid, 2: 6, 3: <bytes>,
+    4: 0}}`——不只是"自己被踢"（decreaseType 3），131 他人被踢也一样。NapCat 靠「以 0a 开头就当
+    protobuf」来猜，这里改成按结构判断：能解出合法 uid 就用，否则按字符串读。
 
     猜错的后果是操作人变成一串乱码，然后被当成 uid 解析成 0 —— 一个静默的错账号。所以两条路
     都要验：protobuf 解出来的 uid 必须以 `u_` 开头，字符串分支必须全是可打印字符。
@@ -512,10 +578,14 @@ class PushEventMapper:
     `user_id` 是 QQ 号，0 不是一个用户。
     """
 
-    def __init__(self, resolve_uin, *, self_uin: str = "", now=None) -> None:
+    def __init__(self, resolve_uin, *, self_uin: str = "", now=None,
+                 self_joins: dict[int, float] | None = None) -> None:
         self._resolve = resolve_uin
         self._self_uin = str(self_uin or "")
         self._now = now
+        #: 群号 -> 本号经 33 入群的时刻。跨帧的状态：调用方每帧新建 mapper 时要传同一个 dict
+        #: 进来，否则 87 的去重不生效（见 `_invite`）。
+        self._self_joins = self_joins if self_joins is not None else {}
 
     def _uin(self, uid: str) -> int:
         if not uid:
@@ -562,6 +632,7 @@ class PushEventMapper:
         handler = {
             TYPE_GROUP_MEMBER_INCREASE: self._member_increase,
             TYPE_GROUP_MEMBER_DECREASE: self._member_decrease,
+            TYPE_GROUP_SELF_JOINED: self._self_joined,
             TYPE_GROUP_ADMIN: self._admin,
             TYPE_GROUP_JOIN_NOTIFICATION: self._group_join,
             TYPE_GROUP_INVITE: self._invite,
@@ -583,14 +654,45 @@ class PushEventMapper:
         member = self._uin(change.member_uid)
         if not change.group_uin or not member:
             return None
+        if self._self_uin and str(member) == self._self_uin:
+            # 记下来给紧随其后的 87 余波去重（见 `_invite`）；33 与 85 都会走到这个状态。
+            self._self_joins[change.group_uin] = float(self._time())
         event = self._notice("group_increase")
         event.update({
             "group_id": change.group_uin,
             "user_id": member,
             "operator_id": self._uin(decode_operator(change.operator_raw)),
             # 131 是"被邀请"，其余按"申请通过"。两个值来自 Lagrange 的 Processor 与 NapCat 的
-            # groupChangDecreseType2String —— 两份实现给的是同一个数。
+            # groupChangDecreseType2String —— 两份实现给的是同一个数。2026-11-24 实抓两种都出现
+            # （131 群主直接拉人、130 批准入群申请）。
             "sub_type": "invite" if change.change_type == CHANGE_TYPE_INVITED else "approve",
+        })
+        return event
+
+    def _self_joined(self, frame: Frame) -> dict[str, Any] | None:
+        """85 = 本号进群（`SelfJoinInGroup`）。
+
+        2026-11-24 实抓：`{1 群, 2=1, 3 审批人 uid, 4=0, 5 bytes, 6=0}`，发生在管理员批准
+        入群申请 / 接受邀请之后 —— 这条路径 **33 不发**（SnowLuma 的
+        `PkgType.GroupSelfJoinedNotice` 注释同样这么写；Lagrange 的 `SelfJoinInGroup` 字段表
+        `{1 groupUin, 2, 3 operatorUid, 4, 6, 7}` 与实抓一致）。不接它，客户端要等到本号收到
+        第一条群消息才知道自己已经进群。
+
+        `sub_type` 用 `approve`：85 没有 33 那种 130/131 的区分，参考实现也都落到"批准"。
+        同时记一条 self_join 供紧随其后的 87 余波去重（实抓里 85 之后没有 87，但 33/85 共用
+        同一套"本号刚入群"状态）。
+        """
+        fields = decode_fields(frame.body)
+        group_uin = _int(fields, 1)
+        if not group_uin or not self._self_uin.isdigit():
+            return None
+        self._self_joins[group_uin] = float(self._time())
+        event = self._notice("group_increase")
+        event.update({
+            "group_id": group_uin,
+            "user_id": int(self._self_uin),
+            "operator_id": self._uin(_text(fields, 3)),
+            "sub_type": "approve",
         })
         return event
 
@@ -599,19 +701,32 @@ class PushEventMapper:
         member = self._uin(change.member_uid)
         if not change.group_uin or not member:
             return None
-        # 130 是自己退的，131 是被踢的。3 表示"自己被踢"这个更早的编码，NapCat 与 Lagrange 都
-        # 按 kick 处理，只是操作人要额外从 protobuf 里解（见 decode_operator）。
-        if change.change_type == CHANGE_TYPE_LEFT:
+        # 取值表见 CHANGE_TYPE_* 的注释。退群（2/130）没有独立的操作人：operatorInfo 里放的是
+        # 结构化的元数据而不是 uid，OneBot 的惯例是把退群者本人当操作人（SnowLuma 同样处理）。
+        kind = change.change_type
+        if member and str(member) == self._self_uin:
+            self._self_joins.pop(change.group_uin, None)
+        if kind in (CHANGE_TYPE_DISSOLVED_BY_OWNER, CHANGE_TYPE_DISBANDED):
+            # 1 = 群主自己解散（2026-11-24 实抓：member 与 operator 都是本号）；129 = 参考实现里
+            # 的"群解散"，应是非群主成员侧收到的值。两者都发 `group_disband`，与灰条通道
+            # （headless_notices.cjs 的 DISBANDED）一致，Milky 侧才会都落到 group_disband。
+            event = self._notice("group_disband")
+            event.update({
+                "group_id": change.group_uin,
+                "operator_id": self._uin(decode_operator(change.operator_raw)),
+            })
+            return event
+        if kind in (CHANGE_TYPE_LEFT, CHANGE_TYPE_SELF_LEFT):
             sub_type = "leave"
-        elif change.change_type == CHANGE_TYPE_SELF_REMOVED:
-            sub_type = "kick_me"
+            operator = member
         else:
-            sub_type = "kick"
+            sub_type = "kick_me" if kind == CHANGE_TYPE_SELF_REMOVED else "kick"
+            operator = self._uin(decode_operator(change.operator_raw))
         event = self._notice("group_decrease")
         event.update({
             "group_id": change.group_uin,
             "user_id": member,
-            "operator_id": self._uin(decode_operator(change.operator_raw)),
+            "operator_id": operator,
             "sub_type": sub_type,
         })
         return event
@@ -642,6 +757,13 @@ class PushEventMapper:
     def _invite(self, frame: Frame) -> dict[str, Any] | None:
         invite = decode_group_invite(frame.body)
         if not invite.group_uin:
+            return None
+        # 87 不只在"需要本号同意的邀请"时出现：实抓里群主直接把本号拉进群，先到 33（本号入群），
+        # 429 ms 后再到一条同群的 87。那时已经在群里了，再发一条 invite 请求，客户端去审批只会
+        # 失败。NapCat 靠"1 秒内收到邀请人发来的 ark 卡片"确认是真邀请，这里没有那条消息，就反过
+        # 来判断：本号刚经 33/85 进了这个群，这条 87 就是余波。
+        joined_at = self._self_joins.get(invite.group_uin)
+        if joined_at is not None and self._time() - joined_at <= SELF_JOIN_INVITE_WINDOW:
             return None
         # NapCat 把 87 当作"他人邀请自身入群"，sub_type 是 invite —— 与 84 的"申请入群"相对。
         return self._group_request(invite.group_uin, invite.inviter_uid, "", sub_type="invite")

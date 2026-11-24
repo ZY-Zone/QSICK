@@ -322,6 +322,8 @@ class Runtime:
         self.events_seen = 0
         self.events_dropped = 0
         self.events_duplicate = 0
+        #: 账号 -> {群号: 本号经包推送入群的时刻}。见 `feed_packet`。
+        self._olpush_self_joins: dict[str, dict[int, float]] = {}
         self.deduper = EventDeduper(self.config.onebot.dedupe_seconds, self.config.onebot.dedupe_max)
         self.cache = TTLCache()
         self._send_locks: dict[tuple[str, str], asyncio.Lock] = {}
@@ -1895,13 +1897,24 @@ class Runtime:
         `account` 决定用哪个号的 uid 映射表；不传就用该实例的登录号。解不出来的事件直接丢弃，
         不做补全 —— 见 `olpush.PushEventMapper`。
         """
-        from .olpush import PushEventMapper
+        from .olpush import PushEventMapper, frame_identity
 
         owner = str(account or "").strip()
         if not owner and instance:
             state = self._logins.get(str(instance))
             owner = str(getattr(state, "uin", "") or "")
-        mapper = PushEventMapper(self._resolve_uid, self_uin=owner, now=self.now)
+        # 每帧的 ResponseHead 都带着本号与来源身份（字段 5/6 = 本号 uin/uid，1/2 = 来源）。
+        # 先用它把 uid->uin 表补热：33/85 这类"主体是本号"的事件在 fresh login 时若解析不出 uin
+        # 会被整条丢弃，紧随其后的 87 余波还会被误报成一条待审批的入群邀请。群事件里字段 1/2
+        # 是群号，`frame_identity` 已按 `u_` 前缀把非用户 uid 挡掉。
+        identity = frame_identity(data)
+        if identity.get("self_uid") and identity.get("self_uin"):
+            self.note_uid(identity["self_uid"], identity["self_uin"])
+        if identity.get("from_uid") and identity.get("from_uin"):
+            self.note_uid(identity["from_uid"], identity["from_uin"])
+        # 33 -> 87 的去重要跨帧记住"本号刚进了哪个群"，按账号分开存，两个号的入群互不干扰。
+        joins = self._olpush_self_joins.setdefault(owner, {})
+        mapper = PushEventMapper(self._resolve_uid, self_uin=owner, now=self.now, self_joins=joins)
         published = 0
         for event in mapper.map_bytes(data):
             item = await self.plugins.dispatch_event(event)

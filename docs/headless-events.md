@@ -56,31 +56,64 @@ QQ NT 有三条推送路径，前两条已接，第三条已解码但未接线�
 
 ### 通道 C：OLPush 包推送（已解码，未接线）
 
-被踢出群、别人入群、管理员任免、好友申请、入群申请只从
+被踢出群、别人入群、本号进群、管理员任免、好友申请、入群申请只从
 `trpc.msg.olpush.OlPushService.MsgPush` 出来，按 `contentHead.type` 分派。
 
-**解码器已完整实现并测试**（`src/qsick/olpush.py` + `tests/test_olpush.py`，32 项），字段号来自
-两份独立实现的交叉验证：
+**解码器已完整实现并测试**（`src/qsick/olpush.py` + `tests/test_olpush.py`：合成帧 + 实抓帧），
+字段号来自三份独立实现与实抓的交叉验证：
 
 | 来源 | 提供什么 |
 | --- | --- |
-| NapCat `packages/napcat-core/packet/transformer/proto/message/{message,groupAdmin,notify}.ts` | `PushMsgBody`、`ContentHead`、`GroupChange`、`GroupAdmin`、`GroupInvite` 的字段号与类型 |
-| Lagrange `Internal/Packets/Notify/*.cs` | 同一批结构的 `[ProtoMember(n)]`，以及 `FriendRequest`、`GroupJoin`、`Event0x20D`、`GroupReaction`、`NotifyMessageBody` |
-| Lagrange `Internal/Logic/PushLogic.cs` | `MsgType` 枚举：type 与事件的对应关系 |
+| NapCat `packages/napcat-core/packet/transformer/proto/message/{message,groupAdmin,notify}.ts` | `PushMsgBody`、`ContentHead`、`ResponseHead`、`GroupChange`、`GroupAdmin`、`GroupInvite` 的字段号与类型 |
+| Lagrange `Internal/Packets/Notify/*.cs` | 同一批结构的 `[ProtoMember(n)]`，以及 `FriendRequest`、`GroupJoin`、`SelfJoinInGroup`、`Event0x20D`、`GroupReaction`、`NotifyMessageBody` 的定义 |
+| SnowLuma `packages/proto-defs/src/notify.ts`、`protocol/src/msg-push/enums.ts` | `GroupChange`/`GroupAdmin`/`GroupJoin`/`SelfJoinInGroup` 的类型化 schema，`PkgType`（85 = 本号进群）与 `Event0x210/0x2DC` 的子类型表 |
 
-两者对 `GroupChange` 完全一致（1 群号、2 flag、3 成员 uid、4 类型、5 操作人），这是照着实现的
-依据。
+三者对 `GroupChange` 完全一致（1 群号、2 flag、3 成员 uid、4 decreaseType、5 operatorInfo bytes、
+6 increaseType、7 其它），这是照着实现的依据。
+
+2026-11-24 用 QQ 9.9.33-52230 实抓了 39 帧（23:37:30–23:42:14），把 33/34/44/84/85/87 的字段号
+与语义复核了一遍，其中三处改写了原来的认知：
+
+- **34 的 `operatorInfo` 全部是内嵌 protobuf** `{1: {1: operatorUid, 2: 6, 3: bytes, 4: 0}}`，
+  包括 131 他人被踢；33 的 `operatorInfo` 是纯 uid 字符串；
+- **群主自己解散群**时收到的是 34 / `decreaseType` **1**（成员与操作人都是本号）；参考实现里
+  129 才是群解散，那应是非群主成员侧收到的值；
+- **本号经管理员批准 / 接受邀请入群**时发的是 **85（`SelfJoinInGroup`）**，33 不发；不接 85 就
+  会漏掉"本号进群"。
+
+群主直接拉本号进群时，33 之后 **429 ms** 会跟一条同群的 87。那条不是待审批的邀请，本号入群后
+30 秒内同群的 87 会被丢弃（`SELF_JOIN_INVITE_WINDOW`，33 与 85 共用这个状态）。
+
+`decreaseType 2`（本号自己退群、operatorInfo 为空 `{2: {1: 0}}`）来自 2026-11-22 的上一轮抓包，
+但那份文件已丢失、本轮 39 帧没有复现，映射保留、结论待复核。
 
 | `contentHead.type` | subType | 事件 |
 | ---: | ---: | --- |
 | 33 | — | `group_increase`（130 批准 / 131 邀请） |
-| 34 | — | `group_decrease`（130 退群 / 131 被踢 / 3 自己被踢） |
-| 44 | — | `group_admin`（`extraEnable` = 任命，`extraDisable` = 撤职） |
+| 34 | — | `group_decrease`（2 本号退群（待复核）/ 3 本号被踢 / 130 他人退群 / 131 他人被踢）；1 群主解散、129 群解散 → `group_disband` |
+| 44 | — | `group_admin`（`extraEnable` = 任命，`extraDisable` = 撤职）；body 的 3 号分支（群主转让）静默忽略 |
 | 84 | — | `request.group`（入群申请） |
+| 85 | — | `group_increase`（本号进群，`SelfJoinInGroup`，`sub_type=approve`） |
 | 87 / 525 | 87 | `request.group`，`sub_type=invite` |
 | 528 | 35 | `request.friend` |
 | 732 | 20 + 内层 19 | `notify(poke)`，带文案与表情图 |
 | 732 | 16 + 内层 35 | `group_msg_emoji_like` |
+
+#### 实抓字段速查（2026-11-24，QQ 9.9.33-52230）
+
+| 类型 | 结构 |
+| ---: | --- |
+| 33 | `GroupChange{1 群, 2 flag, 3 成员 uid, 4 increaseType（130 批准/131 邀请）, 5 操作人 uid（纯字符串）, 6 increaseType, 7 bytes, 8}` |
+| 34 | `GroupChange{1 群, 2 flag, 3 成员 uid, 4 decreaseType（1/2/3/129/130/131）, 5 操作人 GroupChangeInfo（内嵌 `{1:{1:uid,2:6,3:bytes,4:0}}`）}` |
+| 44 | `{1 群, 2 flag, 3 1/0（群主转让时为 255）, 4 body{1 extraDisable, 2 extraEnable}{1 adminUid, 2 1/0}, 3 群主转让{1 旧群主 uid, 2 新群主 uid}}` |
+| 84 | `GroupJoin{1 群, 2=1, 3 申请人 uid, 4=30（参考实现未命名）, 5 附言, 6, 8}`；只用到 1/3/5 |
+| 85 | `SelfJoinInGroup{1 群, 2=1, 3 审批人 uid, 4=0, 5 bytes, 6=0}` |
+| 87 | 扁平 `GroupInvite{1 群, 2=1, 3=4, 4=0, 5 邀请人 uid, 6 hashes}`；84/87 另有包一层 `{1: body}` 的 Lagrange 形态，解码器两种都认 |
+
+44 的 `body.3`（群主转让）在 OneBot v11 里没有对应事件，解码器不产出事件——这是有意忽略，
+不是漏解。`ResponseHead` 的 5/6 号是本号 uin/uid（每帧都有），1/2 号是来源（消息里是发送者，
+群事件里是群号）；`feed_packet` 先用 5/6 把 uid→uin 表补热，避免 fresh login 时本号事件被丢、
+87 余波被误报成邀请。
 
 **没接线的原因**：拿帧需要 QQ 侧的包钩子。`native/inithook` 确实钩了 send/recv，但只观察、
 不把字节交出来；`native/qsick-payload` 的 `Capture` 有个通用的 `trace.call`，需要用环境变量
@@ -110,9 +143,12 @@ QQ NT 有三条推送路径，前两条已接，第三条已解码但未接线�
 
 ## 怎么验证
 
-- `tests/test_headless_notices.py`（33 项）：按上表的字段构造报文，跑**真实提取器**（Node）。
-- `tests/test_olpush.py`（32 项）：按字段号手写编码，跑**真实解码器**与事件映射。
+- `tests/test_headless_notices.py`：按上表构造报文，跑**真实提取器**（Node）。
+- `tests/test_olpush.py`：合成帧 + `TestCapturedShapes`（按 2026-11-24 实抓帧形状写成，抓包文件
+  本身不入库），跑**真实解码器**与事件映射；`TestFeedPacketIdentity` 覆盖"帧头先补热 uid→uin
+  表"（否则 fresh login 时本号入群事件会被丢、87 余波会被误报成邀请）。
 - `tests/test_protocol_milky.py`：验证到 Milky 事件的字段名与规范一致。
 
-这三组是**形状**测试：证明"字段这么放会得到这个事件"，证明不了"QQ 一定这么放"。补上真实抓包
-后应当加一组回归用例；在那之前，任何关于"这个事件一定能收到"的说法都超出了现有证据。
+这些证明"字段这么放会得到这个事件"；实抓回归只覆盖抓到的那几种形状。没抓到的情况（例如
+decreaseType 2、非群主视角的 129、真·邀请入群的 87）仍只有参考实现作依据，不能对外宣称
+"一定能收到"。
