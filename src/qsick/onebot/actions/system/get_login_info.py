@@ -22,6 +22,12 @@ from qsick.protocol import elements as E
 
 
 async def _handle(ctx: Any, **_: Any) -> dict[str, Any]:
+    # Answer for the account this request pins, not for whichever one the runtime calls primary.
+    # `ctx.login` is a runtime-wide view, so with two accounts live it reported the other account's
+    # uin and nickname while the request body said which account it meant.
+    state = ctx.login_state_for() if hasattr(ctx, "login_state_for") else None
+    if state is not None and state.logged_in and state.uin and state.uin != "0":
+        return {"user_id": int(state.uin), "nickname": str(state.nickname or "")}
     if ctx.login.logged_in and ctx.login.uin and ctx.login.uin != "0":
         return {"user_id": ctx.self_id, "nickname": ctx.login.nickname}
     # Cold start (or a payload that has not pushed LOGIN yet): ask the payload.

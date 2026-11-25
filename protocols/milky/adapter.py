@@ -108,23 +108,33 @@ class MilkyProtocol(ChatProtocol):
         return {"action": api or action, "params": body}
 
     def _to_internal_segments(self, segments: list[Any]) -> list[Any]:
-        """Milky 段 -> 内部部件；已经是 OneBot 段的原样放过。
+        """Milky 段 -> 内部动作层实际消费的段形状（即 OneBot v11 的 `{type, data}`）。
 
-        内部动作层同时接受"内部部件"和"已成形段"（见 `onebotv11/adapter.py` 的
-        `_looks_like_parts`）。Milky 的段是 `{type, ...}` 平铺，不带 `data`，所以必须转；
-        已经是 `{type, data}` 的（比如内部调用方直接给的）不转。
+        Milky 的段是 `{type, ...}` 平铺，内部动作层却是按 v11 段解析的
+        （`onebot/actions/base.py` 的 `message_to_elements` → `elements.from_onebot`）。
+        以前这里把 Milky 段转成"内部部件"（`{kind, ...}`）就交出去了，结果每一个按规范发
+        消息的客户端都拿到 `-400 unsupported message segment type None`：`from_onebot` 读
+        `segment["type"]` 得到 None。离线测试用的是 v11 形状，所以没测出来。
+
+        v11 适配器在发送时也是把部件 encode 成 v11 段再交给 registry（`encode_message`），
+        这里做同一件事：先用本协议的 codec 解成部件，再用 v11 的 codec 编成段。跨协议的这
+        一层 import 是实话：内部动作层的线格式就是 v11 段，任何协议都得交这个形状。
         """
+        from ..onebotv11.codec import part_to_segment as to_onebot
+
         parts: list[Any] = []
         for segment in segments:
             if not isinstance(segment, dict):
                 continue
-            if "kind" in segment:
+            # A v11 segment's `data` is an object. Milky's `light_app` and `xml` segments also
+            # have a field called `data`, but theirs is a string -- checking the type keeps
+            # those from being mistaken for an already-encoded v11 segment and passed through
+            # unread, which made them arrive as `unknown`.
+            if isinstance(segment.get("data"), dict) and "type" in segment:
                 parts.append(segment)
                 continue
-            if "data" in segment and "type" in segment:
-                parts.append(segment)
-                continue
-            parts.append(codec.segment_to_part(segment))
+            part = segment if "kind" in segment else codec.segment_to_part(segment)
+            parts.append(to_onebot(part))
         return parts
 
     # ------------------------------------------------------------- 事件推送
@@ -137,6 +147,20 @@ class MilkyProtocol(ChatProtocol):
                 + (f" notice_type={event.get('notice_type')!r}" if event.get("notice_type") else "")
             )
         return converted
+
+    def encode_events(self, event: dict[str, Any]) -> list[dict[str, Any]]:
+        """One internal event -> the Milky events it corresponds to.
+
+        A private message carrying a file is two events, not one: the message itself, and
+        `friend_file_upload`. The spec gives the upload its own `event_type` with `user_id`,
+        `file_id`, `file_name`, `file_size`, `file_hash` and `is_self`, and there is no
+        v11 notice for a friend's file -- the only source is the message that delivered it.
+        So it is derived here rather than invented upstream, which would put a non-v11 notice
+        on every OneBot client.
+        """
+        primary = self.encode_event(event)
+        derived = events.friend_file_upload(event)
+        return [primary, derived] if derived is not None else [primary]
 
     # ------------------------------------------------------------- 应答信封
 

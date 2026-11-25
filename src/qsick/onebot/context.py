@@ -35,10 +35,42 @@ class ActionContext:
 
     @property
     def self_id(self) -> int:
+        """The uin this request is about.
+
+        The request's own `account` wins. `login` is a runtime-wide view ("at least one instance is
+        logged in"), so with two accounts live it answers with whichever one the runtime considers
+        primary -- `get_login_info` then reported the other account's uin while the profile and the
+        request body both pinned this one. Falls back to the view for callers that pass no account
+        and for anything that is not a uin (an instance name), which is why the conversion is guarded.
+        """
+        account = str(self.account or "").strip()
+        if account.isdigit() and account != "0":
+            return int(account)
         try:
             return int(self.login.uin)
         except (TypeError, ValueError):
             return 0
+
+    def login_state_for(self, account: str = "") -> Any:
+        """This request's account's login state, or None when it cannot be resolved.
+
+        `login` answers for the runtime as a whole; per-account facts (nickname in particular) live
+        in the runtime's login map, which is keyed by instance id for headless instances and by uin
+        for pipe sessions -- so this matches on the stored uin instead of assuming either key.
+        """
+        wanted = str(account or self.account or "").strip()
+        if not wanted:
+            return None
+        logins = getattr(self.runtime, "_logins", None)
+        if not isinstance(logins, dict):
+            return None
+        direct = logins.get(wanted)
+        if direct is not None:
+            return direct
+        for state in logins.values():
+            if str(getattr(state, "uin", "")) == wanted:
+                return state
+        return None
 
     @property
     def protocol(self) -> str:

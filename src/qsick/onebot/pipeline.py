@@ -125,17 +125,40 @@ class ProtocolPipelines:
 
     def encode_event(self, protocol_id: str, event: dict[str, Any]) -> dict[str, Any] | None:
         """把内部事件翻译成某协议的事件。失败返回 ``None`` 并记下原因。"""
+        encoded = self.encode_events(protocol_id, event)
+        return encoded[0] if encoded else None
+
+    def encode_events(self, protocol_id: str, event: dict[str, Any]) -> list[dict[str, Any]]:
+        """一个内部事件 -> 该协议的若干事件（通常只有一条）。
+
+        A protocol can genuinely need more than one wire event for one internal event. Milky is
+        the case that forced this: a private message carrying a file is both `message_receive`
+        and `friend_file_upload`, and the spec defines the latter as its own event rather than a
+        field of the message. Encoding once and delivering the list preserves the "encode once
+        per protocol" rule that stops two consumers of one protocol from receiving different JSON.
+
+        Adapters that need only one event expose no `encode_events`; their `encode_event` result
+        is normalized here, so both shapes work.
+        """
         try:
             adapter = self.protocol(protocol_id)
-            encoded = adapter.encode_event(event)
+            hook = getattr(adapter, "encode_events", None)
+            produced = hook(event) if callable(hook) else adapter.encode_event(event)
         except Exception as exc:  # noqa: BLE001 - 一个协议失败只影响它自己
             self._note_error(protocol_id, exc)
-            return None
-        if not isinstance(encoded, dict):
-            self._note_error(protocol_id, TypeError(f"encode_event 返回 {type(encoded).__name__}"))
-            return None
+            return []
+        if isinstance(produced, dict):
+            produced = [produced]
+        if not isinstance(produced, (list, tuple)):
+            self._note_error(protocol_id, TypeError(f"encode_event 返回 {type(produced).__name__}"))
+            return []
+        frames = [item for item in produced if isinstance(item, dict)]
+        if not frames:
+            # Nothing usable: keep the reason rather than reporting success with an empty list.
+            self._note_error(protocol_id, TypeError("encode returned no event object"))
+            return []
         self._errors.pop(str(protocol_id or ""), None)
-        return encoded
+        return frames
 
     def format_reply(self, protocol_id: str, result: dict[str, Any], echo: Any = None) -> dict[str, Any]:
         """把内部动作结果包成某协议的应答信封。"""

@@ -191,8 +191,9 @@ class TestTheHubEncodesPerConnection:
 
         frames = hub._encode_by_protocol({"post_type": "message", "self_id": "1"})
         assert set(frames) == {"onebotv11", "flat"}
-        assert json.loads(frames["flat"])["wrapped"] is True
-        assert json.loads(frames["onebotv11"])["post_type"] == "message"
+        # Each protocol yields a list: one internal event can be several wire events for it.
+        assert json.loads(frames["flat"][0])["wrapped"] is True
+        assert json.loads(frames["onebotv11"][0])["post_type"] == "message"
 
     def test_a_failing_protocol_does_not_block_the_others(self):
         pipelines = ProtocolPipelines()

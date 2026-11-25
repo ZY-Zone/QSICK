@@ -139,7 +139,7 @@ class ReverseWebSocketClient:
         self_sent = is_self_sent_to_others(payload)
         # Encoded once per protocol, not once per connection: N consumers of the same protocol must not be able to
         # receive different JSON for one event.
-        frames: dict[str, str | None] = {}
+        frames: dict[str, list[str]] = {}
         for (url, owner), queue in list(self._queues.items()):
             if wanted and owner and owner != wanted:
                 continue
@@ -148,31 +148,35 @@ class ReverseWebSocketClient:
             protocol = self._protocols.get((url, owner), "")
             if protocol not in frames:
                 frames[protocol] = self._encode(protocol, payload)
-            text = frames[protocol]
-            if text is None:
+            texts = frames[protocol]
+            if not texts:
                 continue          # this protocol could not encode the event; skip its connections only
-            try:
-                queue.put_nowait(text)
-            except asyncio.QueueFull:
+            for text in texts:
                 try:
-                    queue.get_nowait()
                     queue.put_nowait(text)
-                except (asyncio.QueueEmpty, asyncio.QueueFull):
-                    log.debug("reverse ws event dropped: queue full")
+                except asyncio.QueueFull:
+                    try:
+                        queue.get_nowait()
+                        queue.put_nowait(text)
+                    except (asyncio.QueueEmpty, asyncio.QueueFull):
+                        log.debug("reverse ws event dropped: queue full")
 
-    def _encode(self, protocol: str, payload: dict[str, Any]) -> str | None:
-        """Serialize one event for one protocol. `None` means "this protocol cannot express it"."""
+    def _encode(self, protocol: str, payload: dict[str, Any]) -> list[str]:
+        """Serialize one event for one protocol. Empty means "this protocol cannot express it"."""
         pipelines = getattr(self.runtime, "pipelines", None)
-        encoded: Any = payload
-        if pipelines is not None:
-            encoded = pipelines.encode_event(protocol, payload)
-            if encoded is None:
-                return None
-        try:
-            return json.dumps(encoded, ensure_ascii=False)
-        except (TypeError, ValueError) as exc:
-            log.warn("reverse ws event not serializable", protocol=protocol, error=str(exc))
-            return None
+        if pipelines is None:
+            encoded: list[dict[str, Any]] = [payload]
+        else:
+            encoded = pipelines.encode_events(protocol, payload)
+            if not encoded:
+                return []
+        texts: list[str] = []
+        for item in encoded:
+            try:
+                texts.append(json.dumps(item, ensure_ascii=False))
+            except (TypeError, ValueError) as exc:
+                log.warn("reverse ws event not serializable", protocol=protocol, error=str(exc))
+        return texts
 
     async def _run_all(self) -> None:
         await asyncio.gather(*(self._run_one(url, account) for url, account, *_ in self.targets))

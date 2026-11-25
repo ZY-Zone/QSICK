@@ -132,7 +132,8 @@ class TestTheEventRoute:
         assert "milky" in frames
         import json
 
-        assert json.loads(frames["milky"])["event_type"] == "message_receive"
+        # One protocol maps to a list of frames: one internal event can be several wire events.
+        assert json.loads(frames["milky"][0])["event_type"] == "message_receive"
 
 
 class TestTheV11RouteIsUntouched:

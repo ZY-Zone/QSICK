@@ -148,12 +148,13 @@ class EventHub:
 
         dead: list[WebSocket] = []
         for ws, connection in list(self._websockets.items()):
-            text = frames.get(getattr(connection, "protocol", ""))
-            if text is None:
+            texts = frames.get(getattr(connection, "protocol", ""))
+            if not texts:
                 continue          # this protocol failed to encode; skip its clients only
             try:
                 if ws.client_state is WebSocketState.CONNECTED:
-                    await asyncio.wait_for(ws.send_text(text), timeout=5.0)
+                    for text in texts:
+                        await asyncio.wait_for(ws.send_text(text), timeout=5.0)
                 else:
                     dead.append(ws)
             except Exception:  # noqa: BLE001 - one broken client must not stop others
@@ -163,41 +164,46 @@ class EventHub:
             await self.remove_ws(ws)
 
         for queue, connection in list(self._sse.items()):
-            text = frames.get(getattr(connection, "protocol", ""))
-            if text is None:
+            texts = frames.get(getattr(connection, "protocol", ""))
+            if not texts:
                 continue
-            try:
-                queue.put_nowait(text)
-            except asyncio.QueueFull:
-                self.dropped_sse += 1
+            for text in texts:
                 try:
-                    queue.get_nowait()
                     queue.put_nowait(text)
-                except (asyncio.QueueEmpty, asyncio.QueueFull):
-                    pass
+                except asyncio.QueueFull:
+                    self.dropped_sse += 1
+                    try:
+                        queue.get_nowait()
+                        queue.put_nowait(text)
+                    except (asyncio.QueueEmpty, asyncio.QueueFull):
+                        pass
 
-    def _encode_by_protocol(self, payload: dict[str, Any]) -> dict[str, str]:
-        """`protocol -> serialized frame`, encoded once per protocol.
+    def _encode_by_protocol(self, payload: dict[str, Any]) -> dict[str, list[str]]:
+        """`protocol -> serialized frames`, encoded once per protocol.
 
         A protocol whose encoder raises is simply absent from the result: its clients get nothing for this event,
-        every other protocol still gets it.
+        every other protocol still gets it. A list rather than a single string because one internal event can
+        legitimately become several wire events (Milky: a private file message is `message_receive` plus
+        `friend_file_upload`).
         """
         if self.pipelines is None:
-            return {"": json.dumps(payload, ensure_ascii=False)}
+            return {"": [json.dumps(payload, ensure_ascii=False)]}
 
         wanted: set[str] = set()
         for connection in list(self._websockets.values()) + list(self._sse.values()):
             wanted.add(getattr(connection, "protocol", "") or "")
 
-        frames: dict[str, str] = {}
+        frames: dict[str, list[str]] = {}
         for protocol in wanted:
-            encoded = self.pipelines.encode_event(protocol, payload)
-            if encoded is None:
-                continue
-            try:
-                frames[protocol] = json.dumps(encoded, ensure_ascii=False)
-            except (TypeError, ValueError):
-                continue
+            encoded = self.pipelines.encode_events(protocol, payload)
+            texts: list[str] = []
+            for item in encoded:
+                try:
+                    texts.append(json.dumps(item, ensure_ascii=False))
+                except (TypeError, ValueError):
+                    continue
+            if texts:
+                frames[protocol] = texts
         return frames
 
 

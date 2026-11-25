@@ -90,6 +90,47 @@ def convert(event: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def friend_file_upload(event: dict[str, Any]) -> dict[str, Any] | None:
+    """A private message carrying a file, reported as Milky's `friend_file_upload`.
+
+    The spec defines this as its own event, but QQ NT only reports a friend's file as a file
+    element inside the message that delivered it -- there is no separate notice. So it is derived
+    from that message instead of being invented: nothing is emitted when no file element is present,
+    when the scene is not a friend chat, or when the element lacks the IDs the spec requires.
+
+    `file_hash` is the file's TriSHA1. When the client did not report one the field is an empty
+    string rather than a substitute: an MD5 in a field the consumer reads as TriSHA1 is a wrong
+    value, and a wrong value is worse than a visibly absent one.
+    """
+    if str(event.get("post_type") or "") not in ("message", "message_sent"):
+        return None
+    if _message_scene(event) != "friend":
+        return None
+    segments = event.get("message")
+    if not isinstance(segments, list):
+        return None
+    for segment in segments:
+        if not isinstance(segment, dict) or str(segment.get("type") or "") != "file":
+            continue
+        data = segment.get("data") if isinstance(segment.get("data"), dict) else {}
+        file_id = str(data.get("file_id") or data.get("file") or "")
+        file_name = str(data.get("file_name") or data.get("name") or "")
+        if not file_id or not file_name:
+            # Without both IDs the event cannot be acted on; emitting it would only look useful.
+            continue
+        out = _envelope("friend_file_upload", event)
+        out["data"] = {
+            "user_id": _uin_or_zero(event.get("user_id")),
+            "file_id": file_id,
+            "file_name": file_name,
+            "file_size": int(data.get("file_size") or data.get("size") or 0),
+            "file_hash": str(data.get("file_hash") or data.get("sha") or data.get("trisba") or ""),
+            "is_self": str(event.get("post_type") or "") == "message_sent",
+        }
+        return out
+    return None
+
+
 # --------------------------------------------------------------------- 消息
 
 

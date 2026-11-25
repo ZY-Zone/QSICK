@@ -160,16 +160,52 @@ def test_unsupported_scheme_fails_here_instead_of_reaching_the_host(reference):
 
 
 @pytest.mark.parametrize("failure", [TimeoutError("uncertain"), asyncio.CancelledError(), ActionError("upstream timeout")])
-def test_uncertain_upload_retains_source(failure, tmp_path):
+def test_uncertain_upload_retains_source(failure, tmp_path, monkeypatch):
+    """With nothing in the listing, the failure stands and the source is kept."""
+    from qsick.onebot.actions.group_file import upload_group_file as mod
+
+    monkeypatch.setattr(mod, "LOOKUP_ATTEMPTS", 2)
+    monkeypatch.setattr(mod, "LOOKUP_DELAY", 0)
     seen = []
 
     async def call(op, params, *, timeout):
+        if op == "get_group_files":
+            return SimpleNamespace(ok=True, data={"files": []})
         seen.append(Path(params["file_path"]))
         raise failure
 
     with pytest.raises(type(failure)):
         asyncio.run(UploadGroupFileAction().run(SimpleNamespace(account="123", call=call), file_uri="base64://aGVsbG8="))
     assert seen[0].read_bytes() == b"hello"
+
+
+def test_an_upload_that_landed_is_reported_as_success_even_if_the_call_timed_out(monkeypatch):
+    """Measured live: the file was in the group while the call reported a timeout.
+
+    Reporting failure made clients retry, which uploaded the file twice. The listing is the
+    objective signal, so a completed upload is reported with its real ID.
+    """
+    from qsick.onebot.actions.group_file import upload_group_file as mod
+
+    monkeypatch.setattr(mod, "LOOKUP_ATTEMPTS", 3)
+    monkeypatch.setattr(mod, "LOOKUP_DELAY", 0)
+    listings = [
+        {"files": []},
+        {"files": [{"is_folder": False, "file_id": "/f-1", "file_name": "hello.txt"}]},
+    ]
+    calls = []
+
+    async def call(op, params, *, timeout):
+        if op == "get_group_files":
+            calls.append(op)
+            return SimpleNamespace(ok=True, data=listings[min(len(calls) - 1, len(listings) - 1)])
+        raise TimeoutError("group.file.upload timed out; completion is unknown")
+
+    result = asyncio.run(UploadGroupFileAction().run(
+        SimpleNamespace(account="123", call=call), group_id=123,
+        file_uri="base64://aGVsbG8=", name="hello.txt"))
+    assert result == {"file_id": "/f-1"}
+    assert len(calls) >= 2      # the first listing was still empty, the second had the file
 
 
 def test_pending_success_retains_source_for_qq_reader():

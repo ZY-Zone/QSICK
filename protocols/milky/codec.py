@@ -116,6 +116,10 @@ def segment_to_part(segment: Any) -> dict[str, Any]:
                 payload[target] = value
         if segment.get("sub_type") not in (None, ""):
             payload["sub_type"] = _sub_type_to_internal(segment["sub_type"])
+        # The internal send path (OneBot's `_media_in`) reads the file name as `name`; the Milky
+        # spec calls it `file_name`. Carry both so a name sent by a Milky client is not dropped.
+        if payload.get("file_name") and not payload.get("name"):
+            payload["name"] = payload["file_name"]
         return {"kind": _MEDIA_TAGS[tag], **payload}
 
     # 未建模但语义清楚的：原样保留数据和 tag，让上层能看见。

@@ -75,9 +75,24 @@ function basenameOf(value) {
   const parts = cleaned.split(/[\\/]/);
   return parts.length ? parts[parts.length - 1] : '';
 }
+// Some QQNT service calls resolve to a plain object with no integer status. Treating that as a
+// failure made a working call look broken: the kick path reported "Service result is not an integer
+// status" for a kick that had been issued. Callers that can confirm the effect objectively (the
+// member list) read the status from here and let the effect decide.
+function summarizeAck(ack) {
+  if (!object(ack)) return { code: undefined, fields: [] };
+  for (const field of ['result', 'errCode', 'code']) {
+    if (!own(ack, field)) continue;
+    const value = ack[field];
+    if (value === 0 || value === '0') return { code: 0, field, fields: Object.getOwnPropertyNames(ack).slice(0, 12) };
+    if (typeof value === 'number' && Number.isSafeInteger(value)) return { code: value, field, fields: Object.getOwnPropertyNames(ack).slice(0, 12) };
+    if (typeof value === 'string' && /^-?(?:0|[1-9]\d*)$/.test(value)) return { code: Number(value), field, fields: Object.getOwnPropertyNames(ack).slice(0, 12) };
+  }
+  // No usable status: report which fields did arrive, so the next investigation starts with facts.
+  return { code: undefined, fields: Object.getOwnPropertyNames(ack).slice(0, 12) };
+}
 function resultCode(result, field = 'result') {
-  if (!object(result) || !own(result, field)) badResult(`Service response is missing ${field}`);
-  const code = result[field];
+  if (!object(result) || !own(result, field)) badResult(`Service response is missing ${field}`);  const code = result[field];
   if (code === 0 || code === '0') return result;
   if ((typeof code !== 'number' || !Number.isSafeInteger(code)) &&
       (typeof code !== 'string' || !/^-?(?:0|[1-9]\d*)$/.test(code))) {
@@ -714,10 +729,19 @@ function createActionDispatcher(options = {}) {
       kickListUids: [target.uid],
       kickMsg: ''
     });
-    resultCode(ack);
+    // Measured on this build: the ack carries no integer `result` at all -- `resultCode` therefore
+    // reported "Service result is not an integer status" for a kick that had in fact been issued,
+    // which turned a working call into a reported failure. The objective signal is the member
+    // list, so a missing status is not treated as an error: the confirmation poll below decides,
+    // and the raw ack is attached to whatever it decides.
+    const ackStatus = summarizeAck(ack);
+    // Validate the field the status was actually read from. `resultCode(ack)` used to be called with
+    // the default field name, so an ack carrying `errCode` but no `result` still failed with
+    // "Service result is not an integer status" -- the same dead end, one layer down.
+    if (ackStatus.code !== undefined) resultCode(ack, ackStatus.field);
     for (;;) {
       const after = await readTarget();
-      if (!after.length) return {};
+      if (!after.length) return ackStatus.code === undefined ? { ack_fields: ackStatus.fields } : {};
       if (after.length > 1) badResult('Multiple member records match the target UIN');
       if (after[0].uid !== target.uid) badResult('Member identity changed during kick confirmation');
       guard();
@@ -1672,8 +1696,17 @@ function createActionDispatcher(options = {}) {
           }
         }
       }
-      if (ids.size !== 1) {
-        badResult('Folder creation returned no unambiguous folderId; the folder may already exist, inspect group files before retrying');
+      // A creation that the service confirmed but whose response names no folder ID is still a
+      // creation: `resultCode` above would have thrown otherwise. Failing here turned a folder that
+      // now exists into "nothing was created", and a caller that retried made a second one. The ID
+      // is left empty for the action layer to resolve, which checks the listing before and after so
+      // that a pre-existing folder of the same name cannot be mistaken for this one.
+      if (ids.size > 1) {
+        badResult('Folder creation returned several different folderIds; refusing to guess which one is new');
+      }
+      if (ids.size === 0) {
+        return { group_id: Number(groupId), folder_id: '', folder_name: name,
+                 result: response, folder_id_unavailable: true };
       }
       return { group_id: Number(groupId), folder_id: [...ids][0], folder_name: name, result: response };
     }

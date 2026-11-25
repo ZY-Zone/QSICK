@@ -44,13 +44,63 @@ class UploadGroupFileAction(base.PayloadAction):
         # Never use finally here: transport timeouts/cancellation or a payload
         # failure can leave QQ still reading. Retain our file in temp/uploads
         # for explicit cache cleanup when completion cannot be established.
-        result = await base.call(ctx, self.op, payload, self.name or self.op,
-                                 timeout=base.MEDIA_SEND_TIMEOUT)
+        try:
+            result = await base.call(ctx, self.op, payload, self.name or self.op,
+                                     timeout=base.MEDIA_SEND_TIMEOUT)
+        except (ActionError, TimeoutError) as exc:
+            # Measured: the upload completed but the payload call timed out, so the caller was told
+            # "failed" for a file that is now in the group -- and a retry uploaded it twice. The
+            # listing is the objective signal, so look for our file by name before deciding.
+            recovered = await _find_uploaded(ctx, params, source.path.name)
+            if recovered:
+                log.debug("upload confirmed by listing after an uncertain call",
+                          error=f"{type(exc).__name__}: {exc}", file_id=recovered[:40])
+                source.cleanup()
+                return {"file_id": recovered}
+            raise
         # An accepted upload with file_id_pending is not a completed transfer.
         # Keep the source until explicit cache cleanup instead of racing QQ's reader.
         if result.get("file_id") and not result.get("file_id_pending"):
             source.cleanup()
         return result
+
+
+#: How long to keep looking for the uploaded file when the call's own result was uncertain.
+#:
+#: Same measurement as the folder case: an object can take more than 30 s to appear in the group file
+#: listing, so a short window reports a failure for a file that is already there. 60 s matches the
+#: ceiling the operator picked for the folder lookup.
+LOOKUP_ATTEMPTS = 40
+LOOKUP_DELAY = 1.5
+
+
+async def _find_uploaded(ctx: ActionContext, params: dict[str, Any], local_name: str) -> str:
+    """The ID of a file we just uploaded, read back from the group listing."""
+    group_id = params.get("group_id")
+    if group_id is None:
+        return ""
+    folder = str(params.get("parent_folder_id") or "/")
+    wanted = str(params.get("name") or params.get("file_name") or local_name or "")
+    if not wanted:
+        return ""
+    for attempt in range(LOOKUP_ATTEMPTS):
+        if attempt:
+            await asyncio.sleep(LOOKUP_DELAY)
+        try:
+            data = await base.call(ctx, "get_group_files",
+                                   {"group_id": group_id, "parent_folder_id": folder},
+                                   "list group files")
+        except Exception:  # noqa: BLE001 - not visible yet is not a hard error
+            continue
+        for entry in (data.get("files") or []):
+            if not isinstance(entry, dict) or entry.get("is_folder"):
+                continue
+            if str(entry.get("file_name") or "") != wanted:
+                continue
+            file_id = str(entry.get("file_id") or "")
+            if file_id:
+                return file_id
+    return ""
 
 
 def _is_plain_path(reference: Any) -> bool:

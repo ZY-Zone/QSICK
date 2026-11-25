@@ -6,7 +6,44 @@ ambiguous identities fail closed rather than falling back to the primary account
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
 from typing import Any
+
+#: `(account, chat, peer, seq) -> message_id` for messages this process sent.
+#:
+#: A message this account sent is not in the store unless the network profile reports self
+#: messages, and a history query anchored at its seq does not return the anchored message
+#: itself -- so `recall_group_message` for one's own message always ended in -404 even though
+#: the message existed. The send receipt already carries both the seq and the message ID, so
+#: remembering them here resolves that case without changing what the store keeps.
+#:
+#: Bounded and process-local on purpose: it is a short-lived convenience, not a database. After
+#: a restart, recall of an old self-sent message falls back to the store and history as before.
+_SENT_SEQ_LIMIT = 4096
+_sent_seqs: "OrderedDict[tuple[str, str, str, int], int]" = OrderedDict()
+
+
+def remember_sent(account: Any, kind: str, peer: Any, seq: Any, message_id: Any) -> None:
+    """Record a send receipt's (seq, message ID) pair, if both are exact."""
+    try:
+        key = (str(account), str(kind), str(peer), int(seq))
+        mid = int(message_id)
+    except (TypeError, ValueError):
+        return
+    if not all(key[:3]) or key[3] <= 0 or mid <= 0:
+        return
+    _sent_seqs[key] = mid
+    _sent_seqs.move_to_end(key)
+    while len(_sent_seqs) > _SENT_SEQ_LIMIT:
+        _sent_seqs.popitem(last=False)
+
+
+def recall_sent(account: Any, kind: str, peer: Any, seq: Any) -> int | None:
+    """The message ID this process sent under `seq`, if it still remembers it."""
+    try:
+        return _sent_seqs.get((str(account), str(kind), str(peer), int(seq)))
+    except (TypeError, ValueError):
+        return None
 
 
 async def run_milky(runtime: Any, pipelines: Any, api: str, body: dict[str, Any], echo: Any = None) -> dict[str, Any]:
@@ -131,6 +168,17 @@ class MilkyBridge:
         return ("private" if scene == "friend" else "group"), _positive(body.get("peer_id"), "peer_id")
 
     async def _resolve(self, account: str, kind: str, peer: int, seq: int) -> tuple[int, Any]:
+        # A message this process sent: the receipt already told us both values, so there is
+        # nothing to look up. This is the only path that works when the profile does not report
+        # self messages, because then the message never enters the store.
+        sent = recall_sent(account, kind, peer, seq)
+        if sent is not None:
+            primary = getattr(self.runtime, "store", None)
+            cached = primary.get(sent) if primary is not None else None
+            if cached is not None and (str(cached.account) != account or cached.chat_type != kind
+                                       or cached.chat_id != peer or cached.seq != seq):
+                raise BridgeError("message ID cache belongs to a different conversation/account", -409)
+            return sent, cached
         matches = [m for m in await asyncio.to_thread(self._stored, account)
                    if m.chat_type == kind and m.chat_id == peer and m.seq == seq]
         if len(matches) > 1:
@@ -202,13 +250,18 @@ class MilkyBridge:
         if api not in ("send_private_message", "send_group_message") or result.get("status") == "failed":
             return result
         data = result.get("data")
-        if not isinstance(data, dict) or (data.get("message_seq") and data.get("time")):
+        if not isinstance(data, dict):
+            return result
+        kind = "group" if api == "send_group_message" else "private"
+        peer = params.get("group_id" if kind == "group" else "user_id")
+        # Remember the receipt before anything can return early: it is what makes recall of one's
+        # own message work at all (see `remember_sent`).
+        remember_sent(params.get("account"), kind, peer, data.get("message_seq"), data.get("message_id"))
+        if data.get("message_seq") and data.get("time"):
             return result
         mid = data.get("message_id")
         if not mid:
             return result
-        kind = "group" if api == "send_group_message" else "private"
-        peer = params.get("group_id" if kind == "group" else "user_id")
         store = getattr(self.runtime, "store", None)
         cached = store.get(int(mid)) if store is not None else None
         if cached is not None and (str(cached.account) != params["account"] or cached.chat_type != kind or str(cached.chat_id) != str(peer)):
@@ -218,5 +271,6 @@ class MilkyBridge:
         key = "group_id" if kind == "group" else "user_id"
         if reply.get("status") != "failed" and record.get("message_type") == kind and str(record.get(key)) == str(peer) and str(record.get("message_id")) == str(mid):
             if record.get("message_seq") and record.get("time"):
+                remember_sent(params.get("account"), kind, peer, record["message_seq"], mid)
                 return {**result, "data": {**data, "message_seq": record["message_seq"], "time": record["time"]}}
         return result

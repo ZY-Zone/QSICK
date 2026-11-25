@@ -98,10 +98,34 @@ class TestActions:
         assert name == "send_group_msg"
         assert params["group_id"] == 1
 
-    def test_the_message_segments_are_converted_to_internal_parts(self, milky):
+    def test_the_message_segments_are_converted_to_the_shape_the_actions_read(self, milky):
+        """The internal action layer parses v11 segments, so that is what it must be handed.
+
+        This used to assert `{"kind": "text"}` (an internal part). The action layer reads
+        `segment["type"]` and calls `elements.from_onebot`, so a part arrived as
+        `unsupported message segment type None` -- every spec-shaped send failed with -400.
+        Offline tests passed because they used the v11 shape; the live run is what caught it.
+        """
         _, params = milky.decode_action(
             "send_group_message", {"group_id": 1, "message": [{"type": "text", "text": "hi"}]})
-        assert params["message"] == [{"kind": "text", "text": "hi"}]
+        assert params["message"] == [{"type": "text", "data": {"text": "hi"}}]
+
+    def test_the_converted_segment_is_accepted_by_the_element_decoder(self, milky):
+        from qsick.protocol import elements as E
+
+        _, params = milky.decode_action("send_group_message", {
+            "group_id": 1,
+            "message": [
+                {"type": "text", "text": "hi"},
+                {"type": "mention", "user_id": 42},
+                {"type": "image", "resource_id": "uuid-1", "temp_url": "https://x/a.png"},
+                {"type": "file", "file_id": "f1", "file_name": "a.txt"},
+                {"type": "light_app", "data": '{"app":"x"}'},
+            ]})
+        kinds = [E.from_onebot(segment).type for segment in params["message"]]
+        assert kinds == ["text", "at", "image", "file", "json"]
+        # `light_app`/`xml` carry a string `data`, which must not be mistaken for a v11 segment.
+        assert E.from_onebot(params["message"][4]).data["data"] == '{"app":"x"}'
 
     def test_an_unimplemented_api_fails_loudly(self, milky):
         """翻过去会让客户端收到成功、却什么也没发生——比明确的失败更坏。"""
