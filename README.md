@@ -75,6 +75,7 @@ build/                QQNT.dll 垫片的源码与产物（build_qqnt_shim.bat �
 docs/                 架构、协议、实例、payload ABI、插件 API、审计记录
 tools/                动作同步、表情导入、审计生成、冒烟测试
 tests/                pytest 套件 + Node 宿主测试
+sentences/            陶冶情操hh😄
 ```
 
 ## 文档
