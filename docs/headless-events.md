@@ -160,7 +160,11 @@ true/false/true/false。回放不发送网络消息，尚不能据此宣称外�
 - **"某人加入群"（`busiId` 51）**：这条灰条不写是谁。要认出来只能对比前后成员列表，那是异步
   服务调用。发一个猜的账号比不发更糟。
 - **`group_member_decrease` 的"被踢"**：灰条只说自愿退群。同上。
-- **`friend_file_upload`**：没有任何来源。
+- **`friend_file_upload` 没有宿主通知**：QQ NT 不发"好友发来文件"的事件。Milky 把它定义成独立
+  事件，所以由 Milky 适配器从**好友私聊里带文件的消息**派生（`milky/events.friend_file_upload`），
+  在本层之上做，v11 流里不会因此多出一条非 v11 通知。约束：群文件不误报（那是
+  `group_file_upload`）、自己发时 `is_self=true`、缺 `file_id`/`file_name` 不发、`file_hash`
+  是 TriSHA1 拿不到就留空（不拿 MD5 冒充）。单测：`tests/test_milky_friend_file_upload.py`。
 - **`group_card`（群名片变更）**：NapCat 靠"消息里的 `sendMemberName` 与缓存对比"来识别。缓存
   是异步的，第一次见到某人会误报，所以不做。
 
@@ -171,7 +175,10 @@ true/false/true/false。回放不发送网络消息，尚不能据此宣称外�
   本身不入库），跑**真实解码器**与事件映射；`TestFeedPacketIdentity` 覆盖"帧头先补热 uid→uin
   表"（否则 fresh login 时本号入群事件会被丢、87 余波会被误报成邀请）。
 - `tests/test_protocol_milky.py`：验证到 Milky 事件的字段名与规范一致。
+- `tests/test_milky_friend_file_upload.py`：好友文件事件的派生规则，含"群文件不误报""自己发
+  标 is_self""缺 ID 不发""哈希未知不冒充"四类反例。
 
 这些证明"字段这么放会得到这个事件"；实抓回归只覆盖抓到的那几种形状。没抓到的情况（例如
 decreaseType 2、非群主视角的 129、真·邀请入群的 87）仍只有参考实现作依据，不能对外宣称
-"一定能收到"。
+"一定能收到"。21 个 Milky 事件**尚未实机取证**：需要挂 SSE/WS 长连接再重放管理操作，
+方法和进度见 `docs/milky-live-test.md`。

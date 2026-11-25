@@ -11,7 +11,8 @@
     "group.mute": "setMemberShutUp(group,[{uid,timeStamp}]) -> result:0; timeStamp 0 unmutes",
     "group.whole_ban": "setGroupShutUp(group,false) -> result:0",
     "group.admin": "modifyMemberRole(group,uid,3) promotes; role 2 demotes -> result:0",
-    "message.history": "getLatestDbMsgs(peer,20) -> msgList[]; getMsgsBySeqAndCount(peer,seq,count,order,filter) also works"
+    "message.history": "getLatestDbMsgs(peer,20) -> msgList[]; getMsgsBySeqAndCount(peer,seq,count,order,filter) also works",
+    "group.kick": "kickMemberV2({groupCode,kickFlag,kickList:[{optFlag,optOperate,optMemberUid,optBytesMsg}],kickListUids,kickMsg}) -- called and confirmed: member disappears from getAllMemberList. The ack carries NO integer `result` on this build (measured 9.9.33-52230), so `resultCode(ack)` reported 'Service result is not an integer status' for a kick that had been issued; success is decided by the member list instead, and the ack's own field names are recorded for the next look."
   },
   "signature_known": {
     "getMemberInfo": "3 args (group, uid, bool); returns result:5 without a prior scene",
@@ -19,7 +20,6 @@
     "getNextMemberList": "3 args",
     "getBuddyList": "1 arg; returns {result,errMsg} with no data on this account",
     "recallMsg": "2 args (peer, [msgId]) -- verified working",
-    "kickMemberV2": "1 object arg {groupCode,kickFlag,kickList,kickListUids,kickMsg}",
     "quitGroupV2": "not exercised -- destructive against the account's own group",
     "getMsgs": "4 args",
     "getMsgsIncludeSelf": "4 args",

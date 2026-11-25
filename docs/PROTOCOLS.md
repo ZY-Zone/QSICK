@@ -85,9 +85,30 @@ QQ 宿主 ──▶ runtime._dispatch_event ──▶ runtime._publish
 参数映射表不等于完整能力证明：某些注册动作底层仍明确拒绝，某些返回还缺宿主元数据。
 已有能力的交接缺口已补，不能取得的数据仍如实报告限制。
 
-**消息段借道 v11。** 内部事件的 `message` 是 v11 段数组，转 Milky 段时先用
-`protocols/onebotv11/codec.py` 还原成内部部件，再用 `protocols/milky/codec.py` 编码。两条路
+**消息段双向都借道 v11。** 内部事件的 `message` 是 v11 段数组，转 Milky 段时先用
+`protocols/onebotv11/codec.py` 还原成内部部件，再用 `protocols/milky/codec.py` 编码；两条路
 只有一份 v11 解析。
+
+**发送方向也必须交 v11 段**，这不是对称性偏好：内部动作层（`onebot/actions/base.py` 的
+`message_to_elements` → `elements.from_onebot`）就是按 `segment["type"]` 解析的。曾经这里把
+Milky 段转成"内部部件"（`{kind, ...}`）就交给动作层，于是**每一个按规范发消息的 Milky 客户端
+都拿到 `-400 unsupported message segment type None`**——离线测试用的是 v11 形状，所以没测出来，
+是实机才暴露的。现在 Milky 段先用本协议 codec 解成部件、再用 v11 codec 编成段，跨协议的依赖
+写在 `adapter._to_internal_segments` 里并注明了原因。
+
+判"已经是 v11 段"的依据是 `data` 为**对象**，不是"有 `type` 和 `data` 两个键"：Milky 的
+`light_app` 与 `xml` 段恰好也有 `data`，但它是字符串。按键存在判断会让这两类段原样透传，
+最终以 `unknown` 到达客户端。
+
+**一条内部事件可以产出多条协议事件。** `Pipeline.encode_events` 返回列表（适配器只实现
+`encode_event` 也可以，返回值会被归一化），分发点按协议各发一次。这不是为将来预留，而是
+Milky 的现实需要：好友私聊里带文件的消息同时是 `message_receive` 与 `friend_file_upload`
+（规范把文件上传定义成独立事件），而 v11 流里不应因此多出一条非 v11 的通知。
+
+**身份取请求的账号，不取全局主账号。** `ActionContext.self_id` 优先用请求里的 `account`，
+`login_state_for()` 按 **uin** 匹配登录态——headless 实例用实例名做键、pipe 会话用 uin 做键，
+只按其中一种查会漏。此前 `self_id` 恒等于运行时主账号，多账号下 `get_login_info` 会回另一个号
+的 uin，即使请求与网络配置都指定了同一个账号。
 
 ### 端点
 
@@ -128,6 +149,16 @@ QQ 宿主 ──▶ runtime._dispatch_event ──▶ runtime._publish
 不再用名称代替。群文件上传支持本地路径、file URI、HTTP(S) 和 base64，读取有大小/时间上限；
 结果仍 pending 或失败时保留临时源，防止 QQ 尚在读取，不自动重试写操作。
 
+**这两个动作仍有实机未通过的部分**，原因在宿主而不在协议层：`createGroupFolder` 创建成功但
+响应不返回 folderId，`group.file.upload` 可能在文件已上传的情况下超时。两者都改成"事后回查
+文件列表"，然而列表滞后实测为 6.1 s / 16.8 s / **超过 30 s**，无规律可循，所以回查不是可靠的
+取 ID 手段。当前实现用 60 s 窗口并在查不到时明确失败（绝不编 ID），此路仍待换方案——正确方向
+是查清创建响应里 ID 的真实字段名。详见 `docs/milky-live-test.md`。
+
+`kickMemberV2` 的 ack 在本机不带整数 `result`，按状态判会把一次已经发出的踢人报成失败。
+现在 ack 有状态照旧判、无状态则以**成员列表**为准（人还在就是超时失败，不谎报成功），
+并记录 ack 实际到达的字段名。
+
 `DYNAMIC` 中 `get_history_messages` 最典型：Milky 用一个 API 覆盖群/好友/临时三种会话，
 内部按会话分成 `get_group_msg_history` 与 `get_friend_msg_history`，所以目标动作只能在调用时定。
 
@@ -142,12 +173,19 @@ pipe 的原始 OLPush 通道已接到 `runtime.feed_packet`；灰条/群文件�
 Milky 消息事件提供顶层 `group_member` 并保留可识别的 temp 场景；撤回使用真正的 `msg_seq`
 而非消息 ID，无法取得的操作者不冒充发送者。好友请求保留原始 UID。管理员任免方向已修复。
 
-仍有限制：群通知序号/邀请序号尚未可靠取得，请求审批未接；44 包没有可用的操作人字段；
-邀请他人入群请求、好友文件上传和置顶事件未实现。部分实体元数据、撤回操作者及戳一戳文案
-取决于宿主实际提供的信息。灰条与包推送的重叠事件尚无统一跨来源去重，可能重复通知。
+**`friend_file_upload` 已实现**，来源是好友私聊里带文件的消息：QQ NT 没有"好友发来文件"的
+通知，规范却把这件事定义成独立事件，所以它在这一层派生。约束是：群文件不误报（那属于
+`group_file_upload`）、自己发时 `is_self=true`、缺少 `file_id` 或 `file_name` 时干脆不发
+（发出去也没人能用）、`file_hash` 是 TriSHA1，拿不到就留空——同一元素里的 MD5 放进这个字段
+是**错的值**，而错值比明显缺失更糟。
+
+仍然受限：群通知序号/邀请序号尚未可靠取得，请求审批未接；44 包没有可用的操作人字段；
+邀请他人入群请求与置顶事件未实现。部分实体元数据、撤回操作者及戳一戳文案取决于宿主实际
+提供的信息。灰条与包推送的重叠事件尚无统一跨来源去重，可能重复通知。
 因此不能仅凭事件名已有转换器，就宣称完整符合 Milky 字段契约。
 
-完整来源分类见 [docs/headless-events.md](headless-events.md)。
+完整来源分类见 [docs/headless-events.md](headless-events.md)；实机测量怎么做、测到了什么、
+哪些还不可信，见 [docs/milky-live-test.md](milky-live-test.md)。
 
 ## 加一个协议
 
@@ -160,10 +198,19 @@ Milky 消息事件提供顶层 `group_member` 并保留可识别的 temp 场景�
 | `encode_action` | ✅ | 内部动作 → 本协议的请求体 |
 | `capabilities` | ✅ | 能表达什么、要降级什么 |
 | `encode_event` | 有默认 | 内部事件 → 本协议事件（默认恒等，即 v11） |
+| `encode_events` | 可选 | 内部事件 → **若干**本协议事件；不实现时用 `encode_event` 的单个结果 |
 | `decode_action` | 有默认 | 本协议调用名 → 内部动作名（默认恒等） |
 | `format_reply` | 有默认 | 内部结果 → 本协议应答信封（默认恒等） |
 
-后三个有默认实现，所以只做消息格式的适配器不用管它们。
+后四个有默认实现，所以只做消息格式的适配器不用管它们。
+
+`encode_events` 不是为将来预留：一个内部事件确实可能对应多条本协议事件（Milky 的好友文件消息
+同时是 `message_receive` 与 `friend_file_upload`）。返回值是 dict 还是 list 都会被接受，
+所以实现其中一个即可。
+
+**发送方向要交 v11 段**（见上面 "Milky" 一节）：内部动作层按 v11 段解析，把自家段直接丢给它
+会得到 `unsupported message segment type None`。任何新协议都要在 `decode_action` 里把段编成
+v11 形状。
 
 `protocols/onebotv11/` 是最小样板；`protocols/milky/` 是完整的例子（含事件与调用翻译）。
 

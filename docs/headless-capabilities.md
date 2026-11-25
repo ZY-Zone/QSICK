@@ -167,7 +167,7 @@ Python 保持大整数，SQLite 使用 uint64 到有符号主键的可逆映射�
 | group.mute / group.whole_ban | 已验证 UID 映射；原生结果码必须为 0 |
 | group.name / group.remark | 原生结果码必须为 0 |
 | group.card / group.admin | 完整成员列表预读；只写一次；强制回读确认同一 UID 的名片/角色已变更 |
-| group.kick | kickMemberV2 结果码为 0，且目标已从完整成员列表消失；不在列表里就不发踢人 |
+| group.kick | 目标已从完整成员列表消失才算成功；不在列表里就不发踢人。**判据只用成员列表**：本机 `kickMemberV2` 的 ack 没有整数 `result`，按状态判会把已经发出的踢人报成失败 |
 | friend.like | 结果码为 0 且 succCounts 大于 0；为 0 时不谎报成功 |
 | cache.clean | 必须显式给出缓存键；clearCacheDataByKeys 返回结果码为 0 |
 | forward.get | getMultiMsg 结果码为 0 且返回非空消息列表；空转发报 NOT_FOUND |
@@ -202,6 +202,24 @@ native 引用的回复、**图片**和**文件**。私聊必须解析出真实 `
 混合消息含不支持元素时整条拒绝，绝不只发其中的文本。
 
 聊天页对当前无头账号开放私聊文本发送；OneBot/聊天页均要求 UID 缓存可解析且收到 QQ 发送确认，否则明确失败。其他实例不会偷偷落到 C0 代发。
+
+### 群文件与文件夹（实机已暴露两处回执缺口）
+
+`group.file.list` 的根必须是 `'/'`：空 `folderId` 会返回 `retCode 0` 加空列表，看着成功其实什么也没列。
+
+**新建的条目不会立刻出现在列表里。** 三次实测同一操作，"创建 → 列表可见"分别是 6.1 s、16.8 s、
+30 s 以上，无规律。任何"写完之后回查列表确认"的设计都不能假设一个固定上限。
+
+由此有两个还没解决的缺口，都表现为"副作用成功、回执缺失"：
+
+| 动作 | 现象 |
+| --- | --- |
+| `group.folder.create` | 文件夹确实建出来了，但响应里 `folderId` / `resultWithGroupItem.folderId` / `groupItem[].folderInfo.folderId` 全空，拿不到 ID |
+| `group.file.upload` | 可能在文件已经上传成功的情况下超时 |
+
+当前做法是回查列表（创建前先快照目录，避免把同名旧文件夹认成新建的），查不到就明确失败、绝不编 ID；
+但受上面的滞后所限仍不可靠。正确方向是查清创建响应里 ID 的真实字段名
+（`kickMemberV2` 的 ack 形状就是这么查出来的）。细节见 [milky-live-test.md](milky-live-test.md)。
 
 ## 仍明确不支持
 

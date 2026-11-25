@@ -58,8 +58,13 @@
       "transport": "kernel + msg listener",
       "call": "RichMediaService.getGroupFileList + onGroupFileInfoUpdate",
       "root_folder": "/",
-      "note": "An empty folderId returns retCode 0 with an empty list, so root must be '/'.",
-      "status": "working"
+      "note": "An empty folderId returns retCode 0 with an empty list, so root must be '/'. Newly created folders and freshly uploaded files are NOT visible immediately: measured lag 6.1 s, 16.8 s and more than 30 s on three separate creations. Anything that polls this to confirm a write must not assume a fixed bound.",
+      "status": "working",
+      "new_entry_lag_seconds_observed": [
+        6.1,
+        16.8,
+        30
+      ]
     },
     {
       "op": "group.file.count",
@@ -129,7 +134,9 @@
       "op": "group.folder.create",
       "transport": "kernel",
       "call": "RichMediaService.createGroupFolder",
-      "status": "working"
+      "status": "working",
+      "note": "Creates the folder, but the response carries NO folder ID on this build: folderId, resultWithGroupItem.folderId and resultWithGroupItem.groupItem[].folderInfo.folderId are all absent. Do not treat that as failure -- the folder exists. Resolving the ID by name from group.file.list is NOT reliable: the listing lagged 6.1 s, 16.8 s and more than 30 s across three measured creations, so a caller waiting for it times out before the entry appears. Next step is to find the ID's real field name in the raw response.",
+      "response_has_folder_id": false
     },
     {
       "op": "group.folder.delete",
@@ -151,7 +158,8 @@
       "how_it_works": "Creates a group file by sending a FILE message element. The client performs the BDH highway transfer itself, so the ticket, the chunk framing, the retries and the progress reporting all stay inside it. The element needs exactly four fields: { fileName, folderId, filePath, fileSize }. This is the route NapCat's own upload_group_file action takes.",
       "verified": "4 consecutive uploads, each returning a server-assigned file_id, with the group's file count rising 16 -> 20 and returning to 16 after deleting them.",
       "note_on_file_id": "The file id arrives on a message the client reports after the send. It usually arrives in time; when it does not, the op still reports success with file_id_pending, because the upload itself has happened. Treating a missing id as failure once reported roughly one run in three as a timeout even though the file had uploaded.",
-      "why_not_the_hand_built_transfer": "Building the highway transfer directly is possible and was made to work: HttpConn.0x6ff_501 returns a 104-byte sigSession once `ver` is encoded at field 15 *and* the client's BDH config has refreshed, and with that ticket the POST returns errorCode 0 instead of 199. But it still needs a second step to create the group entry, and the client already does the whole job when asked to send a file element. Fewer moving parts, and no credential handling to drift out of date."
+      "why_not_the_hand_built_transfer": "Building the highway transfer directly is possible and was made to work: HttpConn.0x6ff_501 returns a 104-byte sigSession once `ver` is encoded at field 15 *and* the client's BDH config has refreshed, and with that ticket the POST returns errorCode 0 instead of 199. But it still needs a second step to create the group entry, and the client already does the whole job when asked to send a file element. Fewer moving parts, and no credential handling to drift out of date.",
+      "note": "Uploads, but the call can time out while the file is already in the group (measured). Reporting that as a plain failure makes callers retry and upload twice; the listing is the only objective signal and it lags by the same unpredictable amount as folder creation."
     }
   ],
   "napcat_coverage": {
