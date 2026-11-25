@@ -23,7 +23,7 @@ Milky 的调用是 `POST /MILKY/api/{api}`，QSICK 的动作是注册表里的 2
 两边的参数大体一致，差异集中在这几处：
 
 * `message`：Milky 的段是 `{type, ...}`，内部是 OneBot 段。适配器里转。
-* 文件上传：Milky 用 `file_uri` / `file_name` / `parent_folder_id`，内部用 `file` / `name` / `folder`。
+* 文件上传：Milky 用 `file_uri` / `file_name` / `parent_folder_id`，内部用 `file` / `name` / `folder_id`。
 * 表情回应：Milky 用 `reaction`，内部用 `emoji_id`。
 * 头像：Milky 用 `uri`，内部用 `file`。
 
@@ -90,7 +90,6 @@ SUPPORTED: dict[str, str] = {
     "send_group_announcement": "_send_group_notice",
     "delete_group_announcement": "_del_group_notice",
     "get_group_essence_messages": "get_essence_msg_list",
-    "set_group_essence_message": "set_essence_msg",
     "quit_group": "set_group_leave",
     "send_group_message_reaction": "set_msg_emoji_like",
     "send_group_nudge": "group_poke",
@@ -99,12 +98,12 @@ SUPPORTED: dict[str, str] = {
     "upload_group_file": "upload_group_file",
     "get_private_file_download_url": "get_private_file_url",
     "get_group_file_download_url": "get_group_file_url",
-    "get_group_files": "get_group_root_files",
     "move_group_file": "move_group_file",
     "rename_group_file": "rename_group_file",
     "delete_group_file": "delete_group_file",
     "create_group_folder": "create_group_file_folder",
     "delete_group_folder": "delete_group_folder",
+    "rename_group_folder": "rename_group_file_folder",
 }
 
 #: 内部动作名 -> Milky API。一个内部名可能对应多个 API（`delete_msg` 对应私聊与群聊两条），
@@ -112,6 +111,12 @@ SUPPORTED: dict[str, str] = {
 REVERSE: dict[str, str] = {}
 for _api, _name in SUPPORTED.items():
     REVERSE.setdefault(_name, _api)
+REVERSE.update({
+    "get_group_root_files": "get_group_files",
+    "get_group_files_by_folder": "get_group_files",
+    "set_essence_msg": "set_group_essence_message",
+    "delete_essence_msg": "set_group_essence_message",
+})
 
 
 # --------------------------------------------------------------------- 动态
@@ -130,6 +135,8 @@ def _history(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         "message_seq": int(params.get("start_message_seq") or 0),
         "count": int(params.get("limit") or 20),
     }
+    if "account" in params:
+        body["account"] = params["account"]
     if scene == "group":
         body["group_id"] = peer
         return "get_group_msg_history", body
@@ -145,9 +152,10 @@ def _mark_read(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     由动作自己补 peer）。所以这里把能给的给过去，多的丢掉。
     """
     body: dict[str, Any] = {}
-    for source, target in (("message_seq", "message_id"), ("message_id", "message_id")):
-        if params.get(source) is not None and target not in body:
-            body[target] = params[source]
+    # A sequence is not a native message id; only the message bridge can resolve it.
+    for key in ("message_id", "message_seq", "account"):
+        if params.get(key) is not None:
+            body[key] = params[key]
     if params.get("peer_id") is not None:
         scene = str(params.get("message_scene") or "group")
         body["group_id" if scene == "group" else "user_id"] = params["peer_id"]
@@ -157,6 +165,8 @@ def _mark_read(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
 def _resource_url(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     """`get_resource_temp_url` -> 文件下载链接，按是否有 `group_id` 分左右。"""
     body = {"file_id": params.get("resource_id") or params.get("file_id")}
+    if "account" in params:
+        body["account"] = params["account"]
     if params.get("group_id") is not None:
         body["group_id"] = params["group_id"]
         return "get_group_file_url", body
@@ -165,11 +175,31 @@ def _resource_url(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return "get_private_file_url", body
 
 
+def _group_files(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """Select the actual folder action, rather than silently listing the root."""
+    body = dict(params)
+    folder = body.pop("parent_folder_id", body.get("folder_id", "/"))
+    if folder in (None, "", "/"):
+        body.pop("folder_id", None)
+        return "get_group_root_files", body
+    body["folder_id"] = folder
+    return "get_group_files_by_folder", body
+
+
+def _essence(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """The message bridge supplies native identifiers; never relabel a sequence."""
+    body = dict(params)
+    is_set = body.pop("is_set", True)
+    return ("delete_essence_msg" if is_set is False else "set_essence_msg"), body
+
+
 #: Milky API -> 解析函数。函数返回 `(内部动作名, 内部参数)`。
 DYNAMIC: dict[str, Callable[[dict[str, Any]], tuple[str, dict[str, Any]]]] = {
     "get_history_messages": _history,
     "mark_message_as_read": _mark_read,
     "get_resource_temp_url": _resource_url,
+    "get_group_files": _group_files,
+    "set_group_essence_message": _essence,
 }
 
 
@@ -182,25 +212,31 @@ RENAMES: dict[str, tuple[tuple[str, str], ...]] = {
     "set_avatar": (("uri", "file"),),
     "set_nickname": (("new_nickname", "nickname"),),
     "set_bio": (("new_bio", "personal_note"),),
-    "set_group_avatar": (("uri", "file"),),
+    "set_group_name": (("new_group_name", "group_name"),),
+    "set_group_avatar": (("image_uri", "file"), ("uri", "file")),
+    "set_group_member_admin": (("is_set", "enable"),),
+    "set_group_whole_mute": (("is_mute", "enable"),),
     "set_group_member_card": (("card", "card"),),
     "set_group_member_special_title": (("special_title", "special_title"),),
     "set_group_member_mute": (("user_id", "user_id"),),
     "kick_group_member": (("user_id", "user_id"),),
-    "set_group_essence_message": (("message_seq", "message_id"),),
     "upload_private_file": (("file_uri", "file"), ("file_name", "name")),
     "upload_group_file": (("file_uri", "file"), ("file_name", "name"),
-                          ("parent_folder_id", "folder")),
+                          ("parent_folder_id", "folder_id")),
     "get_group_files": (("parent_folder_id", "folder_id"),),
     "move_group_file": (("parent_folder_id", "folder_id"),
                         ("target_folder_id", "target_folder_id")),
+    "rename_group_file": (("new_file_name", "file_name"),
+                          ("parent_folder_id", "folder_id")),
+    "rename_group_folder": (("new_folder_name", "folder_name"),),
     "create_group_folder": (("folder_name", "name"),),
     "get_group_file_download_url": (("file_id", "file_id"),),
     "get_resource_temp_url": (("resource_id", "file_id"),),
     "send_group_message_reaction": (("reaction", "emoji_id"), ("is_add", "set")),
     "send_friend_nudge": (("user_id", "user_id"), ("target_id", "user_id")),
     "send_group_nudge": (("user_id", "user_id"), ("target_id", "user_id")),
-    "send_profile_like": (("user_id", "user_id"), ("target_id", "user_id")),
+    "send_profile_like": (("user_id", "user_id"), ("target_id", "user_id"),
+                          ("count", "times")),
 }
 
 #: 显式 `null` 表示"不设置"。内部动作把 `None` 当成"没给"更安全，所以删掉而不是传下去。
@@ -231,7 +267,6 @@ NEEDS_TRANSLATION: dict[str, str] = {
 #: 内部连动作名都没有，因为 QQ 侧没有对应接口。
 NO_ACTION: dict[str, str] = {
     "persist_group_file": "QQ 侧没有转存永久文件的接口",
-    "rename_group_folder": "宿主只有 group.folder.create / delete，没有 rename",
 }
 
 #: 明确**不实现**的一组。
@@ -290,6 +325,10 @@ def resolve(api: str, params: dict | None) -> tuple[str, dict[str, Any]]:
     for key in _DROP_WHEN_NONE:
         if key in body and body[key] is None:
             del body[key]
+
+    # Milky's default is unmute, unlike OneBot's 1800-second default.
+    if name == "set_group_member_mute":
+        body.setdefault("duration", 0)
 
     if name in DYNAMIC:
         return DYNAMIC[name](body)

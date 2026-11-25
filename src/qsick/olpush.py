@@ -79,7 +79,7 @@ CHANGE_TYPE_LEFT = 130
 CHANGE_TYPE_INVITED = 131
 
 #: 本号入群后多少秒内，同群的 87 视为"入群的余波"而不是待审批的邀请。2026-11-24 实抓：33 到
-#: 同群 87 相隔 429 ms；取 30 秒留出推送乱序与延迟的余量。33（群主直接拉人）与 85（批准 /
+#: 同群 87 相隔 266 ms；取 30 秒留出推送乱序与延迟的余量。33（群主直接拉人）与 85（批准 /
 #: 接受邀请）都算"本号刚入群"。
 SELF_JOIN_INVITE_WINDOW = 30.0
 
@@ -759,7 +759,7 @@ class PushEventMapper:
         if not invite.group_uin:
             return None
         # 87 不只在"需要本号同意的邀请"时出现：实抓里群主直接把本号拉进群，先到 33（本号入群），
-        # 429 ms 后再到一条同群的 87。那时已经在群里了，再发一条 invite 请求，客户端去审批只会
+        # 266 ms 后再到一条同群的 87。那时已经在群里了，再发一条 invite 请求，客户端去审批只会
         # 失败。NapCat 靠"1 秒内收到邀请人发来的 ark 卡片"确认是真邀请，这里没有那条消息，就反过
         # 来判断：本号刚经 33/85 进了这个群，这条 87 就是余波。
         joined_at = self._self_joins.get(invite.group_uin)
@@ -804,6 +804,9 @@ class PushEventMapper:
             event.pop("sub_type", None)
             event.update({
                 "user_id": initiator,
+                # Preserve the actual initiator UID for Milky; the envelope sequence is not
+                # an approval/notification sequence and must not be promoted to one.
+                "user_id_uid": request.source_uid,
                 "comment": request.message,
                 "via": request.source,
             })

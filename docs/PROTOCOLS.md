@@ -73,11 +73,17 @@ QQ 宿主 ──▶ runtime._dispatch_event ──▶ runtime._publish
 
 ### 复用了什么
 
-**动作逻辑一行没写。** 65 个 API 里今天能执行的 33 个，全部翻译成内部已有的动作名
-（`protocols/milky/actions.py`），执行走 `invoke`。
+动作执行复用内部注册表，所有业务调用仍走 `runtime.invoke`。`protocols/milky/actions.py`
+负责参数转换，`onebot/milky_bridge.py` 处理会话局部消息序号的解析与账号绑定，
+`protocols/milky/replies.py` 按原 Milky API 名转换返回数据。HTTP、事件 WS 上的调用与反向 WS
+共用交接入口；反向连接绑定的账号不能被请求参数覆盖。
 
-名字认识但底层没实现的 32 个单独列在 `NOT_IMPLEMENTED` 里，回一个说明原因的失败——
-「做了却悄悄没做」比「明确说不支持」坏得多。
+消息序号不是消息 ID：先按账号、会话类型、目标及序号查缓存，必要时通过现有历史动作查询。
+无法唯一定位时明确失败，不把序号当 ID。发送结果保留 QQ 确认回执中的真实序号和时间，缺失时
+不伪造成功响应，也不自动重发。
+
+参数映射表不等于完整能力证明：某些注册动作底层仍明确拒绝，某些返回还缺宿主元数据。
+已有能力的交接缺口已补，不能取得的数据仍如实报告限制。
 
 **消息段借道 v11。** 内部事件的 `message` 是 v11 段数组，转 Milky 段时先用
 `protocols/onebotv11/codec.py` 还原成内部部件，再用 `protocols/milky/codec.py` 编码。两条路
@@ -108,18 +114,21 @@ QQ 宿主 ──▶ runtime._dispatch_event ──▶ runtime._publish
 
 | 类 | 数量 | 含义 | 调用结果 |
 | --- | ---: | --- | --- |
-| `SUPPORTED` + `DYNAMIC` | 52 | 名字与参数都能对上（其中 3 个按参数决定目标动作） | 真正执行 |
-| `NEEDS_TRANSLATION` | 8 | 名字有、参数模型对不上 | **明确失败**并说明差什么 |
-| `NO_ACTION` | 4 | 连内部动作名都没有 | **明确失败**并说明 |
-| `LOCAL` | 1 | `get_impl_info`，适配器自己回答 | 本地返回 |
+| `SUPPORTED` + `DYNAMIC` | 53 | 已登记动作映射，不代表底层和返回字段全部可用 | 按已有能力执行或明确失败 |
+| `NEEDS_TRANSLATION` | 8 | 请求审批标识缺转换 | **明确失败**并说明差什么 |
+| `NO_ACTION` | 1 | 转存永久文件尚无对应能力 | **明确失败**并说明 |
+| `UNSUPPORTED_BY_DESIGN` | 2 | 会话置顶读写不实现 | **明确失败**并说明 |
+| `LOCAL` | 1 | `get_impl_info`，适配器自己回答 | 本地返回；QQ 版本未知时为空 |
 
 `NEEDS_TRANSLATION` 全是请求处理类：Milky 用 `notification_seq` / `initiator_uid`，内部用 OneBot
 的 `flag`——一个由平台在推送时生成的不透明字符串。两者之间没有换算关系，只能等某一侧的映射表。
 硬翻过去的结果是动作作用在错的对象上，比报错危险。
 
-`NO_ACTION` 是 QQ 侧真的没有接口：置顶列表的读与写、转存永久文件、重命名群文件夹。
+重命名群文件夹已接到宿主现有 `group.folder.rename`；创建文件夹必须返回真实服务端 ID，
+不再用名称代替。群文件上传支持本地路径、file URI、HTTP(S) 和 base64，读取有大小/时间上限；
+结果仍 pending 或失败时保留临时源，防止 QQ 尚在读取，不自动重试写操作。
 
-`DYNAMIC` 的三项里 `get_history_messages` 最典型：Milky 用一个 API 覆盖群/好友/临时三种会话，
+`DYNAMIC` 中 `get_history_messages` 最典型：Milky 用一个 API 覆盖群/好友/临时三种会话，
 内部按会话分成 `get_group_msg_history` 与 `get_friend_msg_history`，所以目标动作只能在调用时定。
 
 **翻译表里不能有指向不存在动作的条目**——那条测试是这张表唯一的硬约束。表写错的结果是运行时
@@ -127,16 +136,16 @@ QQ 宿主 ──▶ runtime._dispatch_event ──▶ runtime._publish
 
 ### 事件覆盖
 
-21 个 Milky 事件里，宿主今天能产出 **11 个**：3 个基础事件（消息、撤回、离线）加 8 个从灰条或
-文件型消息里读出来的群事件（群名、禁言、全员禁言、解散、头衔、精华、表情回应、文件上传）。
-戳一戳两条（好友与群）也在，群那条来自包推送。
+pipe 的原始 OLPush 通道已接到 `runtime.feed_packet`；灰条/群文件通知也复用现有提取器，
+不再只在 headless 启用。纯灰条不作为聊天消息转发，群文件上传通知与文件消息共存。
 
-另有 5 个的**解码器已完成并测试**，只缺接线：管理员变更、好友请求、入群请求、邀请他人入群、
-被邀请入群。它们的 payload 定义来自 NapCat 与 Lagrange 两份独立实现的交叉验证，代码在
-src/qsick/olpush.py，接入点是 
-untime.feed_packet()。
+Milky 消息事件提供顶层 `group_member` 并保留可识别的 temp 场景；撤回使用真正的 `msg_seq`
+而非消息 ID，无法取得的操作者不冒充发送者。好友请求保留原始 UID。管理员任免方向已修复。
 
-剩下的：会话置顶不实现（QSICK 侧直接回没有相关 API），好友文件上传两边都没有。
+仍有限制：群通知序号/邀请序号尚未可靠取得，请求审批未接；44 包没有可用的操作人字段；
+邀请他人入群请求、好友文件上传和置顶事件未实现。部分实体元数据、撤回操作者及戳一戳文案
+取决于宿主实际提供的信息。灰条与包推送的重叠事件尚无统一跨来源去重，可能重复通知。
+因此不能仅凭事件名已有转换器，就宣称完整符合 Milky 字段契约。
 
 完整来源分类见 [docs/headless-events.md](headless-events.md)。
 

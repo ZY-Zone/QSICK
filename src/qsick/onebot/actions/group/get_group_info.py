@@ -9,6 +9,7 @@ from qsick.onebot.actions.base import (
     Action,
     ActionError,
     call,
+    public_entity_data,
     chat,
     forward_node_json,
     media_info,
@@ -24,6 +25,7 @@ from qsick.protocol import elements as E
 async def _handle(ctx: Any, group_id: int, no_cache: bool = False, **_: Any) -> dict[str, Any]:
     data = await call(ctx, "group.info", {"group_id": group_id, "no_cache": no_cache}, "get group info")
     return {
+        **public_entity_data(data),
         "group_id": int(data.get("group_id", group_id)),
         "group_name": data.get("group_name", ""),
         "member_count": data.get("member_count", 0),

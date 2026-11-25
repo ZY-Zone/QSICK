@@ -270,7 +270,7 @@ class TestCapturedShapes:
         assert mapper().map_bytes(_message(_head(87), invite)) == []
 
     def test_the_invite_echo_after_being_pulled_in_is_dropped(self):
-        """群主直接拉本号进群：先到 33，2026-11-24 实抓里 429 ms 后到同群的 87。那条 87 不是
+        """群主直接拉本号进群：先到 33，2026-11-24 实抓里 266 ms 后到同群的 87。那条 87 不是
         待审批的邀请。"""
         joins: dict[int, float] = {}
         clock = [100]

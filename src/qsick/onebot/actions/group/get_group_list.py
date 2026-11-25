@@ -9,6 +9,7 @@ from qsick.onebot.actions.base import (
     Action,
     ActionError,
     call,
+    public_entity_data,
     chat,
     forward_node_json,
     media_info,
@@ -31,6 +32,7 @@ async def _handle(ctx: Any, **_: Any) -> list[dict[str, Any]]:
     groups = data if isinstance(data, list) else data.get("groups", [])
     result = [
         {
+            **public_entity_data(group),
             "group_id": int(group.get("group_id", 0)),
             "group_name": group.get("group_name", ""),
             "member_count": group.get("member_count", 0),

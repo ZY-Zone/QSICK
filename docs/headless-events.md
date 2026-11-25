@@ -22,7 +22,7 @@ QQ NT 内核
 
 ## ① 宿主能产出什么，取决于它挂在哪个通道上
 
-QQ NT 有三条推送路径，前两条已接，第三条已解码但未接线。
+QQ NT 有三条推送路径：灰条、群文件消息，以及 pipe-session 的原始包接收通道。
 
 ### 通道 A：消息里的灰条（已接）
 
@@ -54,7 +54,7 @@ QQ NT 有三条推送路径，前两条已接，第三条已解码但未接线�
 `notice.group_upload`（`file: {id, name, size, busid}`）。消息本身照常下发——上传事件与消息
 并存，不是二选一。
 
-### 通道 C：OLPush 包推送（已解码，未接线）
+### 通道 C：OLPush 包推送（pipe 接收通道）
 
 被踢出群、别人入群、本号进群、管理员任免、好友申请、入群申请只从
 `trpc.msg.olpush.OlPushService.MsgPush` 出来，按 `contentHead.type` 分派。
@@ -81,7 +81,7 @@ QQ NT 有三条推送路径，前两条已接，第三条已解码但未接线�
 - **本号经管理员批准 / 接受邀请入群**时发的是 **85（`SelfJoinInGroup`）**，33 不发；不接 85 就
   会漏掉"本号进群"。
 
-群主直接拉本号进群时，33 之后 **429 ms** 会跟一条同群的 87。那条不是待审批的邀请，本号入群后
+群主直接拉本号进群时，33 之后 **266 ms** 会跟一条同群的 87。那条不是待审批的邀请，本号入群后
 30 秒内同群的 87 会被丢弃（`SELF_JOIN_INVITE_WINDOW`，33 与 85 共用这个状态）。
 
 `decreaseType 2`（本号自己退群、operatorInfo 为空 `{2: {1: 0}}`）来自 2026-11-22 的上一轮抓包，
@@ -115,12 +115,35 @@ QQ NT 有三条推送路径，前两条已接，第三条已解码但未接线�
 群事件里是群号）；`feed_packet` 先用 5/6 把 uid→uin 表补热，避免 fresh login 时本号事件被丢、
 87 余波被误报成邀请。
 
-**没接线的原因**：拿帧需要 QQ 侧的包钩子。`native/inithook` 确实钩了 send/recv，但只观察、
-不把字节交出来；`native/qsick-payload` 的 `Capture` 有个通用的 `trace.call`，需要用环境变量
-指定"第几个参数是指针、第几个是长度"，而那个签名没有真实报文可以验证。
+实际 pipe-session 注入的是 `qsick_pipe.dll`。本次在这条链路加入只读的接收观察器，
+不使用旧 `qsick-payload` 的通用 `trace.call` 探针，也不改群文件使用的 `inithook`。
+原生源码与实现分析继续保持私有，不随仓库发布。
 
-接入点是现成的：`runtime.feed_packet(data, instance=, account=)`。喂进去之后插件过滤、协议
-分流、各连接编码全部复用灰条那条路径，不需要改协议层一行。
+```text
+QQ 接收回调 → 只选完整 MsgPush → 有界内存队列
+  → Pipe/dll/<sessionid>/packet-events.jsonl
+  → read_pipe_events → Runtime._feed_pipe_packet → feed_packet
+  → 插件过滤 → 按连接协议分发
+```
+
+- 原生线程只复制，不调用 N-API、不等待 Python；文件写入交给独立工作线程。
+- 包事件使用独立文件，避免与 JS 消息监听器的 `events.jsonl` 并发写入交错。
+- 包携带 `uin`、`sessionid`、`cmd`、`seq`、`body_hex`、`byte_length`、`truncated:false`。
+  Python 校验接收账号与帧头 `toUin`（若存在）一致，然后才允许身份学习和事件分发。
+- 最大完整包为 1 MiB；超限、队列溢出或读取失败丢弃整包并记录诊断，绝不以截断数据冒充完整帧。
+- 仅对核对过的 Windows x64 QQ 构建启用；文件哈希或函数签名不匹配则拒绝装钩。
+  `QSICK_PACKET_HOOK=0` 可在启动 session 前关闭该观察器；已运行的 session 需重启才能换 DLL。
+- 每次 QSICK 启动按既有队列清理规则清理包事件文件，不删除 session 配置。
+
+`feed_packet(data, instance=, account=)` 后的插件过滤、协议分流、各连接编码均复用原有路径。
+2026-11-25 已在新 DLL 的真实 session 捕获管理员任命/取消包（44，set/unset 各两条），
+经实际 `_feed_pipe_packet` 离线回放得到正确 OneBot 事件，并核对 Milky 的 `is_set` 为
+true/false/true/false。回放不发送网络消息，尚不能据此宣称外部 OneBot/Milky 客户端已收到。
+其它群事件的 DLL 实抓动作验收仍需分别验证。
+
+原生安装只在 session 启动期尝试；线程快照无法原子排除新线程创建，极端的线程恢复或页面保护
+恢复失败可能终止 QQ，而不是保证无影响。建议先在测试账号使用。文件写入中途失败会关闭本次
+包观察器，避免残缺 JSON 行吞掉下一帧；查看 session 目录的 `packet-hook.log`，重启后再验证。
 
 ## 明确不实现
 

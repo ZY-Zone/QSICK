@@ -137,12 +137,12 @@ class TestOtherActions:
         with_name = compat.normalize("create_group_file_folder", {
             "group_id": GROUP, "name": "n",
         }, "onebotv11")
-        assert with_name["folder_name"] == "n"
+        assert with_name["name"] == "n"
 
         with_folder_name = compat.normalize("create_group_file_folder", {
             "group_id": GROUP, "folder_name": "n",
         }, "onebotv11")
-        assert with_folder_name["folder_name"] == "n"
+        assert with_folder_name["name"] == "n"
 
 
     def test_upload_group_file_folds_onebot_spellings(self) -> None:

@@ -363,6 +363,14 @@ class ReverseWebSocketClient:
             params = {**params, "account": account}
         protocol = self._protocol_of(account)
         pipelines = getattr(self.runtime, "pipelines", None)
+        if protocol == "milky" and pipelines is not None:
+            from .milky_bridge import run_milky
+
+            # The connection owns execution identity; an action cannot switch it in its body.
+            bound = {**params, "account": account} if account else params
+            result = await run_milky(self.runtime, pipelines, action, bound, payload.get("echo"))
+            await self._send(socket, result)
+            return
         if pipelines is not None:
             try:
                 action, params = pipelines.decode_action(protocol, action, params)

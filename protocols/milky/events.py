@@ -4,25 +4,15 @@
 
 内部事件的规范形状就是 v11 的（`post_type` / `message_type` / `sender` / `message` 段数组）。
 再造一套内部的"中立事件"意味着要同时改事件生成、插件钩子和 WebUI，而收益只是让转换看起来
-对称。所以 Milky 走"从 v11 转"：现有事件源一行不改，转换只在这一处。
+对称。所以 Milky 走"从 v11 转"：共用事件源，只在必要处保留源已有的额外字段。
 
-代价要说清楚：v11 事件里没有的信息，转出来也不会有。比如 Milky 的 `group_member_increase`
-要 `operator_id`，而 v11 的 `notice.group_increase` 今天是有的（`payload-abi.md` 定义了），
-但宿主并不发它——所以这里只能转出**宿主真正产生**的事件。
+代价要说清楚：v11 事件里没有的信息，转出来也不会有。包推送和灰条共用这层转换，
+但转换成功不等于字段完整或真实客户端验收通过。消息实体的空串/0 是兼容占位，
+不代表已获取群名、好友分组等详情；temp 仅在源提供明确场景时可识别。
 
-## 事件覆盖
-
-| Milky 事件 | 来源 | 状态 |
-| --- | --- | --- |
-| `message_receive` | `post_type=message` | ✅ |
-| `message_recall` | `notice.group_recall` / `notice.friend_recall` | ✅ |
-| `bot_offline` | `meta_event` 里 `status.online=false` 或 lifecycle 断开 | ✅ |
-| `group_admin_change` / `group_member_increase` / `group_member_decrease` / `group_mute` | 宿主有槽位（`notice.group_*`），今天不产生 | ⏳ 转换已写好，来事件就能转 |
-| `friend_request` / `group_join_request` / `group_invitation` | `request.*`，宿主不发 | ⏳ 同上 |
-| 其余 11 个 | 内部连槽位都没有 | ❌ 需要先让宿主产生事件 |
-
-"转换已写好但没事件可转"是诚实的中间状态：一旦宿主开始产生通知，它们立刻生效，不需要再改
-这里。这也是为什么这一层要按 tag 分派而不是按"现在有什么"硬编码。
+撤回仅使用 message_seq/msg_seq，不把 message_id 当序号；缺序号时的 0 不能定位消息。
+管理员通知未提供的操作者、请求未提供的审批序号仍是源缺口，不能由主体或包信封序号猜测。
+好友申请 UID 由 OLPush 保留；群邀请与入群申请使用各自明确提供的序号，不互相替代。
 """
 
 from __future__ import annotations
@@ -104,11 +94,13 @@ def convert(event: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _message(event: dict[str, Any]) -> dict[str, Any] | None:
-    is_group = str(event.get("message_type") or "") == "group"
+    scene = _message_scene(event)
+    is_group = scene == "group"
     out = _envelope("message_receive", event)
     out["data"] = {
-        "message_scene": "group" if is_group else "friend",
-        "peer_id": _uin(event.get("group_id") if is_group else event.get("target_id")),
+        "message_scene": scene,
+        "peer_id": _uin(event.get("group_id") if is_group else
+                        (event.get("peer_id") or event.get("target_id") or event.get("user_id"))),
         "message_seq": int(event.get("message_seq") or 0),
         "sender_id": _uin(event.get("user_id")),
         "time": int(event.get("time") or 0),
@@ -116,34 +108,75 @@ def _message(event: dict[str, Any]) -> dict[str, Any] | None:
         # Milky 的 message_id 是 int64。v11 侧超出 JS 安全范围时会退化成字符串
         # （`events.py` 里那段注释），这里照实传，不做数字化。
         "message_id": event.get("message_id"),
-        "group": _group(event) if is_group else None,
-        "friend": None if is_group else _friend(event),
+        "group": _group(event) if is_group or (scene == "temp" and event.get("group_id")) else None,
+        "friend": _friend(event) if scene == "friend" else None,
     }
+    if is_group:
+        out["data"]["group_member"] = _sender(event)
     return out
+
+
+def _message_scene(event: dict[str, Any]) -> str:
+    explicit = event.get("message_scene")
+    if explicit in ("friend", "group", "temp"):
+        return explicit
+    if event.get("message_type") == "group" or event.get("notice_type") == "group_recall":
+        return "group"
+    # OneBot private/group means a temporary session, not a group message.
+    if event.get("message_type") == "temp" or event.get("sub_type") in ("group", "temp"):
+        return "temp"
+    return "friend"
 
 
 def _sender(event: dict[str, Any]) -> dict[str, Any]:
     sender = event.get("sender") if isinstance(event.get("sender"), dict) else {}
+    member = event.get("group_member") if isinstance(event.get("group_member"), dict) else {}
+    source = sender | member
     return {
-        "user_id": _uin(sender.get("user_id") or event.get("user_id")),
-        "nickname": str(sender.get("nickname") or ""),
-        "card": str(sender.get("card") or ""),
-        "role": str(sender.get("role") or ""),
+        "user_id": _uin(source.get("user_id") or event.get("user_id")),
+        "nickname": str(source.get("nickname") or ""),
+        "sex": source.get("sex") if source.get("sex") in ("male", "female") else "unknown",
+        "group_id": _uin(source.get("group_id") or event.get("group_id")),
+        "card": str(source.get("card") or ""),
+        "title": str(source.get("title") or ""),
+        "level": int(source.get("level") or 0),
+        "role": str(source.get("role") or "member"),
+        "join_time": int(source.get("join_time") or 0),
+        "last_sent_time": int(source.get("last_sent_time") or 0),
+        "shut_up_end_time": source.get("shut_up_end_time"),
     }
 
 
 def _group(event: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "group_id": _uin(event.get("group_id")),
-        # v11 事件里没有群名（见 events.py 的注释），这里不编一个。
-        "group_name": "",
-        "member": _sender(event),
-    }
+    source = event.get("group") if isinstance(event.get("group"), dict) else {}
+    # Empty/zero metadata are compatibility placeholders, not fetched entity details.
+    out = {"group_id": _uin(source.get("group_id") or event.get("group_id"))}
+    for key in ("group_name", "remark", "description", "question", "announcement"):
+        out[key] = str(source.get(key) or (event.get("group_name") if key == "group_name" else "") or "")
+    for key in ("member_count", "max_member_count", "created_time"):
+        out[key] = int(source.get(key) or 0)
+    return out
 
 
 def _friend(event: dict[str, Any]) -> dict[str, Any]:
-    sender = _sender(event)
-    return {"user_id": sender["user_id"], "nickname": sender["nickname"], "remark": ""}
+    sender = event.get("sender") if isinstance(event.get("sender"), dict) else {}
+    friend = event.get("friend") if isinstance(event.get("friend"), dict) else {}
+    peer = event.get("peer_id") or event.get("target_id") or event.get("user_id")
+    # Sent-message sender metadata describes the bot, not the friend entity.
+    if _uin(sender.get("user_id") or event.get("user_id")) != _uin(peer):
+        sender = {}
+    source = sender | friend
+    category = source.get("category") if isinstance(source.get("category"), dict) else {}
+    return {
+        "user_id": _uin(friend.get("user_id") or event.get("peer_id") or event.get("target_id")
+                        or source.get("user_id") or event.get("user_id")),
+        "nickname": str(source.get("nickname") or ""),
+        "sex": source.get("sex") if source.get("sex") in ("male", "female") else "unknown",
+        "qid": str(source.get("qid") or ""),
+        "remark": str(source.get("remark") or ""),
+        "category": {"category_id": int(category.get("category_id") or 0),
+                     "category_name": str(category.get("category_name") or "")},
+    }
 
 
 # ------------------------------------------------------------------- 通知
@@ -155,10 +188,16 @@ def _notice(event: dict[str, Any]) -> dict[str, Any] | None:
     if notice_type.endswith("recall"):
         out = _envelope("message_recall", event)
         out["data"] = {
-            "message_scene": "group" if notice_type.startswith("group") else "friend",
-            "peer_id": _uin(event.get("group_id") or event.get("target_id")),
-            "message_id": event.get("message_id"),
-            "user_id": _uin(event.get("user_id") or event.get("operator_id")),
+            "message_scene": _message_scene(event),
+            "peer_id": _uin_or_zero(event.get("group_id") if _message_scene(event) == "group" else
+                                    event.get("peer_id", event.get("target_id", event.get("user_id")))),
+            # Missing sequence remains partial support: 0 cannot identify the recalled message.
+            # A message_id is NOT a sequence, even when it happens to fit in an integer.
+            "message_seq": _uin_or_zero(event.get("message_seq") if event.get("message_seq") is not None
+                                        else event.get("msg_seq")),
+            "sender_id": _uin_or_zero(event.get("sender_id") or event.get("user_id")),
+            "operator_id": _uin_or_zero(event.get("operator_id")),
+            "display_suffix": str(event.get("display_suffix") or ""),
         }
         return out
 
@@ -231,7 +270,8 @@ def _admin_change(event: dict[str, Any]) -> dict[str, Any]:
         "group_id": _uin(event.get("group_id")),
         "user_id": _uin(event.get("user_id")),
         "operator_id": _uin(event.get("operator_id")),
-        "is_set": bool(event.get("is_set", event.get("set"))),
+        "is_set": (event["sub_type"] == "set" if event.get("sub_type") in ("set", "unset")
+                   else bool(event.get("is_set", event.get("set")))),
     }
     return out
 
@@ -409,7 +449,7 @@ def _request(event: dict[str, Any]) -> dict[str, Any] | None:
             out = _envelope("group_invitation", event)
             out["data"] = {
                 "group_id": _uin(event.get("group_id")),
-                "invitation_seq": _uin_or_zero(event.get("invitation_seq") or seq),
+                "invitation_seq": _uin_or_zero(event.get("invitation_seq")),
                 "initiator_id": _uin(event.get("user_id")),
                 "source_group_id": _uin_or_zero(event.get("source_group_id")),
             }

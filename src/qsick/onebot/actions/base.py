@@ -179,6 +179,24 @@ def cq_to_segment(cq_type: str, params: dict[str, Any]) -> dict[str, Any]:
     return {"type": "unknown", "data": {"original_type": cq_type, **params}}
 
 
+def public_entity_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Copy verified public entity fields, never native credential/raw envelopes."""
+    public = {
+        "user_id", "uin", "uid", "qid", "nickname", "remark", "sex", "age",
+        "country", "province", "city", "area", "birthday", "personal_note", "bio",
+        "signature", "email", "avatar", "avatar_url", "category_id", "category_name",
+        "group_id", "group_name", "group_remark", "member_count", "max_member_count",
+        "group_create_time", "created_time", "group_level", "group_memo", "description",
+        "owner_id", "owner_uid", "card", "role", "join_time", "last_sent_time", "level",
+        "unfriendly", "title", "special_title", "title_expire_time", "card_changeable",
+        "shut_up_timestamp", "shut_up_end_time", "is_robot", "is_bot", "is_vip", "is_svip",
+        "vip_level", "qq_level", "status", "ext_status", "relation_flags",
+    }
+    out = dict(data)
+    return {key: value for key, value in out.items()
+            if key in public and (value is None or isinstance(value, (str, int, float, bool)))}
+
+
 async def send_message(ctx: ActionContext, chat: dict[str, Any], message: Any, auto_escape: bool) -> dict[str, Any]:
     payload = {"chat": chat, "elements": message_to_elements(message, auto_escape)}
     # Media gets the longer budget; a plain text send keeps the short one so a wedged session is still reported
@@ -187,7 +205,11 @@ async def send_message(ctx: ActionContext, chat: dict[str, Any], message: Any, a
     data = await call(ctx, "message.send", payload, "send message",
                       timeout=MEDIA_SEND_TIMEOUT if slow else None)
     message_id = data.get("message_id", 0)
-    return {"message_id": message_id, "message_id_str": str(message_id)}
+    out = {"message_id": message_id, "message_id_str": str(message_id)}
+    for key in ("message_seq", "time"):
+        if key in data:
+            out[key] = data[key]
+    return out
 
 
 def message_to_elements(message: Any, auto_escape: bool = False) -> list[dict[str, Any]]:
@@ -229,6 +251,7 @@ def message_json_payload(ctx: ActionContext, payload: dict[str, Any]) -> dict[st
         "time": message.time,
         "message_type": message.chat_type,
         "sender": {
+            **public_entity_data(payload.get("sender") or {}),
             "user_id": message.sender_uin,
             "nickname": message.sender_name,
             "card": message.card,
@@ -256,6 +279,7 @@ def member_json(group_id: int, data: dict[str, Any]) -> dict[str, Any]:
     consumer can tell "unknown" from a fabricated default.
     """
     out: dict[str, Any] = {
+        **public_entity_data(data),
         "group_id": group_id,
         "user_id": int(data.get("uin", data.get("user_id", 0))),
         "nickname": data.get("nickname", ""),
@@ -265,9 +289,10 @@ def member_json(group_id: int, data: dict[str, Any]) -> dict[str, Any]:
         "last_sent_time": data.get("last_sent_time", 0),
         "level": str(data.get("level", "0")),
     }
-    for key in ("sex", "age", "area", "unfriendly", "title", "title_expire_time", "card_changeable"):
-        if data.get(key) is not None:
-            out[key] = data[key]
+    if "title" not in out and "special_title" in out:
+        out["title"] = out["special_title"]
+    if "shut_up_end_time" not in out and "shut_up_timestamp" in out:
+        out["shut_up_end_time"] = out["shut_up_timestamp"]
     return out
 
 
@@ -280,11 +305,18 @@ async def media_info(ctx: ActionContext, kind: str, file_id: str) -> dict[str, A
 
 def forward_node_json(node: dict[str, Any]) -> dict[str, Any]:
     sender = node.get("sender") or {}
-    return {
+    out = {
         "sender": {"user_id": sender.get("uin", 0), "nickname": sender.get("nickname", "")},
         "time": node.get("time", 0),
         "message": [E.to_onebot(E.normalize(item)) for item in node.get("elements", [])],
     }
+    # Preserve only real metadata; a message id is not a sequence and an avatar URL is not guessed.
+    for key, sources in (("message_seq", ("message_seq", "seq")), ("avatar_url", ("avatar_url",))):
+        for source in sources:
+            if node.get(source) is not None:
+                out[key] = node[source]
+                break
+    return out
 
 
 def param(name: str, kind: str = "str", required: bool = False, default: Any = None, desc: str = "") -> dict[str, Any]:

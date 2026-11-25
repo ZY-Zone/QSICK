@@ -9,6 +9,7 @@ from qsick.onebot.actions.base import (
     Action,
     ActionError,
     call,
+    public_entity_data,
     chat,
     forward_node_json,
     media_info,
@@ -24,7 +25,8 @@ from qsick.protocol import elements as E
 async def _handle(ctx: Any, user_id: int, no_cache: bool = False, **_: Any) -> dict[str, Any]:
     data = await call(ctx, "friend.info", {"user_id": user_id, "no_cache": no_cache}, "get stranger info")
     return {
-        "user_id": int(data.get("uin", user_id)),
+        **public_entity_data(data),
+        "user_id": int(data.get("uin", data.get("user_id", user_id))),
         "nickname": data.get("nickname", ""),
         "sex": data.get("sex", "unknown"),
         "age": data.get("age", 0),

@@ -146,7 +146,7 @@ class TestActions:
             "group_id": 1, "file_uri": "/a/b.zip", "file_name": "b.zip", "parent_folder_id": "/"})
         assert params["file"] == "/a/b.zip"
         assert params["name"] == "b.zip"
-        assert params["folder"] == "/"
+        assert params["folder_id"] == "/"
 
     def test_every_supported_api_reaches_a_real_action_in_this_repository(self):
         """翻译表里不能有指向不存在动作的条目。

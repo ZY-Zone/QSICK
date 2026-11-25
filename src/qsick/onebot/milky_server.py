@@ -36,6 +36,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from .. import log as logmod
 from .server import MILKY_PREFIX, prefixed
+from .milky_bridge import run_milky
 
 log = logmod.get_logger("Milky.Server")
 
@@ -57,34 +58,8 @@ def register_milky_routes(app: FastAPI, runtime: Any, hub: Any, authorized: Any)
         )
 
     async def run(api: str, body: dict[str, Any]) -> dict[str, Any]:
-        """一次 Milky 调用：解码 -> invoke -> 包信封。"""
-        pipelines = hub.pipelines
-        protocol = "milky"
-        if pipelines is None:
-            return {"status": "failed", "retcode": -500, "message": "no pipeline", "data": None}
-
-        # 协议端自身的元信息不经过动作层：答案在本进程里，去问 QQ 反而错了。
-        try:
-            adapter = pipelines.protocol(protocol)
-            local = getattr(adapter, "local_reply", None)
-            answered = local(api, body) if callable(local) else None
-        except Exception:  # noqa: BLE001 - 本地回答失败不该挡住别的调用
-            answered = None
-        if answered is not None:
-            return answered
-
-        try:
-            name, params = pipelines.decode_action(protocol, api, body)
-        except Exception as exc:  # noqa: BLE001 - 不认识的 API 要回 -400，不是 500
-            return {"status": "failed", "retcode": -400,
-                    "message": f"{api}: {exc}", "data": None}
-        # 一定要经过 invoke：插件过滤、账号级出入限制、缓存、发送锁都在它的入口。
-        try:
-            result = await runtime.invoke(name, params)
-        except Exception as exc:  # noqa: BLE001 - 裸 500 到客户端只剩一行 HTML
-            return {"status": "failed", "retcode": -500,
-                    "message": f"{api}: {str(exc) or type(exc).__name__}", "data": None}
-        return pipelines.format_reply(protocol, result)
+        """共享入口负责账号、标识解析和 API-aware 回包；所有动作仍经 invoke。"""
+        return await run_milky(runtime, hub.pipelines, api, body)
 
     @app.post(prefixed(MILKY_PREFIX, "/api/{api}"))
     async def milky_api(api: str, request: Request) -> JSONResponse:

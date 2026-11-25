@@ -31,7 +31,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..base import ChatProtocol, PartError
-from . import actions, codec, events
+from . import actions, codec, events, replies
 
 CAPABILITY_VERSION = 1
 
@@ -89,7 +89,10 @@ class MilkyProtocol(ChatProtocol):
             "data": {
                 "impl_name": "QSICK",
                 "impl_version": _version(),
-                "protocol_name": "Milky",
+                "qq_protocol_version": "",  # 未获得运行中 QQ 的版本，不猜。
+                "qq_protocol_type": "windows",
+                "milky_version": "1.3",
+                "protocol_name": "Milky",  # 兼容既有扩展字段
                 "protocol_version": "1.3",
                 "apis_supported": caps["apis_supported"],
                 "apis_needs_translation": caps["apis_needs_translation"],
@@ -137,7 +140,12 @@ class MilkyProtocol(ChatProtocol):
 
     # ------------------------------------------------------------- 应答信封
 
-    def format_reply(self, result: dict[str, Any], echo: Any = None) -> dict[str, Any]:
+    def format_api_reply(self, api: str, result: dict[str, Any], echo: Any = None) -> dict[str, Any]:
+        """Format using the original Milky API, including its success data schema."""
+        return self.format_reply(result, echo, api=api)
+
+    def format_reply(self, result: dict[str, Any], echo: Any = None,
+                     api: str | None = None) -> dict[str, Any]:
         """内部结果 -> `{status, retcode, message, data}`。
 
         内部结果的形状是 v11 的 `{status: ok|failed, retcode, data, message}`，与 Milky 的差别
@@ -150,6 +158,12 @@ class MilkyProtocol(ChatProtocol):
         # v11 里那类动作就是 `{"status":"ok","retcode":0,"data":null}`，那是成功。
         ok = status == "ok"
         data = payload.get("data")
+        if ok and api is not None:
+            try:
+                data = replies.convert(api, data)
+            except PartError as exc:
+                return {"status": "failed", "retcode": -500, "data": None,
+                        "message": f"Milky {api} reply conversion: {exc}"}
         if ok and data is None:
             # Milky 要求无输出的成功给 `{}`，而 v11 给的是 `null`。
             data = {}

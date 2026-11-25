@@ -69,9 +69,9 @@ ALIASES: dict[str, dict[str, tuple[str, ...]]] = {
         "folder_id": ("folder", "parent_folder_id"),
     },
     # NapCat accepts folder_name or name and both are optional; SnowLuma requires name and adds
-    # parent_id. Canonical is folder_name because that is the name the op itself uses.
+    # parent_id. The registered Python action requires name; it translates to folder_name at the host boundary.
     "create_group_file_folder": {
-        "folder_name": ("name",),
+        "name": ("folder_name",),
         "parent_id": ("parent_folder_id", "folder_id", "parent"),
     },
     "delete_group_file": {

@@ -176,7 +176,7 @@ def session_dll_dir(root: Path | str = ROOT_NAME) -> Path:
 #:
 #: Deliberately a named list and not "everything except qsick_pipe.json": a session directory also holds the
 #: DLL copy and is the place the operator's port lives, and a broad delete would take those with it.
-QUEUE_FILES = ("tasks.jsonl", "results.jsonl", "events.jsonl")
+QUEUE_FILES = ("tasks.jsonl", "results.jsonl", "events.jsonl", "packet-events.jsonl")
 #: Directories the queue splits into (login.info, group files) plus the claim markers.
 QUEUE_DIRS = ("claims", "q-login", "q-groupfile")
 
@@ -439,6 +439,9 @@ def read_pipe_events(root: Path | str = ROOT_NAME,
     against the other, and one event landed in both accounts' stores. A file per session removes the question --
     which session wrote a line is known from the path, not from a field inside it.
 
+    Native OLPush capture uses a separate `packet-events.jsonl` in each session directory: the C++ and JS
+    writers must not append concurrently to the same file. Both streams have independent offsets.
+
     A session that has not been migrated still writes to `owndata/events.jsonl`; that stream is read too, so an
     older launch is not silently ignored.
 
@@ -456,6 +459,7 @@ def read_pipe_events(root: Path | str = ROOT_NAME,
     session_root = session_dll_dir(root_path)
     if session_root.is_dir():
         streams.extend(sorted(session_root.glob("*/events.jsonl")))
+        streams.extend(sorted(session_root.glob("*/packet-events.jsonl")))
     legacy = root_path / PIPE_INSTANCE_ID / "owndata" / "events.jsonl"
     if legacy.is_file():
         streams.append(legacy)
@@ -915,6 +919,8 @@ PIPE_DLL_CONFIG = "qsick_pipe.json"
 #: 之前靠手工拷贝，重启即丢，表现为 "dispatcher unavailable"——代码没问题，文件不在。
 PIPE_JS_MODULES = (
     "headless_codec.cjs",
+    "headless_notices.cjs",
+    "pipe_notice_bridge.cjs",
     "headless_actions.cjs",
     "headless_oidb.cjs",
     "headless_sender.cjs",

@@ -48,7 +48,16 @@ function createMessageSender({ getSession, getIdentity, codec, resolveUid, messa
         // record is attributable instead of silently ignored.
         settled.set(ticket, { message_id: mid });
         while (settled.size > 200) settled.delete(settled.keys().next().value);
-        job.resolve({ message_id: mid, message_id_str: mid });
+        const receipt = { message_id: mid, message_id_str: mid };
+        // Only expose exact values from the correlated success record, never the
+        // correlation ticket, a local clock, or zero placeholders for absent data.
+        for (const [nativeKey, publicKey] of [['msgSeq', 'message_seq'], ['msgTime', 'time']]) {
+          const value = raw[nativeKey];
+          if ((typeof value === 'string' && /^(0|[1-9]\d*)$/.test(value)) ||
+              (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) ||
+              (typeof value === 'bigint' && value >= 0n)) receipt[publicKey] = String(value);
+        }
+        job.resolve(receipt);
       } catch (error) { job.reject(error); }
     }
   }

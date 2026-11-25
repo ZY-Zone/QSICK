@@ -1657,7 +1657,25 @@ function createActionDispatcher(options = {}) {
       if (!name) invalid('folder_name is required');
       const rm = service(s, 'RichMedia', REQUIREMENTS[op].slice(1));
       const response = resultCode(await rm.createGroupFolder(groupId, name));
-      return { group_id: Number(groupId), folder_name: name, result: response };
+      // NapCat's RichMedia declaration returns resultWithGroupItem.groupItem, not the name as an ID.
+      // Read only explicit native folder IDs from this creation response. A name-only list lookup
+      // cannot distinguish an existing folder or concurrent creation; never create again to retry.
+      const ids = new Set();
+      const addId = value => { if (typeof value === 'string' && value.trim()) ids.add(value); };
+      addId(response.folderId);
+      const created = response.resultWithGroupItem;
+      if (object(created)) {
+        addId(created.folderId);
+        if (Array.isArray(created.groupItem)) {
+          for (const item of created.groupItem) {
+            if (object(item) && object(item.folderInfo)) addId(item.folderInfo.folderId);
+          }
+        }
+      }
+      if (ids.size !== 1) {
+        badResult('Folder creation returned no unambiguous folderId; the folder may already exist, inspect group files before retrying');
+      }
+      return { group_id: Number(groupId), folder_id: [...ids][0], folder_name: name, result: response };
     }
     if (op === 'group.folder.delete') {
       const groupId = id(p.group_id, 'group_id');

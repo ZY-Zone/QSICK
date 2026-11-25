@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,8 @@ from .transport.base import LoginState, PacketEvent, SendResult, Transport, Tran
 log = logmod.get_logger("Runtime")
 
 MESSAGE_CMDS = {"message.group", "message.private", "message.sent"}
+_PIPE_PACKET_CMD = "trpc.msg.olpush.OlPushService.MsgPush"
+_PIPE_PACKET_MAX_BYTES = 1024 * 1024
 SEND_ACTIONS = {
     "send_msg",
     "send_group_msg",
@@ -625,7 +628,9 @@ class Runtime:
             # The queues and event streams are transport: nothing in them outlives the process that wrote them.
             # Left in place, the event streams are replayed from offset zero (every message stored again) and an
             # unanswered task is retried against a session that has since restarted.
-            cleared = await asyncio.to_thread(_headless.reset_queue_files, self.config.headless_root)
+            # Use the same root as the reader. Test isolation redirects this seam; bypassing it
+            # deleted a live session's queues while the isolated pytest runtime was starting.
+            cleared = await asyncio.to_thread(_headless.reset_queue_files, _pipe_event_root(self.config))
             if cleared.get("files") or cleared.get("dirs"):
                 log.info("cleared the queue and event files", files=cleared.get("files", 0),
                          dirs=cleared.get("dirs", 0))
@@ -1624,19 +1629,53 @@ class Runtime:
 
     # ------------------------------------------------------------------ events
 
+    async def _feed_pipe_packet(self, item: dict[str, Any]) -> None:
+        """Validate a DLL packet envelope before allowing it to warm identities or publish events."""
+        from .olpush import DecodeError, decode_push, frame_identity
+
+        uin = item.get("uin")
+        if not isinstance(uin, str) or re.fullmatch(r"[1-9][0-9]*", uin) is None:
+            raise ValueError("packet uin must be a positive decimal string")
+        if item.get("cmd") != _PIPE_PACKET_CMD:
+            raise ValueError("unsupported packet cmd")
+        if item.get("truncated") is True:
+            raise ValueError("truncated packet refused")
+        length = item.get("byte_length")
+        if type(length) is not int or length <= 0:
+            raise ValueError("packet byte_length must be a positive integer")
+        body_hex = item.get("body_hex")
+        if not isinstance(body_hex, str):
+            raise ValueError("packet body_hex must be a string")
+        # Check both lengths before decoding. Never accept a clipped prefix of an oversized frame.
+        if length > _PIPE_PACKET_MAX_BYTES or len(body_hex) > _PIPE_PACKET_MAX_BYTES * 2:
+            raise ValueError("packet exceeds 1 MiB limit; refused without truncation")
+        if not body_hex or len(body_hex) % 2 or re.fullmatch(r"[0-9a-fA-F]+", body_hex) is None:
+            raise ValueError("packet body_hex must contain complete hexadecimal byte pairs")
+        if len(body_hex) // 2 != length:
+            raise ValueError("packet byte_length does not match body_hex")
+        data = bytes.fromhex(body_hex)
+        # The mapper intentionally ignores undecodable/unsupported pushes. Validate the envelope here
+        # so a malformed wire frame is observable, while well-formed unknown message types remain quiet.
+        try:
+            decode_push(data)
+        except DecodeError as exc:
+            raise ValueError(f"invalid packet protobuf: {exc}") from exc
+        recipient = frame_identity(data).get("self_uin")
+        if recipient and recipient != uin:
+            raise ValueError("packet ResponseHead toUin does not match uin")
+        await self.feed_packet(data, instance=uin, account=uin)
+
     async def _poll_pipe_events(self, initial_offset: int = 0) -> None:
         """Feed messages reported by pipe sessions into the normal event pipeline.
 
-        A pipe session writes what it receives to `<headless root>/Pipe/owndata/events.jsonl`; nothing pushes
-        those to QSICK, because the injected DLL has no callback into this process -- only the task queue it
-        reads from. So this task tails that file and hands the results to `transport.push`, which is the same
-        entry point `/api/headless/event` uses for headless instances. Everything downstream (store, protocol
-        encoding, network profiles) is then identical for both kinds of instance.
+        Each pipe session writes JS events and native packets to separate `events.jsonl` and
+        `packet-events.jsonl` streams under `<headless root>/Pipe/dll/<sessionid>/`. The reader also accepts
+        the legacy shared event stream. Packets go to `feed_packet`; ordinary events still use
+        `transport.push`, the same entry point `/api/headless/event` uses for headless instances.
 
-        Attributes each event to its **account**, not to the client directory. All sessions write into one
-        shared stream, so using `Pipe` as the instance would put every account's messages in one context --
-        and network configs are owned per account. The uin is carried in each line, written by the injected
-        side where it knows which process it is.
+        Attributes each event to its **account**, not to the client directory: using `Pipe` as the instance
+        would put every account's messages in one context, while network configs are owned per account.
+        The uin is carried in each line, written by the injected side where it knows which process it is.
 
         `push` may be absent (the mock and named-pipe transports do not implement it); in that case there is
         nothing to feed and the task simply idles.
@@ -1665,6 +1704,12 @@ class Runtime:
             if result.get("error"):
                 log.debug("pipe event read error", error=result["error"])
             for item in result.get("events") or []:
+                if item.get("type") == "packet":
+                    try:
+                        await self._feed_pipe_packet(item)
+                    except Exception as exc:  # noqa: BLE001 - one bad packet must not stop polling
+                        log.warn("pipe packet rejected", error=f"{type(exc).__name__}: {exc}")
+                    continue
                 uin = str(item.get("uin") or "").strip()
                 if not uin:
                     continue
