@@ -432,6 +432,15 @@ def to_cq_string(elements: Iterable[Element]) -> str:
             parts.append(f"[CQ:video,file={element.data.get('file_id', '')}]")
         elif element.type == "file":
             parts.append(f"[CQ:file,file={element.data.get('file_id', '')}]")
+        elif element.type == "forward":
+            # OneBot v11 has a CQ form for a merged forward. Emitting it keeps `raw_message`
+            # readable and round-trippable; the previous fallback collapsed a whole chat record
+            # into an opaque `[QSICK:forward]` with no ID.
+            parts.append(f"[CQ:forward,id={_cq_param(element.data.get('res_id', ''))}]")
+        elif element.type == "markdown":
+            # Same shape NapCat emits (`markdown` -> `{type:'markdown',data:{content}}`), so a
+            # consumer that shows the card can read the text instead of an empty placeholder.
+            parts.append(f"[CQ:markdown,content={_cq_param(element.data.get('content', ''))}]")
         elif element.type == "reply":
             parts.append(f"[CQ:reply,id={element.data.get('message_id', '')}]")
         elif element.type == "dice":
@@ -459,6 +468,16 @@ def to_cq_string(elements: Iterable[Element]) -> str:
 
 def _escape(text: str) -> str:
     return text.replace("&", "&amp;").replace("[", "&#91;").replace("]", "&#93;")
+
+
+def _cq_param(value: Any) -> str:
+    """Escape a CQ attribute value.
+
+    A CQ attribute ends at `,` or `]`, so both need escaping inside a value; `_escape` only
+    handles brackets and the ampersand because it renders plain text, not attributes.
+    Comma escaping matches NapCat's `CQCodeEscape`, so the same content parses back the same way.
+    """
+    return _escape(str(value if value is not None else "")).replace(",", "&#44;")
 
 
 def preview(elements: Iterable[Element], limit: int = 120) -> str:

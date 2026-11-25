@@ -63,6 +63,32 @@ def test_cq_string_escapes_brackets():
     assert "[CQ:at,qq=10001]" in text
 
 
+def test_cq_string_keeps_forward_and_markdown_content():
+    """A merged forward used to render as `[QSICK:forward]` -- an ID-less placeholder.
+
+    Both shapes now use the CQ form NapCat emits, and the attribute escaping matches its
+    rules, so the same text parses back unchanged.
+    """
+    forward, markdown = E.to_cq_string([
+        E.Element("forward", {"res_id": "res-1", "content": []}),
+        E.Element("markdown", {"content": "# t, [b]\nline"}),
+    ]).split("][CQ:")
+    assert forward == "[CQ:forward,id=res-1"
+    assert markdown == "markdown,content=# t&#44; &#91;b&#93;\nline]"
+
+    from protocols.onebotv11 import codec as v11
+
+    parsed = v11.parse_cq_string(
+        E.to_cq_string([
+            E.Element("forward", {"res_id": "res-1", "content": []}),
+            E.Element("markdown", {"content": "# t, [b]"}),
+        ]))
+    assert parsed == [
+        {"type": "forward", "data": {"id": "res-1"}},
+        {"type": "markdown", "data": {"content": "# t, [b]"}},
+    ]
+
+
 async def test_resolve_media_fills_url_only_when_missing():
     filled = E.normalize({"type": "image", "data": {"file_id": "f1"}})
     kept = E.normalize({"type": "image", "data": {"file_id": "f2", "url": "https://x"}})

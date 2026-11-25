@@ -84,6 +84,27 @@ assert.ok(__messageRefs.has('7001'));
 """)
 
 
+def test_element_payloads_are_not_depth_truncated_by_the_envelope():
+    """The envelope must not be re-sanitized: that burned the depth budget.
+
+    `toJsonSafe` caps object nesting at 4 levels. Sanitizing the whole event
+    (event -> protocol -> elements -> element -> data) put every element's `data`
+    exactly on that limit, so every message arrived with `{$depth: true}` instead of
+    its text, media ID or forward resource ID.
+    """
+    run_js("""
+__emit({...base,elements:[text]},'message');
+assert.deepEqual(output[0].protocol.elements[0].data,{text:'hello'});
+assert.equal(output[0].protocol.elements[0].raw.textElement.content,'hello');
+__emit({...base,msgId:'7002',elements:[{elementType:2,picElement:{fileUuid:'uuid-1',fileName:'a.png',picWidth:4,picHeight:3}}]},'message');
+assert.equal(output[1].protocol.elements[0].data.file_id,'uuid-1');
+__emit({...base,msgId:'7003',elements:[{elementType:16,multiForwardMsgElement:{resId:'res-1',xmlContent:'<msg/>',fileName:'record'}}]},'message');
+assert.equal(output[2].protocol.elements[0].data.res_id,'res-1');
+__emit({...base,msgId:'7004',elements:[{elementType:14,markdownElement:{content:'# body'}}]},'message');
+assert.equal(output[3].protocol.elements[0].data.content,'# body');
+""",)
+
+
 def test_unknown_gray_tip_is_not_message_but_sent_receipt_survives():
     run_js("""
 const raw = {...base,elements:[tip({type:999})]};
