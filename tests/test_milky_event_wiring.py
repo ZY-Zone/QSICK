@@ -136,7 +136,7 @@ def test_admin_packet_direction_is_preserved_without_fabricating_operator(enable
     assert "operator_id" not in event
     data = convert(event)["data"]
     assert data["is_set"] is enabled
-    assert data["operator_id"] == ""  # Known source gap; do not substitute admin or bot.
+    assert data["operator_id"] == 0  # Known source gap: 0 is the spec's "nobody", never the admin or bot.
 
 
 @pytest.mark.parametrize("kind,body", [

@@ -129,6 +129,36 @@ def test_action_calls_shared_base_with_account_and_cleans(alias):
     assert not seen[0].exists()
 
 
+def test_plain_path_the_host_can_read_is_forwarded_unchanged():
+    """A path only QQ can see must not be rejected by this process.
+
+    Before URI support this action handed `file` straight to the host; resolving it here
+    would break callers that send paths relative to the client's working directory.
+    """
+    seen = {}
+
+    async def call(op, params, *, timeout):
+        seen.update(params)
+        return SimpleNamespace(ok=True, data={"file_id": "id"})
+
+    reference = r"C:\definitely\not\here\a.txt"
+    result = asyncio.run(UploadGroupFileAction().run(
+        SimpleNamespace(account="123", call=call), file=reference, name="a.txt"))
+    assert result == {"file_id": "id"}
+    assert seen["file"] == reference
+    assert "file_path" not in seen
+
+
+@pytest.mark.parametrize("reference", ["data:text/plain,a", "ftp://host/file"])
+def test_unsupported_scheme_fails_here_instead_of_reaching_the_host(reference):
+    async def call(*args, **kwargs):
+        pytest.fail("an unsupported URI must not reach the payload")
+
+    with pytest.raises(ActionError):
+        asyncio.run(UploadGroupFileAction().run(
+            SimpleNamespace(account="123", call=call), file=reference))
+
+
 @pytest.mark.parametrize("failure", [TimeoutError("uncertain"), asyncio.CancelledError(), ActionError("upstream timeout")])
 def test_uncertain_upload_retains_source(failure, tmp_path):
     seen = []

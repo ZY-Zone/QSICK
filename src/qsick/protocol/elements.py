@@ -275,6 +275,13 @@ def _media_data(d: dict[str, Any], *, summary_key: str | None = None, extra: tup
     size = d.get("file_size", d.get("size"))
     if size is not None:
         out["file_size"] = size
+    # Width/height are what the client needs to reserve layout space before the media
+    # loads, and they are already in the element from the native picture/video fields.
+    # They are kept as an extension (NapCat's schema omits them) so nothing that reads
+    # the standard fields changes; the Milky encoder picks them up from here.
+    for key in ("width", "height"):
+        if d.get(key) is not None:
+            out[key] = d[key]
     if summary_key and d.get(summary_key):
         out[summary_key] = str(d[summary_key])
     for key in extra:

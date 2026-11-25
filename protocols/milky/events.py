@@ -213,7 +213,7 @@ def _notice(event: dict[str, Any]) -> dict[str, Any] | None:
         out = _envelope("group_disband", event)
         out["data"] = {
             "group_id": _uin(event.get("group_id")),
-            "operator_id": _uin(event.get("operator_id")),
+            "operator_id": _uin_or_zero(event.get("operator_id")),
         }
         return out
 
@@ -247,7 +247,7 @@ def _member_increase(event: dict[str, Any]) -> dict[str, Any]:
     out["data"] = {
         "group_id": _uin(event.get("group_id")),
         "user_id": _uin(event.get("user_id")),
-        "operator_id": _uin(event.get("operator_id")),
+        "operator_id": _uin_or_zero(event.get("operator_id")),
         # OneBot 的 `group_increase` 不区分邀请人；有就带上，没有就给 0。
         "invitor_id": _uin_or_zero(event.get("invitor_id")),
     }
@@ -269,7 +269,7 @@ def _admin_change(event: dict[str, Any]) -> dict[str, Any]:
     out["data"] = {
         "group_id": _uin(event.get("group_id")),
         "user_id": _uin(event.get("user_id")),
-        "operator_id": _uin(event.get("operator_id")),
+        "operator_id": _uin_or_zero(event.get("operator_id")),
         "is_set": (event["sub_type"] == "set" if event.get("sub_type") in ("set", "unset")
                    else bool(event.get("is_set", event.get("set")))),
     }
@@ -281,7 +281,7 @@ def _member_mute(event: dict[str, Any]) -> dict[str, Any]:
     out["data"] = {
         "group_id": _uin(event.get("group_id")),
         "user_id": _uin(event.get("user_id")),
-        "operator_id": _uin(event.get("operator_id")),
+        "operator_id": _uin_or_zero(event.get("operator_id")),
         # 规范里是「秒」，解除禁言就是 0；没有单独的 is_mute 字段。
         "duration": int(event.get("duration") or 0),
     }
@@ -313,7 +313,7 @@ def _name_change(event: dict[str, Any]) -> dict[str, Any]:
     out["data"] = {
         "group_id": _uin(event.get("group_id")),
         "new_group_name": str(event.get("group_name") or ""),
-        "operator_id": _uin(event.get("operator_id")),
+        "operator_id": _uin_or_zero(event.get("operator_id")),
     }
     return out
 
@@ -450,7 +450,7 @@ def _request(event: dict[str, Any]) -> dict[str, Any] | None:
             out["data"] = {
                 "group_id": _uin(event.get("group_id")),
                 "invitation_seq": _uin_or_zero(event.get("invitation_seq")),
-                "initiator_id": _uin(event.get("user_id")),
+                "initiator_id": _uin_or_zero(event.get("user_id")),
                 "source_group_id": _uin_or_zero(event.get("source_group_id")),
             }
             return out
@@ -459,7 +459,7 @@ def _request(event: dict[str, Any]) -> dict[str, Any] | None:
             "group_id": _uin(event.get("group_id")),
             "notification_seq": _uin_or_zero(seq),
             "is_filtered": bool(event.get("is_filtered")),
-            "initiator_id": _uin(event.get("user_id")),
+            "initiator_id": _uin_or_zero(event.get("user_id")),
             "comment": str(event.get("comment") or ""),
         }
         return out
