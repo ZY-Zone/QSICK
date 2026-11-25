@@ -37,6 +37,32 @@ log = logmod.get_logger("Runtime")
 MESSAGE_CMDS = {"message.group", "message.private", "message.sent"}
 _PIPE_PACKET_CMD = "trpc.msg.olpush.OlPushService.MsgPush"
 _PIPE_PACKET_MAX_BYTES = 1024 * 1024
+
+
+def _inspect_packet(body_hex: str, length: int) -> tuple[bytes, str]:
+    """Decode and validate one OLPush frame; runs in a worker thread, never on the loop.
+
+    Returns `(bytes, toUin)`. Raises `ValueError` for a frame the mapper cannot read.
+
+    `decode_push` is pure-Python protobuf parsing over up to 1 MiB and `frame_identity` walks the
+    same bytes again. Inline, that stalls every coroutine for the duration -- which a consumer sees
+    as a late websocket pong or an action that "did not answer in time", never as a decode problem.
+    Both pieces are pure functions of the bytes, so a thread is safe.
+    """
+    from .olpush import DecodeError, decode_push, frame_identity
+
+    data = bytes.fromhex(body_hex)
+    if len(data) != length:
+        raise ValueError("packet byte_length does not match body_hex")
+    # The mapper intentionally ignores undecodable/unsupported pushes. Validate the envelope here
+    # so a malformed wire frame is observable, while well-formed unknown message types stay quiet.
+    try:
+        decode_push(data)
+    except DecodeError as exc:
+        raise ValueError(f"invalid packet protobuf: {exc}") from exc
+    return data, str(frame_identity(data).get("self_uin") or "")
+
+
 SEND_ACTIONS = {
     "send_msg",
     "send_group_msg",
@@ -325,6 +351,14 @@ class Runtime:
         self.events_seen = 0
         self.events_dropped = 0
         self.events_duplicate = 0
+        #: Event-loop responsiveness, in milliseconds: `now`, `p95` and `max` over the last window.
+        #:
+        #: A consumer that reports "the pong came too late" or an action that "did not answer in time"
+        #: is usually describing this number. While the loop is stalled nothing on it runs -- not the
+        #: websocket ping reply, not the action dispatch -- so measuring the stall is the only way to
+        #: tell "the loop is blocked" from "that subsystem is slow". Kept cheap: one sleep plus two
+        #: clock reads per sample.
+        self.loop_lag: dict[str, float] = {"now": 0.0, "p95": 0.0, "max": 0.0}
         #: 账号 -> {群号: 本号经包推送入群的时刻}。见 `feed_packet`。
         self._olpush_self_joins: dict[str, dict[int, float]] = {}
         self.deduper = EventDeduper(self.config.onebot.dedupe_seconds, self.config.onebot.dedupe_max)
@@ -754,6 +788,10 @@ class Runtime:
         if metricsmod.available():
             self._metrics_task = asyncio.create_task(self._metrics_loop(), name="qsick-metrics")
             self._tasks.append(self._metrics_task)
+        # Always started, unlike the metrics sampler: loop lag is the measurement that tells a
+        # consumer's "pong was late" apart from "that subsystem is slow", and it must be available
+        # even where psutil is missing.
+        self._tasks.append(asyncio.create_task(self._loop_lag_loop(), name="qsick-loop-lag"))
         log.info(
             "runtime started",
             transport=self.transport.name,
@@ -1631,7 +1669,7 @@ class Runtime:
 
     async def _feed_pipe_packet(self, item: dict[str, Any]) -> None:
         """Validate a DLL packet envelope before allowing it to warm identities or publish events."""
-        from .olpush import DecodeError, decode_push, frame_identity
+        from .olpush import DecodeError
 
         uin = item.get("uin")
         if not isinstance(uin, str) or re.fullmatch(r"[1-9][0-9]*", uin) is None:
@@ -1653,14 +1691,10 @@ class Runtime:
             raise ValueError("packet body_hex must contain complete hexadecimal byte pairs")
         if len(body_hex) // 2 != length:
             raise ValueError("packet byte_length does not match body_hex")
-        data = bytes.fromhex(body_hex)
-        # The mapper intentionally ignores undecodable/unsupported pushes. Validate the envelope here
-        # so a malformed wire frame is observable, while well-formed unknown message types remain quiet.
-        try:
-            decode_push(data)
-        except DecodeError as exc:
-            raise ValueError(f"invalid packet protobuf: {exc}") from exc
-        recipient = frame_identity(data).get("self_uin")
+        # Decode and validate off the loop. `decode_push` is pure-Python protobuf parsing over up to
+        # 1 MiB, and `frame_identity` walks the same bytes again: together they are the heaviest
+        # thing on this path, and doing it inline stalls every other coroutine for its duration.
+        data, recipient = await asyncio.to_thread(_inspect_packet, body_hex, length)
         if recipient and recipient != uin:
             raise ValueError("packet ResponseHead toUin does not match uin")
         await self.feed_packet(data, instance=uin, account=uin)
@@ -1697,7 +1731,12 @@ class Runtime:
         offsets["pipe"] = int(initial_offset or 0)
         while not self._stopping.is_set():
             try:
-                result = headless_mod.read_pipe_events(root, offsets=offsets)
+                # Off the loop: this stats and reads every session's event files. A burst of lines
+                # (or a session that just flushed a few thousand) would otherwise be parsed inline,
+                # and while that runs nothing else does -- not the websocket ping reply, not an
+                # action dispatch, which is what a consumer reports as a late pong or a timeout.
+                result = await asyncio.to_thread(
+                    headless_mod.read_pipe_events, root, offsets)
             except Exception as exc:  # noqa: BLE001 - never let bookkeeping stop the loop
                 log.debug("pipe event read failed", error=str(exc))
                 result = {"events": [], "error": ""}
@@ -1739,7 +1778,13 @@ class Runtime:
                     push({"kind": event_type, "cmd": cmd, "instance": uin, "payload": body})
                 except Exception as exc:  # noqa: BLE001
                     log.warn("pipe event rejected", error=str(exc), cmd=cmd)
-            await asyncio.sleep(0.4)
+            # Poll faster while there is work and back off when idle.
+            #
+            # A fixed 0.4 s meant every inbound message waited up to 400 ms before anything saw it --
+            # latency, not throughput, and it is on top of the consumer's own polling. The fast
+            # interval only applies when the last read returned something, so an idle instance costs
+            # the same as before.
+            await asyncio.sleep(self.PIPE_POLL_FAST if result.get("events") else self.PIPE_POLL_IDLE)
 
     async def _consume(self) -> None:
         try:
@@ -2323,6 +2368,46 @@ class Runtime:
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 continue
 
+    #: How often the loop-lag sampler runs. Small enough that a stall shows up within a second,
+    #: large enough that the sampler itself is invisible in a profile.
+    LOOP_LAG_INTERVAL = 0.25
+    #: Pipe event poll interval: fast while events keep arriving, idle when the stream is quiet.
+    PIPE_POLL_FAST = 0.15
+    PIPE_POLL_IDLE = 0.4
+    #: How many samples the p95 is computed over. Four minutes at the interval above.
+    LOOP_LAG_SAMPLES = 960
+
+    async def _loop_lag_loop(self) -> None:
+        """Measure how late a scheduled wakeup actually fires.
+
+        `await asyncio.sleep(interval)` asks to be resumed `interval` seconds later. If the loop is
+        busy -- a synchronous decode, a file read, a `json.dumps` of a large message -- the wakeup
+        arrives late, and the lateness is exactly how long nothing else could run.
+        """
+        interval = self.LOOP_LAG_INTERVAL
+        samples: list[float] = []
+        while not self._stopping.is_set():
+            started = asyncio.get_running_loop().time()
+            try:
+                await asyncio.wait_for(self._stopping.wait(), timeout=interval)
+                return                      # stopping: no more samples
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
+            lag = max(0.0, (asyncio.get_running_loop().time() - started - interval) * 1000.0)
+            samples.append(lag)
+            if len(samples) > self.LOOP_LAG_SAMPLES:
+                del samples[: len(samples) - self.LOOP_LAG_SAMPLES]
+            ordered = sorted(samples)
+            # p95 rather than the mean: the question is "how bad does it get", and one 2 s stall
+            # among a thousand good samples is invisible in an average.
+            index = min(len(ordered) - 1, int(len(ordered) * 0.95))
+            self.loop_lag = {
+                "now": round(lag, 1),
+                "p95": round(ordered[index], 1),
+                "max": round(ordered[-1], 1),
+                "samples": len(ordered),
+            }
+
     def chart_data(self) -> dict[str, Any]:
         """Everything the overview's three charts need, precomputed.
 
@@ -2419,6 +2504,10 @@ class Runtime:
             "events_dropped": self.events_dropped,
             "events_duplicate": self.events_duplicate,
             "last_event_at": self.last_event_at,
+            # How long the event loop was unavailable, sampled continuously. A consumer that stops
+            # answering pings (or an action that "did not answer in time") is usually this number, not
+            # that subsystem: nothing on the loop can reply while the loop is stalled.
+            "loop_lag_ms": dict(self.loop_lag),
             "last_error": self._last_error(),
             "network_cards": self.network_cards(),
             # The message cache's own store, not the primary instance's database. The overview used to report

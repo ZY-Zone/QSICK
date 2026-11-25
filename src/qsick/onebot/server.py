@@ -55,6 +55,10 @@ class EventHub:
     the same protocol cannot end up with different JSON.
     """
 
+    #: Per-send budget for one client. A client that cannot take a frame within this is treated as
+    #: broken and removed, and because sends are concurrent (see `broadcast`) it only costs its own slot.
+    SEND_TIMEOUT = 5.0
+
     def __init__(self, pipelines: Any = None) -> None:
         self._websockets: dict[WebSocket, Any] = {}
         self._sse: dict[asyncio.Queue[str], Any] = {}
@@ -147,18 +151,30 @@ class EventHub:
             return
 
         dead: list[WebSocket] = []
-        for ws, connection in list(self._websockets.items()):
+
+        async def send_to(ws: WebSocket, connection: Any) -> None:
             texts = frames.get(getattr(connection, "protocol", ""))
             if not texts:
-                continue          # this protocol failed to encode; skip its clients only
+                return            # this protocol failed to encode; skip its clients only
             try:
-                if ws.client_state is WebSocketState.CONNECTED:
-                    for text in texts:
-                        await asyncio.wait_for(ws.send_text(text), timeout=5.0)
-                else:
+                if ws.client_state is not WebSocketState.CONNECTED:
                     dead.append(ws)
+                    return
+                for text in texts:
+                    await asyncio.wait_for(ws.send_text(text), timeout=self.SEND_TIMEOUT)
             except Exception:  # noqa: BLE001 - one broken client must not stop others
                 dead.append(ws)
+
+        # Send to everyone at once, not one after another.
+        #
+        # Sequentially, a single slow client held every other client's frames for up to the send
+        # timeout each -- and, because this runs inside event dispatch, it also held up the next
+        # event. One consumer that stops reading (a reconnect, a paused process) then looked like
+        # the whole bridge stalling, including the websocket ping reply the consumer was waiting on.
+        if self._websockets:
+            await asyncio.gather(*(
+                send_to(ws, connection) for ws, connection in list(self._websockets.items())
+            ))
         self.slow_ws += len(dead)
         for ws in dead:
             await self.remove_ws(ws)
