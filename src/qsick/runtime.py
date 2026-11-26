@@ -1208,13 +1208,19 @@ class Runtime:
         except OSError as exc:  # noqa: BLE001 - a missing store is not fatal, load() falls back
             log.warn("could not create the network profile store", error=str(exc))
 
-    def _network_profiles_for(self, accounts: list[str]) -> list[dict[str, Any]]:
+    def _network_profiles_for(self, accounts: list[str],
+                              profiles: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
         """Every profile owned by one of `accounts`, de-duplicated by id.
 
         A profile's owner is either a QQ number (what the settings page writes, because one connection cannot
         belong to two accounts) or an instance name (`C0`, which is what the built-in defaults carry). Both
         must match, and an instance name counts as the account currently logged in on it -- otherwise the
         default profiles would never match anything and the listener they describe would silently never open.
+
+        `profiles` lets a caller resolve a *candidate* set it is about to save. Without it the store is
+        re-read from disk, which is right for the running state and wrong for validating a save that has
+        not happened yet: the new profile would not be in the reloaded list, so nothing about it would be
+        checked -- including the path collision the settings page rejects.
 
         Only logged-in accounts contribute: a profile for an account that is offline must not keep a listener
         open.
@@ -1228,9 +1234,11 @@ class Runtime:
         # (`qsick.json`), not written by an account. Those are not attributable to one account, so they are
         # adopted by whichever accounts are logging in -- otherwise the first login would persist an empty
         # store and silently drop a reverse connection that was working before anyone opened the settings page.
-        adopting_defaults = not netprofiles.store_exists(self.config)
+        #
+        # A caller passing a candidate set has already loaded it, so the question does not arise there.
+        adopting_defaults = profiles is None and not netprofiles.store_exists(self.config)
         merged: dict[str, dict[str, Any]] = {}
-        for profile in netprofiles.load(self.config):
+        for profile in (netprofiles.load(self.config) if profiles is None else profiles):
             owner = str(profile.get("instance") or profile.get("account") or netprofiles.DEFAULT_INSTANCE)
             if owner not in wanted and not adopting_defaults:
                 continue

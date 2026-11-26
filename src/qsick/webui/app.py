@@ -8,6 +8,7 @@ in real htmx later is a one-line change.
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import json
 import math
@@ -1280,16 +1281,26 @@ def create_app(runtime: "Runtime") -> FastAPI:
         except (ValueError, KeyError) as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
 
-        netprofiles.save(runtime.config, profiles)
-        # Only logged-in accounts' profiles are applied. `apply_to_config` takes the first enabled listener out of
-        # whatever it is handed, so handing it the whole store let one account's profile open a listener that then
-        # answered as a different account.
-        active_profiles = runtime._network_profiles_for(runtime._active_accounts())
+        # Validate *before* anything is written.
+        #
+        # This used to save the profiles first and validate afterwards, so a save the page then
+        # rejected ("HTTP / WS / SSE 路径不能重复") had already been persisted: the dialog said it
+        # failed while a page refresh showed the new profile. Worse, `apply_to_config` mutates
+        # `config.onebot` as it goes, so a rejected save also left the running config changed.
+        # Both are fixed by applying to a copy, validating that, and committing only if it passes.
+        previous_onebot = copy.deepcopy(runtime.config.onebot)
+        active_profiles = runtime._network_profiles_for(runtime._active_accounts(), profiles)
         data, warnings = netprofiles.apply_to_config(runtime.config, active_profiles)
         data["clear_onebot_token"] = False
         errors = _apply_network(runtime, data)
         if errors:
+            # Put the in-memory config back: nothing of this request should survive a rejection.
+            # `OneBotConfig` is a slots dataclass, so this copies field by field rather than via `vars`.
+            for slot in previous_onebot.__slots__:
+                setattr(runtime.config.onebot, slot, getattr(previous_onebot, slot))
             return JSONResponse({"ok": False, "error": "; ".join(errors)}, status_code=400)
+
+        netprofiles.save(runtime.config, profiles)
         _write_setting(runtime, {"onebot": {key: value for key, value in data.items() if key != "clear_onebot_token"}})
         # Hot reload still happens immediately -- but through the account gate, so a profile for an account
         # that is not logged in saves without opening a listener for it. `force` is what makes this a reload:

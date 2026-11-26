@@ -45,8 +45,13 @@ class Message:
             time=_int(payload.get("time")),
             chat_type=chat_type,
             chat_id=chat_id,
-            sender_uin=_int(sender.get("uin", payload.get("user_id", 0))),
-            sender_name=str(sender.get("nickname") or sender.get("name") or ""),
+            # `uin` is the internal name; `user_id` is what an OneBot event calls it. Reading only
+            # the internal one recorded sender 0 for **every** cached message, because the cache
+            # feeds this the event's own `sender` object (`{user_id, nickname, card, role}`). That
+            # made the sender look like "nobody" in the message page and left the cache unable to
+            # answer "who wrote this" at all.
+            sender_uin=_int(sender.get("uin", sender.get("user_id", payload.get("user_id", 0)))),
+            sender_name=str(sender.get("nickname") or sender.get("name") or sender.get("card") or ""),
             sender_uid=str(sender.get("uid") or ""),
             card=str(sender.get("card") or ""),
             role=str(sender.get("role") or "member"),
