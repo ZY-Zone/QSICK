@@ -3,8 +3,16 @@
 四项都**不是"客户端没有能力"**——方法都在，参数形状一部分已确定。本文只记录实测到的
 东西，没验证过的不写成结论。
 
-探针：`tools/probe_service_shapes.py`、`tools/probe_arg_types.py`、`tools/probe_nudge.py`、
-`tools/strings_around.py`。调用通道是 `service_call`（`{service, method, args}`）。
+探针在 `tools/` 下，按仓库惯例（`.gitignore` 忽略 `tools/probe_*.py`）只留在本地，不进版本库：
+
+| 文件 | 作用 |
+| --- | --- |
+| `tools/probe_service_shapes.py` | 空参调用，拿原生断言的参数个数 |
+| `tools/probe_arg_types.py` | 每个位置换成错误类型，看绑定期待什么 |
+| `tools/probe_nudge.py` | 逐个形状试戳一戳，用事件流里的 poke 通知验证 |
+| `tools/strings_around.py` | 从 `wrapper.node` 提取方法名附近的字符串 |
+
+调用通道是 `service_call`（`{service, method, args}`），它是版本库里的东西。
 
 ## 一、发送群消息表情回应 —— 可用
 
