@@ -164,13 +164,16 @@ function decodeFetchRkeyResponse(body) {
  * Send one OIDB request through QQ's own SSO channel.
  * `getMsgService` must return the live kernel message service.
  */
-async function sendOidb(getMsgService, cmd, subCmd, body, timeoutMs = 10000) {
+async function sendOidb(getMsgService, cmd, subCmd, body, timeoutMs = 10000, style = '') {
   const service = getMsgService();
   if (!service || typeof service.sendSsoCmdReqByContend !== 'function') {
     throw new Error('sendSsoCmdReqByContend is unavailable on this QQ build');
   }
   const packet = encodeOidb(cmd, subCmd, body);
-  const name = commandName(cmd, subCmd);
+  // Which naming style routes is a property of the command, not a global fact: 0x9067 answers to
+  // the plain style and rejects the trpc one, while 0x6D6 goes the other way. So the caller can name
+  // one, and the resolved name is returned rather than assumed.
+  const name = commandName(cmd, subCmd, style || undefined);
   let timer;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error(`OIDB ${name} timed out after ${timeoutMs}ms`)), timeoutMs);
@@ -198,7 +201,9 @@ async function sendOidb(getMsgService, cmd, subCmd, body, timeoutMs = 10000) {
       } catch (_) { shape = '<unprintable>'; }
       throw new Error(`OIDB ${name} returned no response buffer: ${shape}`);
     }
-    return decodeOidb(Buffer.from(buffer, typeof buffer === 'string' ? 'latin1' : undefined));
+    // The resolved name travels with the answer: "which command string actually worked" is exactly
+    // what a caller probing an unmapped command needs to know.
+    return { ...decodeOidb(Buffer.from(buffer, typeof buffer === 'string' ? 'latin1' : undefined)), name };
   } finally { clearTimeout(timer); }
 }
 

@@ -1757,7 +1757,7 @@
       "module": "system/get_private_file_url",
       "class": "GetPrivateFileUrlAction",
       "category": "system",
-      "summary": "获取私聊文件地址",
+      "summary": "获取私聊文件下载地址",
       "status": "implemented",
       "read_only": true,
       "params": [
@@ -1774,6 +1774,20 @@
           "required": true,
           "default": null,
           "desc": ""
+        },
+        {
+          "name": "file_hash",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": "文件 TriSHA1/MD5；私聊下载地址必须带"
+        },
+        {
+          "name": "is_self_send",
+          "kind": "bool",
+          "required": false,
+          "default": false,
+          "desc": "是否由本账号发出"
         }
       ],
       "wire": "core"
@@ -2632,7 +2646,7 @@
       "module": "packet/oidb_call",
       "class": "OidbCallAction",
       "category": "packet",
-      "summary": "调用任意 OIDB",
+      "summary": "调用任意 OIDB（返回 error_code 与原始 body_hex）",
       "status": "implemented",
       "read_only": false,
       "params": [
@@ -2656,6 +2670,20 @@
           "required": false,
           "default": null,
           "desc": ""
+        },
+        {
+          "name": "timeout_ms",
+          "kind": "int",
+          "required": false,
+          "default": 0,
+          "desc": "0 表示用默认 10 秒"
+        },
+        {
+          "name": "style",
+          "kind": "str",
+          "required": false,
+          "default": "",
+          "desc": "plain / trpc / lower；留空用默认 plain"
         }
       ],
       "wire": "core"
@@ -4314,7 +4342,7 @@
       "module": "group_file/upload_private_file",
       "class": "UploadPrivateFileAction",
       "category": "group_file",
-      "summary": "",
+      "summary": "上传私聊文件",
       "status": "implemented",
       "read_only": false,
       "params": [],

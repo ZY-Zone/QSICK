@@ -268,6 +268,15 @@ function mediaData(body, raw, kind) {
   if (body.filePath) data.path = text(body.filePath);
   if (hash) data.md5 = text(hash);
   if (body.fileSubId !== undefined) data.file_sub_id = text(body.fileSubId);
+  // The URL a received file already carries.
+  //
+  // `downloadUrl` is a confirmed field of the file element (reports 13/15: `kElemTypeFile` /
+  // `kElemTypeOnlineFile`), but it has never been observed populated on this build -- the napi
+  // hooks that would capture it returned nothing. So it is copied when present and simply absent
+  // otherwise: a caller may use it, but nothing here pretends a private file always arrives with
+  // one. That is why `private.file.download_url` still has to ask the server.
+  const downloadUrl = text(body.downloadUrl) || text(body.download_url);
+  if (downloadUrl) data.download_url = downloadUrl;
   // Element IDs are required to correlate late media downloads back to this element.
   if (raw.elementId !== undefined && raw.elementId !== null && raw.elementId !== '') data.element_id = text(raw.elementId);
   if (kind === 'image') {

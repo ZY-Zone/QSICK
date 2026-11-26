@@ -227,7 +227,7 @@ const UNRESOLVED = Object.freeze({
   'group.honor': 'Group honors are fetched over HTTP with qun.qq.com cookies (NapCat WebApi.getGroupHonorInfo); no kernel equivalent',
   'get_group_system_msg': 'Requires the group-notify pull chain (NapCat uses getGroupNotifiesUnreadCount plus a notifies fetch); not implemented',
   'get_profile_like': 'Profile-like reads go through NodeIKernelProfileLikeService, whose response shape has not been measured on this client',
-  'media.url': 'Resolving a bare file id to a URL needs the media cache the receive path builds; pass message_id + element_id + chat to use media.download instead',
+  'media.url': 'Resolving a bare file id to a URL needs the media cache the receive path builds; pass message_id + element_id + chat to use media.download instead. Private files go through `private.file.download_url`, group files through `group.file.download` -- both are separate commands, not this one',
   // Group notices are the third member of the cookies family, despite living under group.*.
   //
   // NapCat reads them with `RequestUtil.HttpGetJson` against the qun.qq.com notice endpoint
@@ -307,8 +307,25 @@ const REQUIREMENTS = Object.freeze({
   // absent only because no message builder existed. See headless_groupfile.cjs for the field numbers,
   // which are transcribed from Lagrange's ProtoMember attributes rather than guessed.
   'group.file.download': ['Msg', 'sendSsoCmdReqByContend'],
+  // Private (C2C) file download URL. `0xE37_800` per report 15; its request layout is not
+  // reverse-engineered, so this op probes and reports rather than pretending to answer.
+  // A generic OIDB call, for the operations QQ exposes only as packets.
+  //
+  // Several capabilities have no kernel service method at all -- setting a member's title, adding a
+  // reaction, sending a nudge, approving a join request -- and the only path to them is an OIDB
+  // command number plus a body. Building each one separately would mean N copies of the same
+  // envelope handling; this exposes the transport and lets a caller probe or use it directly.
+  //
+  // It returns QQ's own status and the raw body: a caller that knows the layout can parse it, and a
+  // caller that does not yet learns it from the answer. Nothing is interpreted here.
+  'oidb.call': ['Msg', 'sendSsoCmdReqByContend'],
   // Upload rides on a message send: the client uploads the bytes for a FILE element itself.
+  //
+  // The same call serves C2C. A private file is a FILE element sent to `chatType: 1` instead of a
+  // group, and the client uploads the bytes the same way -- QQ has no separate "upload to friend"
+  // endpoint to call. `upload_private_file` differs only in the destination.
   'group.file.upload': ['Msg', 'sendMsg', 'addKernelMsgListener', 'removeKernelMsgListener'],
+  'upload_private_file': ['Msg', 'sendMsg', 'addKernelMsgListener', 'removeKernelMsgListener'],
   // Essence messages. Set/unset go through the kernel and work; listing does not, on this account.
   //
   // Measured: addGroupEssence and removeGroupEssence both return errCode 0 "success" with the
@@ -998,6 +1015,13 @@ function createActionDispatcher(options = {}) {
     const NO_GROUP_ID_OPS = new Set([
       'friend.like', 'cache.clean', 'forward.get', 'media.download', 'recent.list',
       'message.reactions', 'system.ocr', 'system.rkey', 'system.oidb_probe',
+      // A raw OIDB call addresses nothing by itself: the command and its body are the whole request,
+      // and the target (if any) is encoded inside `body_hex`. Without this exemption it failed with
+      // "group_id must be a positive canonical decimal ID" before its own branch was reached.
+      'oidb.call',
+      // Same reasoning for the private-file ops: they are addressed by `user_id`, and one of them
+      // takes no target at all.
+      'upload_private_file', 'private.file.download_url',
       'emoji.favorites', 'emoji.favorite.add', 'emoji.favorite.remove',
       // Destination is resolved by the handler from group_id OR user_id.
       'forward.send',
@@ -1047,6 +1071,57 @@ function createActionDispatcher(options = {}) {
       return { can_at_all: at.canAtAll,
         remain_at_all_count_for_group: resultInteger(at.RemainAtAllCountForGroup, 'RemainAtAllCountForGroup'),
         remain_at_all_count_for_uin: resultInteger(at.RemainAtAllCountForUin, 'RemainAtAllCountForUin') };
+    }
+    if (op === 'oidb.call') {
+      // Send one OIDB command and hand back QQ's status plus the raw body.
+      //
+      // The envelope, the command-name style (`OidbSvcTrpcTcp.0x….sub` routes where the plain style
+      // does not, per headless_oidb.cjs) and the decode all live in that module already; this is the
+      // thin seam that makes them reachable from an action instead of only from rkey handling.
+      const command = integer(p.command, 'command', 1, 0x7fffffff);
+      const subCommand = integer(p.sub_command === undefined ? 0 : p.sub_command,
+        'sub_command', 0, 0xffff);
+      const bodyHex = text(p.body_hex === undefined ? '' : String(p.body_hex));
+      if (bodyHex && !/^[0-9a-fA-F]*$/.test(bodyHex)) invalid('body_hex must be hexadecimal');
+      if (bodyHex.length % 2 !== 0) invalid('body_hex must contain whole bytes');
+      let oidb;
+      try {
+        oidb = typeof options.loadModule === 'function'
+          ? options.loadModule('headless_oidb.cjs')
+          : require('./headless_oidb.cjs');
+      } catch (error) {
+        fail('UNSUPPORTED', `OIDB module unavailable: ${String((error && error.message) || error).slice(0, 160)}`);
+      }
+      const body = Buffer.from(bodyHex, 'hex');
+      const style = text(p.style === undefined ? '' : String(p.style));
+      if (style && !['plain', 'trpc', 'lower'].includes(style)) {
+        invalid('style must be one of plain / trpc / lower');
+      }
+      let decoded;
+      try {
+        decoded = await oidb.sendOidb(() => s.getMsgService(), command, subCommand, body,
+          p.timeout_ms === undefined ? 10000 : integer(p.timeout_ms, 'timeout_ms', 1000, 60000),
+          style);
+      } catch (error) {
+        // A refusal here is QQ's answer, not a bug in the caller: report it as upstream so the
+        // difference between "the command is not routed" and "the payload was wrong" survives.
+        fail('UPSTREAM', String((error && error.message) || error).slice(0, 300), {
+          command, sub_command: subCommand,
+        });
+      }
+      const responseBody = decoded && (decoded.body || decoded.payload);
+      const buffer = Buffer.isBuffer(responseBody) ? responseBody
+        : Buffer.from(responseBody || []);
+      return {
+        command: Number(command),
+        sub_command: Number(subCommand),
+        // The name that actually worked, reported by the transport rather than reconstructed here.
+        resolved: decoded && decoded.name ? String(decoded.name) : '',
+        error_code: decoded && decoded.errorCode !== undefined ? Number(decoded.errorCode) : 0,
+        error_message: decoded && typeof decoded.errorMsg === 'string' ? decoded.errorMsg : '',
+        body_hex: buffer.toString('hex'),
+        body_size: buffer.length,
+      };
     }
     if (op === 'system.oidb_probe') {
       const svc = service(s, 'Msg', ['sendSsoCmdReqByContend']);
@@ -1763,8 +1838,8 @@ function createActionDispatcher(options = {}) {
       const response = resultCode(await rm.moveGroupFile(groupId, fileId, busId, from, to));
       return { group_id: Number(groupId), file_id: fileId, from_folder: from, to_folder: to, result: response };
     }
-    if (op === 'group.file.upload') {
-      // Creates a group file by sending a FILE message element.
+    if (op === 'group.file.upload' || op === 'upload_private_file') {
+      // Creates a group file, or sends a file to a friend, by sending a FILE message element.
       //
       // This is the route NapCat's own upload_group_file action takes, and it is the one that works.
       // The alternative -- building the BDH highway transfer by hand -- needs a `serviceTicket` from
@@ -1776,13 +1851,30 @@ function createActionDispatcher(options = {}) {
       //
       // The element needs exactly four fields. Supplying a hash or a file uuid is neither required nor
       // expected -- the client fills those in during send and replaces the element with the server's
-      // identifiers. `folderId` may be empty for the group root.
-      const groupId = id(p.group_id, 'group_id');
+      // identifiers. `folderId` may be empty for the group root, and C2C has no folders at all.
+      const isPrivate = op === 'upload_private_file' || p.group_id === undefined;
+      let groupId = 0;
+      let peer;
+      if (isPrivate) {
+        const userId = id(p.user_id, 'user_id');
+        // A C2C peer is addressed by uid, not by account number, so the mapping has to be known.
+        // Guessing `u_<uin>` is wrong on this build; report the gap instead of sending into nothing.
+        const peerUid = await resolveUid(userId);
+        if (typeof peerUid !== 'string' || !/^u_[A-Za-z0-9_-]+$/.test(peerUid)) {
+          fail('UNSUPPORTED', 'No verified peer UID for this account; a private file needs it');
+        }
+        peer = { chatType: 1, peerUid, guildId: '' };
+      } else {
+        groupId = id(p.group_id, 'group_id');
+        peer = { chatType: 2, peerUid: String(groupId), guildId: '' };
+      }
+      // A private upload must never be handed to the group element fields by accident.
       const sourcePath = text(p.file_path ?? p.path ?? p.file);
       if (!sourcePath) invalid('file_path is required');
       const fileName = text(p.name ?? p.file_name ?? '') || basenameOf(sourcePath);
       if (!fileName) invalid('name is required when file_path has no basename');
-      const folderId = p.folder_id === undefined || p.folder_id === null ? '' : String(p.folder_id);
+      const folderId = isPrivate ? '' : (p.folder_id === undefined || p.folder_id === null
+        ? '' : String(p.folder_id));
 
       // Verify the file is readable here, in the injected process. A path that exists on the caller's
       // side may not be visible from QQ's process, and the resulting failure (an empty size) would be
@@ -1850,7 +1942,6 @@ function createActionDispatcher(options = {}) {
           fileSize: String(size),
         },
       };
-      const peer = { chatType: 2, peerUid: String(groupId), guildId: '' };
       const ack = await msg.sendMsg('0', peer, [element], new Map());
       if (object(ack) && Number(ack.result) !== 0 && Number(ack.result) !== -1) {
         fail('UPSTREAM', `QQ rejected the file send: ${text(ack.errMsg) || text(ack.result)}`);
@@ -1870,18 +1961,64 @@ function createActionDispatcher(options = {}) {
       if (!accepted) {
         fail('UPSTREAM', `QQ did not accept the file send: ${text(ack && ack.errMsg) || 'no reason given'}`);
       }
+      // The result shape follows the destination: a group upload reports its folder, a private one
+      // has no folder and reports the recipient instead, so a caller is not handed a `folder_id`
+      // that means nothing.
+      const location = isPrivate
+        ? { user_id: Number(p.user_id), chat_type: 'private' }
+        : { group_id: Number(groupId), folder_id: folderId || '/', chat_type: 'group' };
       return {
-        group_id: Number(groupId),
+        ...location,
         file_name: fileName,
         file_size: size,
-        folder_id: folderId || '/',
         file_id: result ? result.file_id : '',
         msg_id: result ? result.msg_id : '',
         ok: true,
         file_id_pending: !result,
         note: result ? '' : 'upload accepted; the file id was not reported in time -- '
-          + 'list the group to read it',
+          + (isPrivate ? 'read it from the sent message' : 'list the group to read it'),
       };
+    }
+    if (op === 'private.file.download_url') {
+      // A private file's download URL, or an honest account of why it is not available yet.
+      //
+      // Two sources, tried in order:
+      //
+      //   1. The received message element, if it carried `downloadUrl`. That is free and exact --
+      //      but it has not been observed populated on this build, so it cannot be the only path.
+      //   2. OIDB 0xE37_800 (report 15). The command and the md5 requirement are known; the request
+      //      layout is not, which is why `headless_privatefile.cjs` returns the raw response.
+      //
+      // What is never done here: inventing a URL by templating a host and a path. A wrong URL moves
+      // the failure to the download, where it is much harder to diagnose.
+      const userId = id(p.user_id, 'user_id');
+      const fileId = text(p.file_id);
+      if (!fileId) invalid('file_id is required');
+      const fileHash = text(p.file_hash ?? p.file_md5 ?? '');
+      const known = text(p.download_url ?? '');
+      if (known) {
+        return { user_id: Number(userId), file_id: fileId, url: known, via: 'message-element' };
+      }
+      let privatefile;
+      try {
+        privatefile = typeof options.loadModule === 'function'
+          ? options.loadModule('headless_privatefile.cjs')
+          : require('./headless_privatefile.cjs');
+      } catch (error) {
+        fail('UNSUPPORTED', `private file module unavailable: ${String((error && error.message) || error).slice(0, 160)}`);
+      }
+      const probe = await privatefile.probePrivateFileUrl(() => s.getMsgService(), {
+        peerUin: Number(userId),
+        fileUuid: fileId,
+        fileHash,
+        isSelfSend: p.is_self_send === true || p.is_self_send === 'true',
+      });
+      // `routed` is the only success-shaped outcome, and even then the URL is not being returned:
+      // the layout is unmapped, so the caller gets the evidence instead of a guess.
+      fail('UNSUPPORTED',
+        `private file URL (OIDB 0x${privatefile.CMD_NUMBER.toString(16)}_${privatefile.SUB_COMMAND}): `
+        + `${probe.note}${probe.routed ? ` raw=${probe.raw_hex}` : ''}`.slice(0, 480),
+        { command: probe.command, routed: probe.routed, fields: probe.fields, attempts: probe.attempts });
     }
     if (op === 'group.file.download') {
       // Returns a download URL for one group file.
