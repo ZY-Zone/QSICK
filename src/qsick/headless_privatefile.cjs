@@ -16,6 +16,30 @@
 // command number, the md5 requirement and the *shape of the response* are known; the request field
 // numbers are not.
 //
+// ## What has now been measured (2026-11-26, QQ 9.9.33-52230)
+//
+// The command is real and routed. Through `oidb.call` (`OidbSvc.0xE37_800`, plain style):
+//
+//   body (uin, appId=7, busId=102, uuid)                 -> errorCode 253 "[oidb] invalid pkg and decode req failed"
+//   + md5 as field 5 (string or raw bytes)               -> 253
+//   peer uid instead of uin, in several arrangements     -> 154 "[oidb] time out"
+//   uuid alone                                           -> 154
+//
+// So 253 means "the packet does not parse" and 154 means "parsed, but the request did not complete".
+// The uid-based bodies get past the parser, which is the most useful single fact here: it says the
+// peer must be named by **uid**, and that what is still missing is a field the server needs to
+// finish, not the envelope.
+//
+// The control that makes those numbers meaningful: `0x6D6_2` (group file download, known to work
+// in the product) returns errorCode 0 with a 204-byte body through the same `oidb.call` channel when
+// given a real group file id, and 253 when given a fake one. So a 253 here is a body problem and
+// the channel itself is sound.
+//
+// Consequently this module still does not return a URL. What it should return once the layout is
+// known: the response's host/port/path fields, joined with `&isthumb=0` over plain HTTP (report 15
+// §五.2). The server points at its own iwiki page in the error text
+// (`pageId=4011875093`), which is where the remaining field numbers live.
+//
 // ## Why this module returns raw bytes instead of a parsed URL
 //
 // Writing a parser for an undocumented body would mean inventing field numbers and then reporting
@@ -211,8 +235,15 @@ async function probePrivateFileUrl(getMsgService, options = {}) {
       attempts.push({ command, routed: false, note: String((error && error.message) || error).slice(0, 200) });
       continue;
     }
-    const raw = response && response.rspbuffer ? response.rspbuffer : response;
-    const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw || []);
+    // The answer's payload may be `rspbuffer`, `rsp`, a string, or absent entirely. Only an actual
+    // buffer-ish value is used: falling back to the response object itself made `Buffer.from` throw
+    // "The first argument must be of type string or an instance of Buffer ... Received an instance of
+    // Object", which surfaced as a generic SERVICE_ERROR and hid the real answer (`result: 236`).
+    const candidate = response && (response.rspbuffer ?? response.rsp);
+    let buffer = Buffer.alloc(0);
+    if (Buffer.isBuffer(candidate)) buffer = candidate;
+    else if (typeof candidate === 'string') buffer = Buffer.from(candidate, 'latin1');
+    else if (candidate instanceof Uint8Array) buffer = Buffer.from(candidate);
     attempts.push({
       command,
       routed: buffer.length > 0,

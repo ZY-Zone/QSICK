@@ -194,3 +194,24 @@ def test_a_received_file_url_is_passed_through_when_present():
     assert "body.download_url" in codec
     # Absent means absent: no placeholder URL is ever written.
     assert "if (downloadUrl) data.download_url = downloadUrl;" in codec
+
+
+@requires_node
+def test_a_bare_response_object_does_not_throw():
+    """Measured: a refusal with no buffer made `Buffer.from(response)` throw, and the real answer
+    (`result: 236`) was replaced by a generic SERVICE_ERROR."""
+    script = """
+const m = require(MODULE);
+(async () => {
+  const result = await m.probePrivateFileUrl(() => ({
+    sendSsoCmdReqByContend: async () => ({result: 236, errMsg: '访问接口未配置路由'}),
+  }), {peerUin: 1, fileUuid: 'u'});
+  console.log(JSON.stringify(result));
+})();
+""".replace("MODULE", json.dumps(str(PRIVATE_MODULE)))
+    result = json.loads(run_js(script))
+    # Not routed, but the refusal is reported instead of swallowed.
+    assert result["routed"] is False
+    statuses = [item.get("status") for item in result["attempts"]]
+    assert statuses and all(status == 236 for status in statuses), result["attempts"]
+    assert "未配置路由" in (result["attempts"][0].get("message") or "")
