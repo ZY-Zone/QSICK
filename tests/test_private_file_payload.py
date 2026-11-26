@@ -215,3 +215,57 @@ const m = require(MODULE);
     statuses = [item.get("status") for item in result["attempts"]]
     assert statuses and all(status == 236 for status in statuses), result["attempts"]
     assert "未配置路由" in (result["attempts"][0].get("message") or "")
+
+
+# ------------------------------------------------------- spec-shaped parameter names
+
+
+async def test_upload_private_file_accepts_file_uri_as_the_spec_says():
+    """The spec field is `file_uri`; forwarding it raw made every spec-shaped call fail.
+
+    Measured: `{user_id, file_uri, file_name}` answered "undefined must be a string without NUL",
+    because the payload reads `file_path` and nothing had resolved the URI yet.
+    """
+    import base64
+    from types import SimpleNamespace
+
+    from qsick.onebot.actions.group_file.upload_private_file import UploadPrivateFileAction
+
+    seen: list[dict] = []
+
+    class Ctx:
+        account = "3905548034"
+
+        async def call(self, op, params, label="", **kwargs):
+            seen.append(dict(params))
+            return SimpleNamespace(ok=True, data={"file_id": "/x", "ok": True})
+
+    blob = base64.b64encode(b"hello").decode()
+    result = await UploadPrivateFileAction().run(
+        Ctx(), user_id=1927676487, file_uri="base64://" + blob, file_name="a.txt")
+    assert seen, "the payload was never called"
+    # The URI was resolved into a real path, and the raw URI was dropped.
+    assert seen[0].get("file_path", "").endswith(".tmp") or seen[0].get("file_path")
+    assert "file_uri" not in seen[0]
+    assert seen[0]["user_id"] == 1927676487
+    assert result["file_id"] == "/x"
+
+
+async def test_a_bare_path_is_left_to_the_host_when_unreadable():
+    """Same rule as the group upload: a path this process cannot see is resolved inside QQ."""
+    from types import SimpleNamespace
+
+    from qsick.onebot.actions.group_file.upload_private_file import UploadPrivateFileAction
+
+    seen: list[dict] = []
+
+    class Ctx:
+        account = "3905548034"
+
+        async def call(self, op, params, label="", **kwargs):
+            seen.append(dict(params))
+            return SimpleNamespace(ok=True, data={"ok": True})
+
+    await UploadPrivateFileAction().run(
+        Ctx(), user_id=1, file_path="Q:\no-such-file-on-this-host.txt")
+    assert seen[0].get("file_path") == "Q:\\no-such-file-on-this-host.txt" or "file_path" in seen[0]
