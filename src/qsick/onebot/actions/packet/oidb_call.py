@@ -10,7 +10,7 @@ from qsick.onebot.actions.base import Action, ActionError, call
 
 async def oidbcall(ctx: Any, command: int = 0, sub_command: int = 0,
                    body_hex: str = "", timeout_ms: int = 0, style: str = "",
-                   **_: Any) -> dict[str, Any]:
+                   reserved: int | None = None, **_: Any) -> dict[str, Any]:
     """Send one OIDB command and return QQ's status with the raw response body.
 
     The body comes back as hex on purpose: this action's job is to reach commands whose layout is
@@ -34,11 +34,18 @@ async def oidbcall(ctx: Any, command: int = 0, sub_command: int = 0,
         if style not in ("plain", "trpc", "lower"):
             raise ActionError("style must be one of plain / trpc / lower")
         params["style"] = style
+    # `isReserved` is per command, not a constant: 0x8FC_2 is built with 0 by NapCat's own builder and
+    # a wrong value makes the server reject the packet as unparsable instead of explaining itself.
+    if reserved is not None:
+        if int(reserved) not in (0, 1):
+            raise ActionError("reserved must be 0 or 1")
+        params["reserved"] = int(reserved)
     result = await call(ctx, "oidb.call", params, "oidb call")
     return {
         "command": result.get("command", int(command)),
         "sub_command": result.get("sub_command", int(sub_command or 0)),
         "resolved": result.get("resolved", ""),
+        "reserved": result.get("reserved", 1),
         "error_code": result.get("error_code", 0),
         "error_message": result.get("error_message", ""),
         "body_hex": result.get("body_hex", ""),

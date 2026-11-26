@@ -390,6 +390,13 @@ const REQUIREMENTS = Object.freeze({
   'media.download': ['Msg', 'downloadRichMedia', 'addKernelMsgListener', 'removeKernelMsgListener'],
   'recent.list': ['RecentContact', 'getRecentContactListSnapShot'],
   'message.reactions': ['Msg', 'getMsgEmojiLikesList'],
+  // Setting a reaction, as opposed to listing the ones on a message.
+  //
+  // Signature measured against a live session by calling the method directly:
+  //   setMsgEmojiLikes(peer, msgSeq, msgId, emojiId, setFlag)
+  // and confirmed by the reaction appearing in the client. `setFlag` is a boolean -- passing the
+  // number 1 instead *removes* the reaction, which is why an early probe looked like it had failed.
+  'message.emoji_like': ['Msg', 'setMsgEmojiLikes'],
   'system.ocr': ['NodeMisc', 'wantWinScreenOCR'],
   // Qzone credentials: a p_skey for qzone.qq.com plus the g_tk derived from it. The HTTP itself is done in
   // Python -- this op exists only because the ticket lives behind a kernel service inside the session.
@@ -1031,7 +1038,7 @@ function createActionDispatcher(options = {}) {
     // destination perfectly well. It never got the chance: this check ran first.
     const NO_GROUP_ID_OPS = new Set([
       'friend.like', 'cache.clean', 'forward.get', 'media.download', 'recent.list',
-      'message.reactions', 'system.ocr', 'system.rkey', 'system.oidb_probe',
+      'message.reactions', 'message.emoji_like', 'system.ocr', 'system.rkey', 'system.oidb_probe',
       // A raw OIDB call addresses nothing by itself: the command and its body are the whole request,
       // and the target (if any) is encoded inside `body_hex`. Without this exemption it failed with
       // "group_id must be a positive canonical decimal ID" before its own branch was reached.
@@ -1271,11 +1278,15 @@ function createActionDispatcher(options = {}) {
       if (style && !['plain', 'trpc', 'lower'].includes(style)) {
         invalid('style must be one of plain / trpc / lower');
       }
+      // `isReserved` is not a constant across commands: 0x8FC_2 (set a member's title) is sent with
+      // 0 by NapCat's own builder, and always writing 1 makes the server reject the packet.
+      const reserved = p.reserved === undefined ? 1
+        : integer(p.reserved, 'reserved', 0, 1);
       let decoded;
       try {
         decoded = await oidb.sendOidb(() => s.getMsgService(), command, subCommand, body,
           p.timeout_ms === undefined ? 10000 : integer(p.timeout_ms, 'timeout_ms', 1000, 60000),
-          style);
+          style, reserved);
       } catch (error) {
         // A refusal here is QQ's answer, not a bug in the caller: report it as upstream so the
         // difference between "the command is not routed" and "the payload was wrong" survives.
@@ -1289,6 +1300,7 @@ function createActionDispatcher(options = {}) {
       return {
         command: Number(command),
         sub_command: Number(subCommand),
+        reserved: Number(reserved),
         // The name that actually worked, reported by the transport rather than reconstructed here.
         resolved: decoded && decoded.name ? String(decoded.name) : '',
         error_code: decoded && decoded.errorCode !== undefined ? Number(decoded.errorCode) : 0,
@@ -1447,6 +1459,38 @@ function createActionDispatcher(options = {}) {
       if (session() !== s) fail('NOT_READY', 'QQNT session changed during OCR');
       const result = response.result === 0 || response.result === '0' ? (response.text ?? response.ocrText) : undefined;
       return { text: typeof result === 'string' ? result : '' };
+    }
+    if (op === 'message.emoji_like') {
+      // Add or remove one emoji reaction on a message.
+      //
+      // The message has to be one this session already knows: the kernel call needs the peer and the
+      // message *sequence*, and neither is derivable from the message id alone. `messageRefs` is the
+      // same index the reaction-listing op reads, filled by the receive path.
+      const ref = options.messageRefs instanceof Map
+        ? options.messageRefs.get(String(p.message_id)) : undefined;
+      if (!object(ref) || !object(ref.peer) || typeof ref.msgSeq !== 'string') {
+        fail('NOT_FOUND', 'No cached native reference for this message; a reaction needs a received message');
+      }
+      const chatType = Number(ref.peer.chatType);
+      if (chatType !== 1 && chatType !== 2) fail('UNSUPPORTED', 'Reactions support only C2C and group messages');
+      const emojiId = text(p.emoji_id === undefined ? '128077' : String(p.emoji_id), 'emoji_id', false);
+      if (!emojiId) invalid('emoji_id is required');
+      // Boolean, not a number: `1` is how the client says "remove", so coercing would invert the
+      // meaning of the call.
+      const setFlag = p.set === undefined ? true : p.set === true || p.set === 'true';
+      const peer = { chatType, peerUid: String(ref.peer.peerUid), guildId: '' };
+      const msg = service(s, 'Msg', REQUIREMENTS[op].slice(1));
+      const response = await msg.setMsgEmojiLikes(peer, ref.msgSeq, String(p.message_id),
+        emojiId, setFlag);
+      if (session() !== s) fail('NOT_READY', 'QQNT session changed during reaction');
+      const result = object(response) ? response : {};
+      if (Number(result.result) !== 0) {
+        fail('SERVICE_ERROR', String(result.errMsg || 'The reaction was refused'), {
+          serviceCode: result.result === undefined ? null : Number(result.result),
+        });
+      }
+      return { message_id: String(p.message_id), emoji_id: emojiId, set: setFlag,
+               chat_type: chatType === 2 ? 'group' : 'private' };
     }
     if (op === 'message.reactions') {
       const ref = options.messageRefs instanceof Map ? options.messageRefs.get(String(p.message_id)) : undefined;

@@ -2741,6 +2741,13 @@
           "required": false,
           "default": "",
           "desc": "plain / trpc / lower；留空用默认 plain"
+        },
+        {
+          "name": "reserved",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": "isReserved 字段，0 或 1；留空用 1（0x8FC_2 这类命令需要 0）"
         }
       ],
       "wire": "core"

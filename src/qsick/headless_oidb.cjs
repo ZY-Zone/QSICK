@@ -164,12 +164,14 @@ function decodeFetchRkeyResponse(body) {
  * Send one OIDB request through QQ's own SSO channel.
  * `getMsgService` must return the live kernel message service.
  */
-async function sendOidb(getMsgService, cmd, subCmd, body, timeoutMs = 10000, style = '') {
+async function sendOidb(getMsgService, cmd, subCmd, body, timeoutMs = 10000, style = '', reserved) {
   const service = getMsgService();
   if (!service || typeof service.sendSsoCmdReqByContend !== 'function') {
     throw new Error('sendSsoCmdReqByContend is unavailable on this QQ build');
   }
-  const packet = encodeOidb(cmd, subCmd, body);
+  // `isReserved` varies per command: 0x8FC_2 is sent with 0 by NapCat's builder, and a wrong
+  // value makes the server reject the packet as unparsable rather than say what was wrong.
+  const packet = encodeOidb(cmd, subCmd, body, reserved);
   // Which naming style routes is a property of the command, not a global fact: 0x9067 answers to
   // the plain style and rejects the trpc one, while 0x6D6 goes the other way. So the caller can name
   // one, and the resolved name is returned rather than assumed.
