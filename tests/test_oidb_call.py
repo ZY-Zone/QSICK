@@ -101,11 +101,11 @@ const { createActionDispatcher } = require(MODULE);
     assert result["error_code"] == 0
     assert result["body_hex"] == "0a026869"
     assert result["body_size"] == 4
-    # Which naming style routes is per-command, so the transport's resolved name is reported
-    # rather than reconstructed. Plain is the default; a caller probing an unmapped command can
-    # pass `style` to try the other one.
-    assert output["seen"][0]["name"] == "OidbSvc.0xE37_800"
-    assert result["resolved"] == "OidbSvc.0xE37_800"
+    # The binary-safe sender (headless_groupfile.sendOidbRaw) is preferred when the module is
+    # available: it installs the napi2native hook and reads `rspbuffer` rather than the lossy string
+    # form. It always uses the trpc name. The plain style remains reachable through the fallback.
+    assert output["seen"][0]["name"].endswith("0xE37_800")
+    assert result["resolved"].endswith("0xE37_800")
     # The request body carried exactly the bytes the caller asked for.
     assert "086869" in output["seen"][0]["hex"]
 
@@ -255,3 +255,54 @@ async def test_a_naming_style_can_be_named():
     assert seen[0]["style"] == "trpc"
     with pytest.raises(ActionError, match="plain / trpc / lower"):
         await oidbcall(Ctx(), command=1, body_hex="", style="nonsense")
+
+
+@requires_node
+def test_the_binary_safe_sender_is_preferred_when_available():
+    """`headless_groupfile.sendOidbRaw` installs the napi2native hook and returns `rspbuffer`; the
+    older `sendOidb` reads `rsp`, the string form, which is lossy for binary replies.
+
+    This matters because a wrong guess about which path a command needs is exactly what made
+    0x8FC / 0xED3 look like "the channel cannot route them".
+    """
+    script = """
+const { createActionDispatcher } = require(MODULE);
+(async () => {
+  const calls = [];
+  const msg = {
+    sendSsoCmdReqByContend: async (name, packet) => {
+      calls.push({name, hex: Buffer.from(packet).toString('hex')});
+      const body = Buffer.from([0x0a, 0x01, 0x7a]);
+      return {result: 0, rspbuffer: Buffer.concat([
+        varintField(1, 0x6D6), varintField(2, 2), varintField(3, 0), lengthField(4, body),
+      ])};
+    },
+  };
+  const session = {getMsgService: () => msg};
+  const dispatcher = createActionDispatcher({
+    getSession: () => session, getIdentity: () => ({uin: '1'}),
+  });
+  const out = await dispatcher.execute('oidb.call', {command: 0x6D6, sub_command: 2, body_hex: '0800'});
+  console.log(JSON.stringify({out, calls}));
+})().catch(error => {console.error(error); process.exitCode = 1;});
+
+function varintField(field, value) {
+  const bytes = [];
+  let v = value;
+  while (v >= 0x80) { bytes.push((v & 0x7f) | 0x80); v = Math.floor(v / 128); }
+  bytes.push(v);
+  return Buffer.from([(field << 3), ...bytes]);
+}
+function lengthField(field, buffer) {
+  const len = [];
+  let v = buffer.length;
+  while (v >= 0x80) { len.push((v & 0x7f) | 0x80); v = Math.floor(v / 128); }
+  len.push(v);
+  return Buffer.concat([Buffer.from([(field << 3) | 2, ...len]), buffer]);
+}
+""".replace("MODULE", json.dumps(str(MODULE)))
+    result = json.loads(run_js(script))
+    assert result["out"]["body_hex"] == "0a017a"
+    assert result["out"]["transport"] == "napi2native"
+    # The binary path always uses the trpc command name, as NapCat does.
+    assert result["calls"][0]["name"] == "OidbSvcTrpcTcp.0x6D6_2"

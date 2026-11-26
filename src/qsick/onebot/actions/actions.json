@@ -3393,7 +3393,7 @@
       "module": "request/set_group_add_request",
       "class": "SetGroupAddRequestAction",
       "category": "request",
-      "summary": "处理群请求",
+      "summary": "处理群请求：同意/拒绝/忽略（flag 来自 get_group_notices）",
       "status": "implemented",
       "read_only": false,
       "params": [
@@ -3424,6 +3424,13 @@
           "required": false,
           "default": "",
           "desc": ""
+        },
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": "群号，可选"
         }
       ],
       "wire": "core"
@@ -4644,6 +4651,17 @@
           "desc": "按位置传给方法的参数；留空用于探签名"
         }
       ],
+      "wire": "payload"
+    },
+    {
+      "name": "get_group_notices",
+      "module": "group_admin/get_group_notices",
+      "class": "GetGroupNoticesAction",
+      "category": "group",
+      "summary": "获取待处理的群通知（入群申请/邀请/管理员变动），带审批所需的 flag",
+      "status": "implemented",
+      "read_only": true,
+      "params": [],
       "wire": "payload"
     }
   ],

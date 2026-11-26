@@ -306,6 +306,10 @@ const REQUIREMENTS = Object.freeze({
   // That was the missing part: this project already had the OIDB transport, and the capability looked
   // absent only because no message builder existed. See headless_groupfile.cjs for the field numbers,
   // which are transcribed from Lagrange's ProtoMember attributes rather than guessed.
+  // Pending group notifications: the only source of a request's flag (`seq`) and the applicant's uid.
+  'group.notices': ['Group', 'fetchGroupNotify', 'addKernelGroupListener', 'removeKernelGroupListener'],
+  // Agree / refuse / ignore one pending request. `operateSysNotify` spreads its second argument.
+  'group.request.operate': ['Group', 'operateSysNotify'],
   'group.file.download': ['Msg', 'sendSsoCmdReqByContend'],
   // Private (C2C) file download URL. `0xE37_800` per report 15; its request layout is not
   // reverse-engineered, so this op probes and reports rather than pretending to answer.
@@ -1048,6 +1052,9 @@ function createActionDispatcher(options = {}) {
       'service.call',
       // Same reasoning for the private-file ops: they are addressed by `user_id`, and one of them
       // takes no target at all.
+      // Neither addresses a group by id: one lists notices across groups, the other names its
+      // target by `seq`.
+      'group.notices', 'group.request.operate',
       'upload_private_file', 'private.file.download_url',
       'emoji.favorites', 'emoji.favorite.add', 'emoji.favorite.remove',
       // Destination is resolved by the handler from group_id OR user_id.
@@ -1282,11 +1289,58 @@ function createActionDispatcher(options = {}) {
       // 0 by NapCat's own builder, and always writing 1 makes the server reject the packet.
       const reserved = p.reserved === undefined ? 1
         : integer(p.reserved, 'reserved', 0, 1);
+      // Prefer the binary-safe path: `headless_groupfile.sendOidbRaw` installs the napi2native
+      // hook (inithook.node) and reads `rspbuffer` instead of the lossy string form. It is the same
+      // transport group-file download uses, and the hook is what makes a binary reply legible.
+      //
+      // The plain `headless_oidb.sendOidb` remains as the fallback for a client where the hook
+      // cannot be installed; a caller can tell which one ran from `transport` in the result.
+      let binary = null;
+      try {
+        binary = typeof options.loadModule === 'function'
+          ? options.loadModule('headless_groupfile.cjs')
+          : require('./headless_groupfile.cjs');
+      } catch (error) {
+        binary = null;
+      }
+      if (binary && typeof binary.sendOidbRaw === 'function') {
+        try {
+          const raw = await binary.sendOidbRaw(() => s.getMsgService(), command, subCommand, body, {
+            require: typeof require === 'function' ? require : (options.loadModule && options.loadModule.require),
+          });
+          const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw || []);
+          return {
+            command: Number(command),
+            sub_command: Number(subCommand),
+            reserved: Number(reserved),
+            resolved: `OidbSvcTrpcTcp.0x${Number(command).toString(16).toUpperCase()}_${Number(subCommand)}`,
+            transport: 'napi2native',
+            error_code: 0,
+            error_message: '',
+            body_hex: buffer.toString('hex'),
+            body_size: buffer.length,
+          };
+        } catch (error) {
+          const code = error && error.code;
+          // A refusal from the server is an answer, not a transport failure -- report it as such.
+          if (code !== 'TRANSPORT' && code !== 'NO_BUFFER') {
+            fail('UPSTREAM', String((error && error.message) || error).slice(0, 300),
+              { command, sub_command: subCommand, transport: 'napi2native' });
+          }
+          if (code === 'TRANSPORT') {
+            fail('UPSTREAM', String((error && error.message) || error).slice(0, 300),
+              { command, sub_command: subCommand, transport: 'napi2native' });
+          }
+          // NO_BUFFER: fall through to the string path, which may still have an `rsp`.
+        }
+      }
       let decoded;
       try {
         decoded = await oidb.sendOidb(() => s.getMsgService(), command, subCommand, body,
           p.timeout_ms === undefined ? 10000 : integer(p.timeout_ms, 'timeout_ms', 1000, 60000),
           style, reserved);
+        decoded = decoded || {};
+        decoded.transport = 'sendSsoCmdReqByContend';
       } catch (error) {
         // A refusal here is QQ's answer, not a bug in the caller: report it as upstream so the
         // difference between "the command is not routed" and "the payload was wrong" survives.
@@ -1301,6 +1355,9 @@ function createActionDispatcher(options = {}) {
         command: Number(command),
         sub_command: Number(subCommand),
         reserved: Number(reserved),
+        // Which sender actually ran. A caller probing an unmapped command needs to know whether it
+        // used the hook-backed binary path or the older string one.
+        transport: decoded && decoded.transport ? String(decoded.transport) : '',
         // The name that actually worked, reported by the transport rather than reconstructed here.
         resolved: decoded && decoded.name ? String(decoded.name) : '',
         error_code: decoded && decoded.errorCode !== undefined ? Number(decoded.errorCode) : 0,
@@ -2269,6 +2326,78 @@ function createActionDispatcher(options = {}) {
         `private file URL (OIDB 0x${privatefile.CMD_NUMBER.toString(16)}_${privatefile.SUB_COMMAND}): `
         + `${probe.note}${probe.routed ? ` raw=${probe.raw_hex}` : ''}`.slice(0, 480),
         { command: probe.command, routed: probe.routed, fields: probe.fields, attempts: probe.attempts });
+    }
+    if (op === 'group.notices') {
+      // The pending group notifications: join requests, invitations, admin changes.
+      //
+      // This is the only source of a request's `flag` (the kernel calls it `seq`) and of the
+      // applicant's uid -- the OLPush frame that announces a request carries neither, which is why
+      // the event stream could only say "a request exists" with no applicant. `fetchGroupNotify` is a
+      // trigger; the list arrives on `onGroupNotifiesUpdated`.
+      //
+      // Shape per NapCat's `NodeIKernelGroupService`:
+      //     GroupNotify { seq, type, status, group: { groupCode, groupName }, user1: { uid, nickName },
+      //                   user2: {...}, actionUser: {...}, actionTime, postscript, ... }
+      // `type` 7 is "a request to join that needs an admin's approval"; `NTGroupRequestOperateTypes`
+      // 1 = agree, 2 = refuse, 3 = ignore.
+      const svc = service(s, 'Group',
+        ['fetchGroupNotify', 'addKernelGroupListener', 'removeKernelGroupListener']);
+      const notifies = await groupEvent(svc, 'fetchGroupNotify', [{}], 'onGroupNotifiesUpdated',
+        (doubt, list) => (Array.isArray(list) ? list : undefined));
+      const rows = notifies.map(row => {
+        if (!object(row)) return null;
+        const group = object(row.group) ? row.group : {};
+        const applicant = object(row.user1) ? row.user1 : {};
+        const inviter = object(row.user2) ? row.user2 : {};
+        const seq = text(row.seq === undefined ? '' : String(row.seq), 'seq', false);
+        return {
+          // `flag` is what OneBot hands back when approving, and it is this `seq`.
+          flag: seq,
+          seq,
+          type: Number(row.type || 0),
+          status: Number(row.status || 0),
+          group_id: Number(group.groupCode || group.groupCodeStr || 0),
+          group_name: typeof group.groupName === 'string' ? group.groupName : '',
+          user_id_uid: typeof applicant.uid === 'string' ? applicant.uid : '',
+          nickname: typeof applicant.nickName === 'string' ? applicant.nickName : '',
+          inviter_uid: typeof inviter.uid === 'string' ? inviter.uid : '',
+          inviter_nickname: typeof inviter.nickName === 'string' ? inviter.nickName : '',
+          comment: typeof row.postscript === 'string' ? row.postscript : '',
+          action_time: row.actionTime === undefined ? '' : String(row.actionTime),
+        };
+      }).filter(Boolean);
+      return { doubt: Boolean(doubt), count: rows.length, notifies: rows };
+    }
+    if (op === 'group.request.operate') {
+      // Agree to, refuse or ignore one pending group request.
+      //
+      // `operateSysNotify(doubt, { operateType, targetMsg: { seq, type, groupCode, postscript } })`
+      // -- the second argument is spread by the client, which is why every earlier probe answered
+      // "Cannot convert undefined or null to object": it was handed a string or a number.
+      const seq = text(p.seq === undefined ? '' : String(p.seq));
+      if (!seq) invalid('seq is required; read it from group.notices');
+      const type = integer(p.type === undefined ? 0 : p.type, 'type', 0, 0xffff);
+      const groupCode = text(p.group_code === undefined ? '' : String(p.group_code));
+      const postscript = text(p.postscript === undefined ? '' : String(p.postscript), 'postscript', false);
+      const action = text(p.action === undefined ? 'agree' : String(p.action));
+      // NTGroupRequestOperateTypes: 1 agree, 2 refuse, 3 ignore.
+      const operateType = { agree: 1, refuse: 2, ignore: 3 }[action];
+      if (operateType === undefined) invalid('action must be agree / refuse / ignore');
+      const svc = service(s, 'Group', ['operateSysNotify']);
+      const response = await svc.operateSysNotify(Boolean(p.doubt), {
+        operateType,
+        targetMsg: { seq, type, groupCode, postscript },
+      });
+      if (session() !== s) fail('NOT_READY', 'QQNT session changed during the request operation');
+      // The method is declared `Promise<void>`; whether a build adds a result code is not known, so
+      // the answer is reported when there is one and not invented when there is not.
+      const result = resultCode(response, 'result');
+      if (result && Number(result.code ?? result.result ?? 0) !== 0) {
+        fail('SERVICE_ERROR', String(result.errMsg || 'The request operation was refused'), {
+          serviceCode: Number(result.code ?? result.result),
+        });
+      }
+      return { seq, action, operate_type: operateType, result: result ?? null };
     }
     if (op === 'group.file.download') {
       // Returns a download URL for one group file.

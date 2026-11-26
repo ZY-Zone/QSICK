@@ -774,11 +774,21 @@ class PushEventMapper:
         event = self._request("group", sub_type)
         event.update({
             "group_id": group_id,
-            # OneBot 的 `flag` 是审批时必须回传的不透明字符串。这里没有它——找出它需要另一次
-            # 通知列表查询，而那属于动作层。没有就不写，比编一个安全。
-            "user_id": initiator,
+            # What a consumer can act on, whether or not the number is known.
+            #
+            # The frame identifies the applicant by *uid* only, and a stranger applying to join has
+            # never appeared in our traffic -- so the uid->uin table cannot answer, and the old code
+            # wrote `user_id: 0` there. Measured in the operator's own consumer log:
+            # `[3905548034 <= 2169010946, 0]`, i.e. a request with no applicant. `0` is not a QQ
+            # number and reading it as one points at nobody, which is worse than saying nothing.
+            "user_id_uid": uid,
             "comment": comment,
+            # OneBot 的 `flag` 是审批时必须回传的不透明字符串。它不在这帧里 —— 它是
+            # `GroupNotify.seq`，只出现在内核的通知列表里（见 `get_group_notices`）。
+            # 没有就不写，比编一个安全。
         })
+        if initiator:
+            event["user_id"] = initiator
         if sub_type == "invite":
             event["sub_type"] = "invite"
         return event
