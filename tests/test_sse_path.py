@@ -8,7 +8,7 @@ an action, GET streams events. go-cqhttp and NapCat both do this. This project i
 Two consequences worth pinning here:
   * the stream answers on the configured path, not on a second one nobody configured
   * GET on that path is the stream, so the query-string form of an action must not also claim it
-    (it stays at `/ONEBOTV11/action`, which is the standard address anyway)
+    (it stays at `/action`, which is the standard address anyway)
 """
 from __future__ import annotations
 
@@ -120,16 +120,16 @@ def test_get_on_the_http_path_is_the_stream_not_an_action(app_for):
     table = routes_for(app)
     # SSE is a streaming response route; the action route would be a plain GET too, so what matters
     # is that the standard `/action` address keeps its GET form and the path is mounted once.
-    assert "/ONEBOTV11/action" in table
-    assert "GET" in table["/ONEBOTV11/action"]
-    assert "/ONEBOTV11/api" in table
-    assert "POST" in table["/ONEBOTV11/api"]
+    assert "/action" in table
+    assert "GET" in table["/action"]
+    assert "/api" in table
+    assert "POST" in table["/api"]
 
 
 def test_a_separate_sse_path_keeps_the_get_action_form(app_for):
-    """The legacy arrangement (distinct sse_path) still mounts GET for actions."""
+    """A distinct sse_path leaves GET free on the http path, so the query-string form stays there."""
     app = app_for(enable_http=True, enable_sse=True, http_path="/api", sse_path="/sse",
                   enable_ws=False)
     table = routes_for(app)
-    assert "GET" in table.get("/ONEBOTV11/api", set())
-    assert "/ONEBOTV11/sse" in table
+    assert "GET" in table.get("/api", set())
+    assert "/sse" in table

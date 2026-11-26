@@ -116,17 +116,20 @@ def test_a_rejected_save_persists_nothing(webui):
     from qsick import network_profiles as netprofiles
 
     client, runtime = webui
-    # A ws_server whose path equals the http path is what the page rejects.
+    # A malformed path is rejected after the in-memory upsert, which exercises the rollback.
     client.post("/api/network/profiles", json=posted_profile(3077, "/same"))
     before = netprofiles.load(runtime.config)
 
     response = client.post("/api/network/profiles", json={
         "action": "upsert", "kind": "ws_server", "protocol": "onebotv11",
         "instance": "3905548034", "host": "127.0.0.1", "port": 3077,
-        "path": "/same", "enabled": True})
+        "path": "/bad path", "enabled": True})
 
     assert response.status_code == 400, response.text
-    assert "重复" in response.json()["error"], response.json()["error"]
+    # The offending field is named, and it is the ws path because that is the profile that carried
+    # the bad value -- the http profile on the same listener is untouched.
+    assert "ws_path" in response.json()["error"], response.json()["error"]
+    assert "/bad path" in response.json()["error"], response.json()["error"]
     after = netprofiles.load(runtime.config)
     # Compare identities, not counts: the built-in default profiles are in the store from the start,
     # so "no ws_server at all" would fail for reasons that have nothing to do with this save.
@@ -144,7 +147,7 @@ def test_a_rejected_save_leaves_the_running_config_untouched(webui):
     response = client.post("/api/network/profiles", json={
         "action": "upsert", "kind": "ws_server", "protocol": "onebotv11",
         "instance": "3905548034", "host": "0.0.0.0", "port": 3078,
-        "path": "/one", "enabled": True})
+        "path": "/bad path", "enabled": True})
 
     assert response.status_code == 400, response.text
     assert runtime.config.onebot.host == host_before

@@ -112,24 +112,34 @@ Milky 的现实需要：好友私聊里带文件的消息同时是 `message_rece
 
 ### 端点
 
-每种协议在自己的路径前缀下，**不做别名**：
+**URL 里不带协议前缀。** 一条连接说什么协议，由它落在哪条网络配置上决定，而不是由路径猜。
+协议是网络配置的属性（下拉框里选的那一项），路径是那张配置自己的字段。
 
 | | OneBot v11 | Milky |
 | --- | --- | --- |
-| 前缀 | `/ONEBOTV11/` | `/MILKY/` |
-| 调用 | `POST /ONEBOTV11/`（动作名在 body 里） | `POST /MILKY/api/{api}`（动作名在路径里） |
+| 调用 | `POST {path}`（动作名在 body 里），另有标准地址 `POST /action` | `POST {path}/api/{api}`（动作名在路径里） |
 | 调用体 | `{action, params, echo}` | 参数直接是 body，至少要 `{}` |
 | 应答 | `{status, retcode, data, echo}` | `{status, retcode, message, data}` |
-| 推送 | `GET /ONEBOTV11/`（WS/SSE），另有 `/ONEBOTV11/ws`、`/ONEBOTV11/sse` | `GET /MILKY/event`（WS/SSE），SSE 帧是 `event: milky_event` |
-| 健康检查 | `GET /ONEBOTV11/health` | — |
+| 推送 | `GET {path}`（SSE/WS）；独立 WS 配置用 `{ws_path}` | `GET {path}/event`（SSE/WS），SSE 帧是 `event: milky_event` |
+| 健康检查 | `GET /health` | — |
 
-两种协议挂在同一个端口的不同前缀上：方向一致（协议端都是服务器），前缀不重叠。
+`{path}` 就是配置里的「路径」。**它对这条配置的所有传输生效**，不是只给 GET 用：
 
-**前缀本身就是协议声明**，这比分流点里的 profile 反查更可靠——请求自己带着答案，不依赖配置里
-恰好只有一条匹配的记录。所以 `hub.connection()` 在这些路径上直接写死协议。
+* v11：同一个 URL 上 `POST` 跑动作、`GET` 推事件（勾选 SSE 时）、`Upgrade` 建 WebSocket
+  （勾选"同一路径也接受 WebSocket 客户端"时）。三者靠方法/升级头区分，互不遮蔽。
+* Milky：配置的路径是**基路径**，规范后缀追加在它下面。路径填 `/` 就是 `/api/{api}` 与
+  `/event`；填 `/bot` 就是 `/bot/api/{api}` 与 `/bot/event`。
 
-旧的无前缀路径（`/`、`/ws`、`/sse`、`/api/*`、`/event`）**已移除**。多留一个别名就多一条会被
-误用的路径：客户端分不清自己连的是哪套协议。
+**端口按地址分组监听。** HTTP 与 WS 配置写同一 `host:port` 时共用一个监听器（一个 uvicorn
+server 同时提供两种传输）；写不同地址时**各自起一个** server，互不遮蔽。这正是不能靠"第一条
+生效"来实现的地方：不同端口之间不存在竞争。
+
+协议同理按配置各自独立：同一端口上可以 HTTP 走 v11、WS 走 Milky，两条连接各用自己的编码器。
+`config.onebot` 里的 `http_protocol` / `ws_protocol` 就是这么来的；`apply_to_config` 保留的
+只是**第一条**监听器的投影，给状态页和旧调用方看，不再决定实际监听几个端口。
+
+旧前缀（`/ONEBOTV11/`、`/MILKY/`）**已移除**：多一个别名就多一条会被误用的路径，而且前缀
+一旦保留，"协议由配置决定"就变成两套并存的规则。
 
 ### API 覆盖（65/65 全部归类）
 

@@ -145,10 +145,14 @@ def test_server_predecode_and_api_formatter_and_auth():
         raise AssertionError("resolved message APIs must precede decode")
     pipelines = SimpleNamespace(protocol=lambda _: adapter, decode_action=decode)
     app = FastAPI()
-    register_milky_routes(app, rt, SimpleNamespace(pipelines=pipelines), lambda req: req.headers.get("authorization") == "Bearer test")
+    # Paths are supplied explicitly: the router mounts only the transports a listener selected,
+    # so a call without them would mount nothing at all.
+    register_milky_routes(app, rt, SimpleNamespace(pipelines=pipelines),
+                          lambda req: req.headers.get("authorization") == "Bearer test",
+                          api_path="/api/{api}", sse_path="/event", ws_path="/event")
     with TestClient(app) as client:
-        assert client.post("/MILKY/api/recall_group_message", json={}).status_code == 401
-        response = client.post("/MILKY/api/recall_group_message", headers={"authorization": "Bearer test"}, json={"group_id": 22, "message_seq": 7})
+        assert client.post("/api/recall_group_message", json={}).status_code == 401
+        response = client.post("/api/recall_group_message", headers={"authorization": "Bearer test"}, json={"group_id": 22, "message_seq": 7})
     assert response.json()["api"] == "recall_group_message"
     assert rt.calls == [("delete_msg", {"account": "11", "message_id": 9001})]
     assert not seen

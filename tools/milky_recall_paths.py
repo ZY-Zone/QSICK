@@ -17,11 +17,20 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+#: Listener base path; Milky appends `/api/{api}` to it. Set from `--base`.
+MILKY_BASE = "/"
+
+
+def api_url(port: int, api: str) -> str:
+    """`{base}/api/{api}` on the listener's port."""
+    base = MILKY_BASE.rstrip("/")
+    return f"http://127.0.0.1:{port}{base}/api/{api}"
+
 
 def call(port: int, api: str, body: dict, timeout: float = 25.0) -> dict:
     payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
-        f"http://127.0.0.1:{port}/MILKY/api/{api}", data=payload,
+        api_url(port, api), data=payload,
         headers={"Content-Type": "application/json"}, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -51,11 +60,15 @@ def data_of(record: dict) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=5755)
+    ap.add_argument("--base", default="/",
+                     help="listener base path; Milky appends /api/{api}")
     ap.add_argument("--owner", default="3905548034", help="account that recalls (group owner)")
     ap.add_argument("--sender", default="2208948865", help="account that sends the message")
     ap.add_argument("--group", type=int, default=2169010946)
     ap.add_argument("--out", default="")
     args = ap.parse_args()
+    global MILKY_BASE
+    MILKY_BASE = args.base or "/"
 
     out = Path(args.out) if args.out else Path(r"D:\projects\milky实现") / "实测" / \
         time.strftime("%Y-%m-%dT%H%M%S") / "writes"

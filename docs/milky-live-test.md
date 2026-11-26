@@ -18,7 +18,7 @@
 | 步骤 | 做法 |
 | --- | --- |
 | 起监听 | 在 WebUI 的网络配置里建一条 `kind=http`、`protocol=milky` 的记录（绑 `127.0.0.1`，无 token 时**必须**绑本机），保存即热生效 |
-| 打接口 | `POST /MILKY/api/{api}`，body 里带 `account` 选定账号 |
+| 打接口 | `POST {path}/api/{api}`，body 里带 `account` 选定账号。`{path}` 是该网络配置的「路径」，填 `/` 就是规范原路径 `/api/{api}` |
 | 验证 | 不只看 `retcode == 0`，还要**读回**：改名后读群信息、禁言后读成员、建文件夹后读目录 |
 | 落证据 | 一次调用一个 JSON（完整 request / response / retcode / 耗时），按时间戳分目录 |
 

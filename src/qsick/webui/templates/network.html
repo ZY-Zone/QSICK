@@ -65,6 +65,8 @@
     <button type="button" class="net-tab{% if selected_kind == 'ws_server' %} active{% endif %}" data-tab="ws_server">
       <span>WS 服务器</span><b>{{ groups.ws_server|length }}</b>
     </button>
+    <p class="faint net-side-note">每条配置决定自己的协议和地址：同一条路径可同时承载动作、事件流与 WebSocket；
+      不同地址各自监听，互不遮蔽。</p>
   </aside>
 
   <div class="net-panels">
@@ -160,6 +162,8 @@
             <span class="path-prefix" aria-hidden="true">/</span>
             <input id="profile-path" value="" placeholder="ws" spellcheck="false" autocomplete="off" />
           </span>
+          <small class="hint">这条路径对该配置的所有传输生效：POST 动作、GET 动作/事件流、WebSocket 都用它。
+            Milky 在它下面加规范后缀（<code>/api/{api}</code>、<code>/event</code>）。</small>
         </label>
         <label class="span-2">Access token
           <input id="profile-token" type="password" placeholder="留空表示不校验" autocomplete="new-password" />
@@ -168,7 +172,7 @@
            它们只对 http 类型显示：ws 服务器没有 HTTP 监听，把开关放在那里等于提供一个不生效的选项，
            保存下来却不生效比没有这个选项更糟。 #}
         <label class="check span-2" id="profile-http-ws-wrap">
-          <input type="checkbox" id="profile-enable-ws" /> 同一端口也接受 WebSocket 客户端
+          <input type="checkbox" id="profile-enable-ws" /> 同一路径也接受 WebSocket 客户端
         </label>
         <label class="check span-2" id="profile-http-sse-wrap">
           <input type="checkbox" id="profile-enable-sse" /> 同一路径上用 GET 提供 SSE 事件流（POST 仍是动作端点）

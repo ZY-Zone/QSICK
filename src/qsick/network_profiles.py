@@ -13,13 +13,14 @@ Each profile also picks the **chat protocol** it speaks (``protocols`` 下的目
 
 from __future__ import annotations
 
+import copy
 import json
 import time
 import uuid
 from pathlib import Path
 from typing import Any
 
-from .config import RuntimeConfig
+from .config import OneBotConfig, RuntimeConfig
 
 FILE_NAME = "network_profiles.json"
 #: 每个账户一个文件，形如 ``network_profiles/3905548034.json``。
@@ -177,7 +178,7 @@ def _default_profiles(config: RuntimeConfig) -> list[dict[str, Any]]:
             # only becomes meaningful once it is actually stored, so the derived profile must state
             # what the old behaviour was.
             "enable_sse": bool(onebot.enable_sse),
-            "protocol": protocol,
+            "protocol": str(getattr(onebot, "http_protocol", "") or protocol),
             "instance": DEFAULT_INSTANCE,
         },
         {
@@ -189,7 +190,7 @@ def _default_profiles(config: RuntimeConfig) -> list[dict[str, Any]]:
             "port": int(onebot.port),
             "path": onebot.ws_path,
             "token": onebot.access_token,
-            "protocol": protocol,
+            "protocol": str(getattr(onebot, "ws_protocol", "") or protocol),
             "instance": DEFAULT_INSTANCE,
         },
     ]
@@ -441,56 +442,120 @@ def instances_in_use(config: RuntimeConfig) -> list[str]:
     return sorted(names)
 
 
-def apply_to_config(config: RuntimeConfig, profiles: list[dict[str, Any]]) -> tuple[dict[str, Any], list[str]]:
-    """Map profiles back onto the single OneBot listener.
+def normalize_path(value: Any, default: str = "/") -> str:
+    """A URL path, with one leading slash and no trailing slash except at the root."""
+    path = str(value or default).strip() or default
+    if not path.startswith("/"):
+        path = "/" + path
+    return path.rstrip("/") or "/"
 
-    The current runtime owns one HTTP/WS/SSE listener. HTTP and WS server
-    profiles can therefore share a port; if they point at different ports the
-    first enabled profile wins and a warning is returned.
+
+def join_path(base: Any, suffix: str) -> str:
+    """Join a configured base path and a protocol-defined suffix.
+
+    `join_path("/", "/event") == "/event"` and `join_path("/bot", "/event") == "/bot/event"`.
+    Milky keeps its `/api` and `/event` shapes under whatever base the operator configured; v11
+    uses the base itself for every transport.
     """
-    warnings: list[str] = []
-    http = _first_enabled(profiles, "http")
-    ws = _first_enabled(profiles, "ws_server")
-    onebot = config.onebot
+    root = normalize_path(base)
+    tail = "/" + str(suffix or "").lstrip("/")
+    return tail if root == "/" else root + tail
 
-    if http:
-        onebot.enable_http = True
-        onebot.host = str(http.get("host") or onebot.host)
-        onebot.port = int(http.get("port") or onebot.port)
-        onebot.http_path = str(http.get("path") or "/")
-        onebot.access_token = str(http.get("token") or "")
+
+def derive_listeners(config: RuntimeConfig,
+                     profiles: list[dict[str, Any]]) -> tuple[list[OneBotConfig], list[str]]:
+    """Build one listener per `(host, port)`, without mutating the runtime config.
+
+    HTTP and WS profiles on the same address share one application; different addresses become
+    different uvicorn servers. The first enabled profile of each kind wins *within its address* --
+    profiles on another port no longer discard one another.
+
+    Paths describe the whole endpoint, not just its GET route:
+      * v11 HTTP: POST actions, GET actions/SSE and optional WebSocket all use `path`.
+      * Milky HTTP: actions are `{path}/api/{api}`, events `{path}/event`.
+      * v11 WS: `path`; Milky WS: `{path}/event`.
+    """
+    from .onebot.pipeline import protocol_of
+
+    warnings: list[str] = []
+    fallback = default_protocol()
+    enabled = [item for item in profiles
+               if item.get("enabled") and item.get("kind") in ("http", "ws_server")]
+
+    def address_of(item: dict[str, Any]) -> tuple[str, int]:
+        host = str(item.get("host") or config.onebot.host).strip() or config.onebot.host
+        return host, int(item.get("port") or config.onebot.port)
+
+    addresses: list[tuple[str, int]] = []
+    for item in enabled:
+        address = address_of(item)
+        if address not in addresses:
+            addresses.append(address)
+
+    listeners: list[OneBotConfig] = []
+    for host, port in addresses:
+        http = next((item for item in enabled if item.get("kind") == "http"
+                     and address_of(item) == (host, port)), None)
+        ws = next((item for item in enabled if item.get("kind") == "ws_server"
+                   and address_of(item) == (host, port)), None)
+        for kind, present in (("HTTP", http), ("WS", ws)):
+            wanted_kind = "http" if kind == "HTTP" else "ws_server"
+            count = sum(1 for item in enabled if item.get("kind") == wanted_kind
+                        and address_of(item) == (host, port))
+            if count > 1 and present is not None:
+                warnings.append(f"{host}:{port} 有 {count} 条启用的 {kind} 配置，第一条生效。")
+
+        listener = copy.deepcopy(config.onebot)
+        listener.host = host
+        listener.port = port
+        listener.enable_http = False
+        listener.enable_ws = False
+        listener.enable_sse = False
+
+        if http is not None:
+            listener.enable_http = True
+            listener.http_protocol = protocol_of(http, fallback)
+            listener.http_path = normalize_path(http.get("path"), "/")
+            listener.access_token = str(http.get("token") or "")
+            listener.enable_sse = bool(http.get("enable_sse", False))
+            listener.sse_path = (join_path(listener.http_path, "/event")
+                                 if listener.http_protocol == "milky" else listener.http_path)
+
+        if ws is not None:
+            listener.enable_ws = True
+            listener.ws_protocol = protocol_of(ws, fallback)
+            ws_base = normalize_path(ws.get("path"), "/ws")
+            listener.ws_path = (join_path(ws_base, "/event")
+                                if listener.ws_protocol == "milky" else ws_base)
+            if http is None:
+                listener.access_token = str(ws.get("token") or "")
+        elif http is not None and http.get("enable_websocket"):
+            # One v11 URL speaks POST/GET/Upgrade; Milky similarly shares its event URL between
+            # SSE and WebSocket. The HTTP path therefore governs this transport too.
+            listener.enable_ws = True
+            listener.ws_protocol = listener.http_protocol
+            listener.ws_path = listener.sse_path if listener.http_protocol == "milky" else listener.http_path
+
+        listeners.append(listener)
+    return listeners, warnings
+
+
+def apply_to_config(config: RuntimeConfig, profiles: list[dict[str, Any]]) -> tuple[dict[str, Any], list[str]]:
+    """Project the first derived listener onto the legacy flat `config.onebot` view.
+
+    `derive_listeners` is the real model and supports any number of ports. This projection remains
+    for status/legacy settings callers that still expect one object; it no longer decides how many
+    servers run -- `Runtime.restart_onebot` receives the full listener list.
+    """
+    listeners, warnings = derive_listeners(config, profiles)
+    onebot = config.onebot
+    if listeners:
+        for field_name in onebot.__slots__:
+            if field_name != "reverse_ws_urls":
+                setattr(onebot, field_name, copy.deepcopy(getattr(listeners[0], field_name)))
     else:
         onebot.enable_http = False
-
-    if ws:
-        onebot.enable_ws = True
-        if not http:
-            onebot.host = str(ws.get("host") or onebot.host)
-            onebot.port = int(ws.get("port") or onebot.port)
-        elif str(ws.get("host") or "") != onebot.host or int(ws.get("port") or 0) != onebot.port:
-            warnings.append("WS 服务器与 HTTP 服务器端口不同，当前内核只监听其中一个端口；已按 HTTP 配置应用。")
-        onebot.ws_path = str(ws.get("path") or "/ws")
-    elif http and http.get("enable_websocket"):
-        # The http profile's own checkbox: accept WebSocket clients on the same listener. It was
-        # stored and then never read, so ticking it did nothing at all.
-        onebot.enable_ws = True
-    else:
         onebot.enable_ws = False
-
-    # SSE is served at the HTTP endpoint itself, not at a path of its own.
-    #
-    # OneBot v11 (go-cqhttp and NapCat both do this) puts the event stream on the same URL as the
-    # action endpoint, separated by method: POST runs an action, GET streams events. A separate
-    # `{path}/sse` is this project's invention, and it made one configured address answer two
-    # different things depending on a field the operator never saw.
-    #
-    # The checkbox on the http profile decides *whether* SSE is offered. It used to be ignored --
-    # `enable_sse = bool(http)` -- so SSE was always on for any http profile and the box had no
-    # effect either way.
-    if http and http.get("enable_sse", False):
-        onebot.enable_sse = True
-        onebot.sse_path = onebot.http_path
-    else:
         onebot.enable_sse = False
 
     clients = [str(item.get("url")) for item in profiles if item.get("kind") == "ws_client" and item.get("enabled")]
@@ -504,6 +569,9 @@ def apply_to_config(config: RuntimeConfig, profiles: list[dict[str, Any]]) -> tu
         "enable_sse": onebot.enable_sse,
         "http_path": onebot.http_path,
         "ws_path": onebot.ws_path,
+        "sse_path": onebot.sse_path,
+        "http_protocol": onebot.http_protocol,
+        "ws_protocol": onebot.ws_protocol,
         "access_token": onebot.access_token,
         "reverse_ws_urls": onebot.reverse_ws_urls,
     }

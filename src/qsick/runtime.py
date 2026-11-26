@@ -315,6 +315,10 @@ class Runtime:
         self._servers: list[uvicorn.Server] = []
         self._server_tasks: dict[uvicorn.Server, asyncio.Task[None]] = {}
         self._onebot_server: uvicorn.Server | None = None
+        #: All protocol listeners, one per enabled `(host, port)`. `_onebot_server` remains the
+        #: first entry for legacy status callers; lifecycle operations use this complete list.
+        self._onebot_servers: list[uvicorn.Server] = []
+        self._onebot_listeners: list[Any] = []
         #: True only once this process is actually serving the cache ingress. The copy is what feeds
         #: *our* cache; posting to a port nobody here owns would be somebody else's process.
         self._cache_started = False
@@ -563,47 +567,49 @@ class Runtime:
         that the panel scrolls.
         """
         cfg = self.config.onebot
-        server = self._onebot_server
-        started = bool(server and getattr(server, "started", False))
         hub = self.hub.stats()
         cards: list[dict[str, Any]] = []
+        listeners = self._onebot_listeners or ([cfg] if (
+            cfg.enable_http or cfg.enable_ws or cfg.enable_sse) else [])
 
-        if cfg.enable_http:
-            cards.append({
-                "id": "http", "label": "OneBot HTTP", "kind": "http",
-                "tone": "green" if started else "gray",
-                "state": "监听中" if started else "未启动",
-                "detail": f"http://{cfg.host}:{cfg.port}{cfg.http_path}",
-                # A server's connection count is what tells you whether anything is actually talking to it.
-                # HTTP has no connection to count; in-flight requests and the running total are what can honestly
-                # be shown, and the template labels them as requests rather than implying a socket count.
-                "connections": int(hub.get("http_requests", 0)),
-                "active": int(hub.get("http_active", 0)),
-                "connection_kind": "request",
-                "show_connections": True,
-            })
-
-        if cfg.enable_ws:
-            cards.append({
-                "id": "ws", "label": "OneBot WebSocket", "kind": "ws",
-                "tone": "green" if started else "gray",
-                "state": "监听中" if started else "未启动",
-                "detail": f"ws://{cfg.host}:{cfg.port}{cfg.ws_path}",
-                "connections": int(hub.get("websockets", 0)) if started else 0,
-                "connection_kind": "connection",
-                "show_connections": True,
-            })
-
-        if cfg.enable_sse:
-            cards.append({
-                "id": "sse", "label": "OneBot SSE", "kind": "sse",
-                "tone": "green" if started else "gray",
-                "state": "监听中" if started else "未启动",
-                "detail": f"http://{cfg.host}:{cfg.port}{cfg.sse_path}",
-                "connections": int(hub.get("sse", 0)) if started else 0,
-                "connection_kind": "connection",
-                "show_connections": True,
-            })
+        for index, listener in enumerate(listeners):
+            server = (self._onebot_servers[index] if index < len(self._onebot_servers)
+                      else (self._onebot_server if index == 0 else None))
+            started = bool(server and getattr(server, "started", False))
+            suffix = f"-{index}" if index else ""
+            if listener.enable_http:
+                cards.append({
+                    "id": f"http{suffix}", "label": f"{listener.http_protocol} HTTP", "kind": "http",
+                    "tone": "green" if started else "gray",
+                    "state": "监听中" if started else "未启动",
+                    "detail": f"http://{listener.host}:{listener.port}{listener.http_path}",
+                    # HTTP has no connection to count; in-flight requests and the running total are what can honestly
+                    # be shown, and the template labels them as requests rather than implying a socket count.
+                    "connections": int(hub.get("http_requests", 0)),
+                    "active": int(hub.get("http_active", 0)),
+                    "connection_kind": "request",
+                    "show_connections": True,
+                })
+            if listener.enable_ws:
+                cards.append({
+                    "id": f"ws{suffix}", "label": f"{listener.ws_protocol} WebSocket", "kind": "ws",
+                    "tone": "green" if started else "gray",
+                    "state": "监听中" if started else "未启动",
+                    "detail": f"ws://{listener.host}:{listener.port}{listener.ws_path}",
+                    "connections": int(hub.get("websockets", 0)) if started else 0,
+                    "connection_kind": "connection",
+                    "show_connections": True,
+                })
+            if listener.enable_sse:
+                cards.append({
+                    "id": f"sse{suffix}", "label": f"{listener.http_protocol} SSE", "kind": "sse",
+                    "tone": "green" if started else "gray",
+                    "state": "监听中" if started else "未启动",
+                    "detail": f"http://{listener.host}:{listener.port}{listener.sse_path}",
+                    "connections": int(hub.get("sse", 0)) if started else 0,
+                    "connection_kind": "connection",
+                    "show_connections": True,
+                })
 
         for index, target in enumerate(self._reverse_targets()):
             # 目标元组从三元组扩到了五元组（多了协议与配置 id），这里解包也跟着走。
@@ -984,10 +990,16 @@ class Runtime:
             else:
                 log.info("server listening", port=server.config.port)
 
-    async def restart_onebot(self) -> bool:
-        """Re-bind the OneBot HTTP/WS/SSE listener with the current config."""
-        if self._onebot_server is not None:
-            server = self._onebot_server
+    async def restart_onebot(self, listeners: list[Any] | None = None) -> bool:
+        """Re-bind every configured protocol listener, one per `(host, port)`.
+
+        `listeners` comes from `network_profiles.derive_listeners`. With no argument the flat
+        `config.onebot` view is used, preserving the embedded/test call pattern.
+        """
+        previous = list(self._onebot_servers)
+        if self._onebot_server is not None and self._onebot_server not in previous:
+            previous.append(self._onebot_server)
+        for server in previous:
             task = self._server_tasks.pop(server, None)
             server.should_exit = True
             if task is not None:
@@ -999,38 +1011,48 @@ class Runtime:
                     self._tasks.remove(task)
             if server in self._servers:
                 self._servers.remove(server)
-            self._onebot_server = None
-        enabled = (
-            self.config.onebot.enable_http
-            or self.config.onebot.enable_ws
-            or self.config.onebot.enable_sse
-        )
-        if not enabled:
+        self._onebot_server = None
+        self._onebot_servers = []
+
+        if listeners is None:
+            listeners = [self.config.onebot] if (
+                self.config.onebot.enable_http or self.config.onebot.enable_ws
+                or self.config.onebot.enable_sse) else []
+        self._onebot_listeners = list(listeners)
+        if not listeners:
             return False
-        server = self._spawn_server(
-            create_onebot_app(self), self.config.onebot.host, self.config.onebot.port, "onebot"
-        )
-        for _ in range(30):
-            if getattr(server, "started", False):
-                break
-            await asyncio.sleep(0.1)
-        self._onebot_server = server
-        started = bool(getattr(server, "started", False))
-        # Reported under the connection category, not the general runtime one: "which port is OneBot on" is a
-        # connection question, and the operator asked for connection-class logs to be separable.
+
         http_log = logmod.get_logger("OneBot.HTTP")
-        endpoints = [name for name, on in (("http", self.config.onebot.enable_http),
-                                           ("ws", self.config.onebot.enable_ws),
-                                           ("sse", self.config.onebot.enable_sse)) if on]
-        if started:
-            log.info("onebot listener restarted", host=self.config.onebot.host, port=self.config.onebot.port)
-            http_log.info("onebot listener ready", host=self.config.onebot.host,
-                          port=self.config.onebot.port, endpoints=",".join(endpoints))
-        else:
-            log.warn("onebot listener did not start", host=self.config.onebot.host, port=self.config.onebot.port)
-            http_log.error("onebot listener failed to bind", host=self.config.onebot.host,
-                           port=self.config.onebot.port, endpoints=",".join(endpoints))
-        return started
+        started_count = 0
+        for listener in listeners:
+            endpoints = [name for name, on in (("http", listener.enable_http),
+                                               ("ws", listener.enable_ws),
+                                               ("sse", listener.enable_sse)) if on]
+            if not endpoints:
+                continue
+            server = self._spawn_server(
+                create_onebot_app(self, listener), listener.host, listener.port, "onebot"
+            )
+            for _ in range(30):
+                if getattr(server, "started", False):
+                    break
+                await asyncio.sleep(0.1)
+            self._onebot_servers.append(server)
+            if self._onebot_server is None:
+                self._onebot_server = server
+            started = bool(getattr(server, "started", False))
+            started_count += int(started)
+            detail = f"{listener.host}:{listener.port}"
+            if started:
+                log.info("onebot listener restarted", host=listener.host, port=listener.port)
+                http_log.info("onebot listener ready", host=listener.host, port=listener.port,
+                              endpoints=",".join(endpoints), http_protocol=listener.http_protocol,
+                              ws_protocol=listener.ws_protocol)
+            else:
+                log.warn("onebot listener did not start", host=listener.host, port=listener.port)
+                http_log.error("onebot listener failed to bind", address=detail,
+                               endpoints=",".join(endpoints))
+        return started_count == len(self._onebot_servers) and started_count > 0
 
     def _server_protocol(self, kind: str, path: str = "") -> str:
         """Which protocol a server-side connection speaks.
@@ -1336,20 +1358,17 @@ class Runtime:
                 # No account is logged in. Keep reading from the same place, so the next login sees the
                 # operator's real configuration rather than an emptied one.
                 profiles = []
-            # `apply_to_config` is the single mapping from profiles onto `config.onebot`; with an empty list it
-            # clears every listener flag, which is exactly the "no account is logged in" state. So activation
-            # and deactivation are the same code path -- there is no second way to be wrong.
-            _, warnings = netprofiles.apply_to_config(self.config, profiles)
+            # Keep the legacy flat view for status, but start the complete set of listeners: profiles
+            # on different ports are independent servers, not candidates for one surviving socket.
+            listeners, warnings = netprofiles.derive_listeners(self.config, profiles)
+            _, _legacy_warnings = netprofiles.apply_to_config(self.config, profiles)
             # Local listeners only when this runtime is actually serving. The reverse client is different: it
             # is an outbound connection, so it has nothing to do with whether a local port is bound -- gating
             # it on `_serving` would leave embedded runs unable to reach their consumer at all.
-            onebot = await self.restart_onebot() if self._serving else False
+            onebot = await self.restart_onebot(listeners) if self._serving else False
             reverse = await self.reload_reverse()
-            enabled = (
-                self.config.onebot.enable_http
-                or self.config.onebot.enable_ws
-                or self.config.onebot.enable_sse
-            )
+            enabled = any(listener.enable_http or listener.enable_ws or listener.enable_sse
+                          for listener in listeners)
             self.last_network_apply = {
                 "onebot": onebot,
                 "onebot_enabled": enabled,

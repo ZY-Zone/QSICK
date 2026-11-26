@@ -1029,15 +1029,9 @@ def create_app(runtime: "Runtime") -> FastAPI:
         for name, value in paths.items():
             if not value.startswith("/") or " " in value:
                 errors.append(f"{name} 必须以 / 开头且不含空格")
-        # SSE shares the HTTP path by design (OneBot v11 puts actions and the event stream on one
-        # URL, split by method), so that pair is not a collision. The only choice left to the
-        # operator is the WS path, and a WS endpoint at the same URL as HTTP is genuinely
-        # ambiguous to anyone reading the address.
-        chosen = {name: value for name, value in paths.items() if name != "sse_path"}
-        if len(set(chosen.values())) != len(chosen):
-            duplicated = sorted({value for value in chosen.values()
-                                 if list(chosen.values()).count(value) > 1})
-            errors.append("已启用的监听路径不能重复：" + "、".join(duplicated))
+        # A URL may legitimately carry POST actions, GET events and a WebSocket upgrade. HTTP and
+        # WS sharing a path is therefore supported, not a collision; protocol comes from the profile,
+        # and different ports are independent listeners. Only the path syntax needs checking here.
         urls = data.get("reverse_ws_urls", onebot.reverse_ws_urls)
         if isinstance(urls, str):
             urls = _parse_urls(urls)
@@ -1067,6 +1061,8 @@ def create_app(runtime: "Runtime") -> FastAPI:
         onebot.enable_http = bool(data.get("enable_http", onebot.enable_http))
         onebot.enable_ws = bool(data.get("enable_ws", onebot.enable_ws))
         onebot.enable_sse = bool(data.get("enable_sse", onebot.enable_sse))
+        onebot.http_protocol = str(data.get("http_protocol", onebot.http_protocol))
+        onebot.ws_protocol = str(data.get("ws_protocol", onebot.ws_protocol))
         for name, value in paths.items():
             setattr(onebot, name, value)
         if data.get("clear_onebot_token"):
@@ -1093,6 +1089,8 @@ def create_app(runtime: "Runtime") -> FastAPI:
                     "http_path": onebot.http_path,
                     "ws_path": onebot.ws_path,
                     "sse_path": onebot.sse_path,
+                    "http_protocol": onebot.http_protocol,
+                    "ws_protocol": onebot.ws_protocol,
                     "access_token": onebot.access_token,
                     "reverse_ws_urls": onebot.reverse_ws_urls,
                     "reverse_reconnect_seconds": onebot.reverse_reconnect_seconds,
@@ -1304,7 +1302,30 @@ def create_app(runtime: "Runtime") -> FastAPI:
         # Both are fixed by applying to a copy, validating that, and committing only if it passes.
         previous_onebot = copy.deepcopy(runtime.config.onebot)
         active_profiles = runtime._network_profiles_for(runtime._active_accounts(), profiles)
-        data, warnings = netprofiles.apply_to_config(runtime.config, active_profiles)
+        listeners, warnings = netprofiles.derive_listeners(runtime.config, active_profiles)
+        # Validate every listener, not the flat projection. `apply_to_config` keeps only the first
+        # listener for legacy status callers, so a bad path on the second or third one would never
+        # reach a check -- and that is exactly where a mistyped path now shows up.
+        listener_errors: list[str] = []
+        for listener in listeners:
+            address = f"{listener.host}:{listener.port}"
+            if not listener.host or " " in listener.host:
+                listener_errors.append(f"{address} 的监听地址无效")
+            if not 1 <= int(listener.port) <= 65535:
+                listener_errors.append(f"{address} 的端口必须在 1..65535 之间")
+            for field_name, on in (("http_path", listener.enable_http),
+                                   ("sse_path", listener.enable_sse),
+                                   ("ws_path", listener.enable_ws)):
+                if not on:
+                    continue
+                value = str(getattr(listener, field_name, ""))
+                if (not value.startswith("/") or " " in value
+                        or "?" in value or "#" in value):
+                    listener_errors.append(
+                        f"{address} 的 {field_name} 必须以 / 开头且不含空格、? 或 #：{value!r}")
+        if listener_errors:
+            return JSONResponse({"ok": False, "error": "; ".join(listener_errors)}, status_code=400)
+        data, _ = netprofiles.apply_to_config(runtime.config, active_profiles)
         data["clear_onebot_token"] = False
         errors = _apply_network(runtime, data)
         if errors:

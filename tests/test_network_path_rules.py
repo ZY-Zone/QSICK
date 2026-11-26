@@ -1,12 +1,8 @@
-"""A lone listener at "/" must save; only *enabled* transports can collide.
+"""Path rules for server profiles.
 
-The three transports share one listener, so a duplicate path among them is a genuine ambiguity.
-A disabled transport contributes nothing, though -- and all `_apply_network` looked at was the
-config's stored `http_path`/`sse_path`, which keep their defaults when nothing uses them.
-
-Measured before the fix: creating a single `ws_server` with path `/` was rejected with
-"HTTP / WS / SSE paths cannot repeat", because the unused `http_path` was still `/`. The path was
-typed exactly once.
+A configured path governs every transport on that listener. One URL may carry POST actions, GET
+events and a WebSocket upgrade, so HTTP and WS sharing a path is supported rather than an error.
+Only enabled transports are checked, and a different port is an independent listener.
 """
 from __future__ import annotations
 
@@ -60,19 +56,19 @@ def test_a_ws_server_and_an_http_server_may_each_own_a_path(webui):
     assert save(client, kind="http", path="/http").status_code == 200
 
 
-def test_two_enabled_transports_on_one_path_are_still_rejected(webui):
-    """The rule that must survive: both enabled, same path, one listener -- genuinely ambiguous."""
-    client, _ = webui
+def test_two_enabled_transports_may_share_one_path(webui):
+    """POST, GET and Upgrade distinguish the transports; the path belongs to all of them."""
+    client, runtime = webui
     assert save(client, kind="http", path="/same").status_code == 200
     response = save(client, kind="ws_server", path="/same")
-    assert response.status_code == 400, response.text
-    assert "重复" in response.json()["error"]
+    assert response.status_code == 200, response.text
+    assert runtime.config.onebot.http_path == "/same"
+    assert runtime.config.onebot.ws_path == "/same"
 
 
-def test_the_error_names_the_path_that_collides(webui):
-    """A message that says which value clashed, so the operator is not left guessing."""
+def test_a_path_with_a_space_is_rejected_by_name(webui):
+    """Malformed paths are still rejected, and the message names the offending field."""
     client, _ = webui
-    assert save(client, kind="http", path="/dup").status_code == 200
-    response = save(client, kind="ws_server", path="/dup")
+    response = save(client, kind="http", path="/bad path")
     assert response.status_code == 400, response.text
-    assert "/dup" in response.json()["error"], response.json()["error"]
+    assert "http_path" in response.json()["error"], response.json()["error"]

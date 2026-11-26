@@ -12,26 +12,15 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.websockets import WebSocketState
 
 from .. import log as logmod
+from ..network_profiles import join_path, normalize_path
 from . import models
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..runtime import Runtime
 
-#: 每条协议在自己的路径前缀下，互不遮蔽。一条连接落在哪个前缀里，它的协议就已经确定了 ——
-#: 这是比分流点里的 profile 反查更可靠的一层：前缀是请求自己带的信息。
-#:
-#: 大小写按用户的写法保留：`/ONEBOTV11/` 与 `/MILKY/`。云端客户端通常原样使用配置里的 URL，
-#: 不会去猜大小写，所以这里不额外做小写别名 —— 多一个别名就多一条会被误用的路径。
-ONEBOTV11_PREFIX = "/ONEBOTV11"
-MILKY_PREFIX = "/MILKY"
-
-
-def prefixed(prefix: str, path: str) -> str:
-    """`("/ONEBOTV11", "/ws")` -> `"/ONEBOTV11/ws"`；`("/ONEBOTV11", "/")` -> `"/ONEBOTV11/"`。"""
-    inner = str(path or "/")
-    if not inner.startswith("/"):
-        inner = "/" + inner
-    return prefix + inner
+def route_path(path: str) -> str:
+    """Normalize one configured route; there is deliberately no protocol prefix."""
+    return normalize_path(path)
 
 
 log = logmod.get_logger("OneBot.Server")
@@ -236,9 +225,11 @@ def _token_of(request: Request | WebSocket) -> str:
     return request.headers.get("x-access-token", "")
 
 
-def create_app(runtime: "Runtime") -> FastAPI:
+def create_app(runtime: "Runtime", listener: Any = None) -> FastAPI:
     app = FastAPI(title="QSICK OneBot", docs_url=None, redoc_url=None)
-    config = runtime.config.onebot
+    config = listener if listener is not None else runtime.config.onebot
+    http_protocol = str(getattr(config, "http_protocol", "onebotv11") or "onebotv11")
+    ws_protocol = str(getattr(config, "ws_protocol", "onebotv11") or "onebotv11")
     hub = runtime.hub
     app.state.runtime = runtime
 
@@ -247,6 +238,18 @@ def create_app(runtime: "Runtime") -> FastAPI:
         if not expected:
             return True
         return secrets.compare_digest(_token_of(request), expected)
+
+    def optional(method: str, condition: bool, path: str) -> Any:
+        """Mount a handler only when this listener selected its protocol.
+
+        Handler functions stay defined in one place, but a Milky listener never acquires v11 routes
+        (or vice versa). Returning the function unchanged also keeps the standard aliases simple.
+        """
+        def decorate(handler: Any) -> Any:
+            if condition:
+                getattr(app, method)(path)(handler)
+            return handler
+        return decorate
 
     # ---------------------------------------------------------------- 分流点（出）
     #
@@ -282,14 +285,14 @@ def create_app(runtime: "Runtime") -> FastAPI:
     async def handle_action(name: str, params: dict[str, Any],
                             protocol: str | None = None) -> dict[str, Any]:
         """Run one action. `protocol` is the calling connection's protocol; None means the HTTP default."""
-        # HTTP 的动作入口现在挂在 `/ONEBOTV11/` 下，协议由路径决定。
-        chosen = protocol if protocol is not None else "onebotv11"
+        # The HTTP listener's profile chooses the decoder; the URL no longer carries a protocol prefix.
+        chosen = protocol if protocol is not None else http_protocol
         echo = params.get("echo")
         return await _run_action(chosen, name, params, echo)
 
-    @app.get(prefixed(ONEBOTV11_PREFIX, "/health"))
+    @app.get(route_path("/health"))
     async def health() -> dict[str, Any]:
-        return {"status": "ok", "self_id": runtime.self_id, "protocol": "onebotv11"}
+        return {"status": "ok", "self_id": runtime.self_id, "protocol": http_protocol}
 
     async def _run_body(body: Any) -> JSONResponse:
         if body is not None:
@@ -303,7 +306,7 @@ def create_app(runtime: "Runtime") -> FastAPI:
         result = await handle_action(name, {**params, "echo": body.get("echo")})
         return JSONResponse(result)
 
-    @app.post(prefixed(ONEBOTV11_PREFIX, config.http_path))
+    @optional("post", config.enable_http and http_protocol != "milky", route_path(config.http_path))
     async def action_post(request: Request) -> JSONResponse:
         hub.note_http(1)
         if not authorized(request):
@@ -329,7 +332,7 @@ def create_app(runtime: "Runtime") -> FastAPI:
             return JSONResponse(models.fail("body is not valid JSON"), status_code=400)
         return await _run_body(body)
 
-    @app.post(prefixed(ONEBOTV11_PREFIX, "/action"))
+    @optional("post", config.enable_http and http_protocol != "milky", route_path("/action"))
     async def action_post_standard(request: Request) -> JSONResponse:
         return await action_post(request)
 
@@ -350,7 +353,7 @@ def create_app(runtime: "Runtime") -> FastAPI:
         result = await handle_action(name, {**params, "echo": request.query_params.get("echo")})
         return JSONResponse(result)
 
-    @app.get(prefixed(ONEBOTV11_PREFIX, "/action"))
+    @optional("get", config.enable_http and http_protocol != "milky", route_path("/action"))
     async def action_get_standard(request: Request) -> JSONResponse:
         return await action_get(request)
 
@@ -362,10 +365,11 @@ def create_app(runtime: "Runtime") -> FastAPI:
     # unconditionally) instead. Registering both on the same path would leave Starlette serving
     # whichever route it happened to add first, which is exactly how "SSE answered 405" or "GET
     # action returned an event stream" would look from the outside.
-    if config.sse_path != config.http_path:
-        app.add_api_route(prefixed(ONEBOTV11_PREFIX, config.http_path), action_get, methods=["GET"])
+    if (config.enable_http and http_protocol != "milky"
+            and (not config.enable_sse or config.sse_path != config.http_path)):
+        app.add_api_route(route_path(config.http_path), action_get, methods=["GET"])
 
-    @app.websocket(prefixed(ONEBOTV11_PREFIX, config.ws_path))
+    @optional("websocket", config.enable_ws and ws_protocol != "milky", route_path(config.ws_path))
     async def websocket_endpoint(ws: WebSocket) -> None:
         if not authorized(ws):
             ws_log.warn("onebot websocket rejected", reason="bad access_token",
@@ -374,7 +378,7 @@ def create_app(runtime: "Runtime") -> FastAPI:
             return
         await ws.accept()
         # 前缀已经说明这是 OneBot v11；反查配置反而可能查错（同一 kind 有多条配置时只有第一条生效）。
-        connection = hub.connection("ws_server", config.ws_path, protocol="onebotv11")
+        connection = hub.connection("ws_server", config.ws_path, protocol=ws_protocol)
         await hub.add_ws(ws, connection)
         ws_log.info("onebot websocket connected", clients=len(hub._websockets),
                     protocol=connection.protocol, client=str(getattr(ws, "client", "") or ""))
@@ -412,14 +416,14 @@ def create_app(runtime: "Runtime") -> FastAPI:
             await hub.remove_ws(ws)
             ws_log.info("onebot websocket disconnected", clients=len(hub._websockets))
 
-    if config.enable_sse:
+    if config.enable_sse and http_protocol != "milky":
 
-        @app.get(prefixed(ONEBOTV11_PREFIX, config.sse_path))
+        @app.get(route_path(config.sse_path))
         async def sse(request: Request) -> StreamingResponse:
             if not authorized(request):
                 return JSONResponse(models.fail("unauthorized", models.UNAUTHORIZED), status_code=401)
 
-            queue = hub.add_sse(hub.connection("sse", config.sse_path, protocol="onebotv11"))
+            queue = hub.add_sse(hub.connection("sse", config.sse_path, protocol=http_protocol))
 
             async def stream() -> Any:
                 try:
@@ -437,14 +441,22 @@ def create_app(runtime: "Runtime") -> FastAPI:
 
             return StreamingResponse(stream(), media_type="text/event-stream")
 
-    # Milky 的端点挂在同一个应用上：两种协议的路径不重叠（v11 是 `/` 与 `/ws`，
-    # Milky 是 `/api/{api}` 与 `/event`），方向也一致（协议端都是服务器）。
-    #
-    # 只在注册表里真的登记了 milky 时才挂：没有它的部署不该多出两个 404 路径。
-    if "milky" in set(_registered_protocols()):
+    # Milky routes exist only on listeners whose profile selected Milky. The configured base path
+    # applies to every transport: `{base}/api/{api}` for actions and `{base}/event` for SSE/WS.
+    milky_http = http_protocol == "milky"
+    milky_ws = ws_protocol == "milky"
+    if "milky" in set(_registered_protocols()) and (
+            (milky_http and (config.enable_http or config.enable_sse))
+            or (milky_ws and config.enable_ws)):
         from .milky_server import register_milky_routes
 
-        register_milky_routes(app, runtime, hub, authorized)
+        register_milky_routes(
+            app, runtime, hub, authorized,
+            api_path=(join_path(config.http_path, "/api/{api}")
+                      if milky_http and config.enable_http else None),
+            sse_path=(config.sse_path if milky_http and config.enable_sse else None),
+            ws_path=(config.ws_path if milky_ws and config.enable_ws else None),
+        )
 
     return app
 

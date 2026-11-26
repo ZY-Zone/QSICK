@@ -35,7 +35,7 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from .. import log as logmod
-from .server import MILKY_PREFIX, prefixed
+from .server import route_path
 from .milky_bridge import run_milky
 
 log = logmod.get_logger("Milky.Server")
@@ -44,7 +44,14 @@ log = logmod.get_logger("Milky.Server")
 SSE_EVENT_NAME = "milky_event"
 
 
-def register_milky_routes(app: FastAPI, runtime: Any, hub: Any, authorized: Any) -> None:
+def register_milky_routes(app: FastAPI, runtime: Any, hub: Any, authorized: Any, *,
+                          api_path: str | None = None, sse_path: str | None = None,
+                          ws_path: str | None = None) -> None:
+    """Mount only the transports selected by this listener's profile.
+
+    `None` means "do not mount that route". Paths are already resolved by `create_app`, including
+    the configured base path; no protocol prefix is added here.
+    """
     """把 Milky 的两个端点挂到已有应用上。
 
     `authorized` 复用 v11 的鉴权（`access_token` 双向复用是 Milky 的明确要求：`/api` 与
@@ -57,11 +64,18 @@ def register_milky_routes(app: FastAPI, runtime: Any, hub: Any, authorized: Any)
             status_code=401,
         )
 
+    def optional(method: str, path: str | None) -> Any:
+        def decorate(handler: Any) -> Any:
+            if path:
+                getattr(app, method)(route_path(path))(handler)
+            return handler
+        return decorate
+
     async def run(api: str, body: dict[str, Any]) -> dict[str, Any]:
         """共享入口负责账号、标识解析和 API-aware 回包；所有动作仍经 invoke。"""
         return await run_milky(runtime, hub.pipelines, api, body)
 
-    @app.post(prefixed(MILKY_PREFIX, "/api/{api}"))
+    @optional("post", api_path)
     async def milky_api(api: str, request: Request) -> JSONResponse:
         # v11 的 HTTP 动作入口也是 POST `/`，路径不冲突；这里只服务 `/api/*`。
         if not authorized(request):
@@ -82,7 +96,7 @@ def register_milky_routes(app: FastAPI, runtime: Any, hub: Any, authorized: Any)
                  "data": None}, status_code=400)
         return JSONResponse(await run(api, body))
 
-    @app.get(prefixed(MILKY_PREFIX, "/event"))
+    @optional("get", sse_path)
     async def milky_event(request: Request) -> Any:
         """推送通道。`Upgrade: websocket` 交给下面的 websocket 路由，其余走 SSE。"""
         if not authorized(request):
@@ -108,7 +122,7 @@ def register_milky_routes(app: FastAPI, runtime: Any, hub: Any, authorized: Any)
 
         return StreamingResponse(stream(), media_type="text/event-stream")
 
-    @app.websocket(prefixed(MILKY_PREFIX, "/event"))
+    @optional("websocket", ws_path)
     async def milky_event_ws(ws: WebSocket) -> None:
         if not authorized(ws):
             await ws.close(code=1008, reason="unauthorized")

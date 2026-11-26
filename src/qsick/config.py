@@ -31,6 +31,10 @@ class OneBotConfig:
     ws_path: str = "/ws"
     ws_reverse_path: str = "/ws/reverse"
     sse_path: str = "/sse"
+    # Protocol is a property of the listener/profile, not of a URL prefix. HTTP and WS may differ
+    # on one port: their paths still separate them, while each connection is encoded by its own kind.
+    http_protocol: str = "onebotv11"
+    ws_protocol: str = "onebotv11"
     enable_http: bool = True
     enable_ws: bool = True
     enable_sse: bool = True
