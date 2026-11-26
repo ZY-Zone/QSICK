@@ -309,6 +309,7 @@ const REQUIREMENTS = Object.freeze({
   'group.file.download': ['Msg', 'sendSsoCmdReqByContend'],
   // Private (C2C) file download URL. `0xE37_800` per report 15; its request layout is not
   // reverse-engineered, so this op probes and reports rather than pretending to answer.
+  'private.file.download_url': ['Msg', 'sendSsoCmdReqByContend'],
   // A generic OIDB call, for the operations QQ exposes only as packets.
   //
   // Several capabilities have no kernel service method at all -- setting a member's title, adding a

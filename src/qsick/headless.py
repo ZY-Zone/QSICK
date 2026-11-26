@@ -927,6 +927,9 @@ PIPE_JS_MODULES = (
     "headless_media.cjs",
     # Group file download builds OIDB packets; without this the op reports the module as unavailable.
     "headless_groupfile.cjs",
+    # Private-file download URL probes OIDB 0xE37_800. Same failure mode if it is left out: the op
+    # answers "private file module unavailable" instead of probing.
+    "headless_privatefile.cjs",
 )
 
 #: `headless_groupfile.cjs` 需要的原生插件（QQ 传输层的钩子模块）。
