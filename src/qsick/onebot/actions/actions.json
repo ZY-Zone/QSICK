@@ -4558,6 +4558,32 @@
       ],
       "op": "get_recent_contact_list",
       "wire": "core"
+    },
+    {
+      "name": "service_methods",
+      "module": "system/service_methods",
+      "class": "ServiceMethodsAction",
+      "category": "system",
+      "summary": "列出 QQNT 服务对象暴露的方法（只读）；service=\"*\" 一次扫全部服务",
+      "status": "implemented",
+      "read_only": true,
+      "params": [
+        {
+          "name": "service",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": "服务名（如 Msg / Group），或 \"*\" 扫全部"
+        },
+        {
+          "name": "contains",
+          "kind": "str",
+          "required": false,
+          "default": "",
+          "desc": "只返回名称包含该子串的方法"
+        }
+      ],
+      "wire": "payload"
     }
   ],
   "aliases": {

@@ -30,12 +30,9 @@ uv pip install -e . --no-deps   # 可编辑安装
 uv run qsick --mock
 ```
 
-- WebUI：<http://127.0.0.1:5754>
-- OneBot HTTP：`POST http://127.0.0.1:3000/`，body 为 `{"action": "...", "params": {...}}`
-- OneBot WS：`ws://127.0.0.1:3000/ws`
-- OneBot SSE：`http://127.0.0.1:3000/sse`
+- WebUI：<http://127.0.0.1:5754>   （port可设置）
 
-## 实现链路（以pipe启动为主）
+## 实现链路（以pipe + onebotv11为例）
 
 ```
 ┌──────────────────────────── QQ.exe ────────────────────────────┐
@@ -83,7 +80,7 @@ sentences/            陶冶情操hh😄
 | 文档                                                                             | 内容                                        |
 |--------------------------------------------------------------------------------|-------------------------------------------|
 | [docs/architecture.md](docs/architecture.md)                                   | 架构、多实例数据流、消息与动作流水线、失败姿态                   |
-| [docs/PROTOCOLS.md](docs/PROTOCOLS.md)                                         | 协议层：onebotv11 / EXTemotions / maxStore 协作 |
+| [docs/PROTOCOLS.md](docs/PROTOCOLS.md)                                         | 协议层：onebotv11 / milky / maxStore 协作 |
 | [docs/plugin-api.md](docs/plugin-api.md)                                       | 插件清单、权限、钩子、配置界面、市场                        |
 | [docs/payload-abi.md](docs/payload-abi.md)                                     | 原生 payload 的帧协议、op 契约、偏移表                 |
 | [docs/payload-ops.md](docs/payload-ops.md)                                     | 242 个动作的清单与 QQ 侧实现状态                      |

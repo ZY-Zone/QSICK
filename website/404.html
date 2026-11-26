@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>404 · 页面不存在 · QSICK</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#f3f7ff">
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="assets/img/favicon-32.png" sizes="32x32">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script>
+    (function () {
+      try {
+        if (localStorage.getItem("qsick-theme") === "dark") document.documentElement.dataset.theme = "dark";
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <div class="bg" aria-hidden="true">
+    <div class="blob blob-blue"></div>
+    <div class="blob blob-yellow"></div>
+    <div class="blob blob-cyan"></div>
+  </div>
+  <div class="bg-grain" aria-hidden="true"></div>
+
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+  </svg>
+
+  <main class="hero" style="min-height:100vh;display:grid;place-items:center;padding:80px 0">
+    <div class="wrap" style="text-align:center">
+      <span class="eyebrow" style="margin:0 auto"><span class="pulse-dot"></span>404 — NOT FOUND</span>
+      <h1 class="hero-title" style="justify-content:center;display:flex;margin-top:26px">
+        <span class="grad-text">404</span><span class="dot" aria-hidden="true"></span>
+      </h1>
+      <h2 class="hero-headline" style="margin-top:18px">这一帧没有 payload。</h2>
+      <p class="hero-lead" style="margin:16px auto 0">
+        你要找的页面不存在、已被移动，或者它只是一条从未被分发的消息。
+      </p>
+      <div class="hero-actions" style="justify-content:center">
+        <a class="btn btn-primary" href="index.html">
+          回到首页
+          <svg class="arrow" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+        </a>
+        <a class="btn btn-glass" href="docs.html">浏览文档</a>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

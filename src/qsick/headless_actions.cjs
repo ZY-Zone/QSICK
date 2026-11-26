@@ -310,6 +310,14 @@ const REQUIREMENTS = Object.freeze({
   // Private (C2C) file download URL. `0xE37_800` per report 15; its request layout is not
   // reverse-engineered, so this op probes and reports rather than pretending to answer.
   'private.file.download_url': ['Msg', 'sendSsoCmdReqByContend'],
+  // What the client's own service objects expose.
+  //
+  // Four capabilities -- a member's special title, a message reaction, a nudge, approving a join
+  // request -- have no entry in this table because no service method was found for them. Guessing
+  // OIDB command numbers to reach them is expensive and the empty-body signal is worthless (an
+  // empty packet cannot decode, so every command answers 253). This op answers the question
+  // directly: ask the client which methods exist.
+  'service.methods': [],
   // A generic OIDB call, for the operations QQ exposes only as packets.
   //
   // Several capabilities have no kernel service method at all -- setting a member's title, adding a
@@ -1020,6 +1028,8 @@ function createActionDispatcher(options = {}) {
       // and the target (if any) is encoded inside `body_hex`. Without this exemption it failed with
       // "group_id must be a positive canonical decimal ID" before its own branch was reached.
       'oidb.call',
+      // Pure introspection: it reads property names off a service getter and takes no target.
+      'service.methods',
       // Same reasoning for the private-file ops: they are addressed by `user_id`, and one of them
       // takes no target at all.
       'upload_private_file', 'private.file.download_url',
@@ -1072,6 +1082,102 @@ function createActionDispatcher(options = {}) {
       return { can_at_all: at.canAtAll,
         remain_at_all_count_for_group: resultInteger(at.RemainAtAllCountForGroup, 'RemainAtAllCountForGroup'),
         remain_at_all_count_for_uin: resultInteger(at.RemainAtAllCountForUin, 'RemainAtAllCountForUin') };
+    }
+    if (op === 'service.methods') {
+      // List what the client's service objects actually expose.
+      //
+      // `service: "*"` surveys every `getXxxService` on the session in one call. That matters
+      // because only one question is being asked -- does this client have a method for a member's
+      // title, a reaction, a nudge, a join request? -- and asking it one service at a time means one
+      // session rebuild per guess.
+      //
+      // Read-only and side-effect free: it reads property names off the getters and calls nothing.
+      // That is the point: "the client cannot do X" and "nobody found where X lives" look identical
+      // from the outside, and only one of them is true.
+      const wanted = text(p.service === undefined ? '' : String(p.service));
+      const needle = text(p.contains === undefined ? '' : String(p.contains)).toLowerCase();
+      const s = session();
+
+      const methodNames = (svc) => {
+        // Walk the prototype chain: these are class instances, so the methods sit one or more
+        // levels up from the own properties.
+        //
+        // Property *descriptors* are read rather than values: `svc[key]` would invoke an accessor,
+        // and a survey that can run arbitrary getters is not the read-only thing it claims to be.
+        const found = new Set();
+        let cursor = svc;
+        let depth = 0;
+        // Stop before `Object.prototype`: every object inherits `hasOwnProperty`,
+        // `__defineGetter__` and friends, and listing eleven of those under every service buries
+        // the methods the caller actually asked about.
+        while (cursor && cursor !== Object.prototype && depth < 6) {
+          for (const key of Object.getOwnPropertyNames(cursor)) {
+            if (key === 'constructor') continue;
+            const descriptor = Object.getOwnPropertyDescriptor(cursor, key);
+            if (descriptor && typeof descriptor.value === 'function') found.add(key);
+          }
+          cursor = Object.getPrototypeOf(cursor);
+          depth += 1;
+        }
+        const all = Array.from(found).sort();
+        return needle ? all.filter(key => key.toLowerCase().includes(needle)) : all;
+      };
+
+      if (wanted === '*') {
+        // Every service reachable from the session.
+        const getters = new Set();
+        let cursor = s;
+        let depth = 0;
+        while (cursor && cursor !== Object.prototype && depth < 6) {
+          for (const key of Object.getOwnPropertyNames(cursor)) {
+            if (/^get[A-Za-z]+Service$/.test(key)) getters.add(key);
+          }
+          cursor = Object.getPrototypeOf(cursor);
+          depth += 1;
+        }
+        const services = {};
+        let total = 0;
+        for (const getter of Array.from(getters).sort()) {
+          const name = getter.slice(3, -'Service'.length);
+          let methods = [];
+          try {
+            const svc = s[getter]();
+            if (!svc || typeof svc !== 'object') {
+              services[name] = { error: 'returned nothing', methods: [] };
+              continue;
+            }
+            methods = methodNames(svc);
+          } catch (error) {
+            services[name] = { error: String((error && error.message) || error).slice(0, 160), methods: [] };
+            continue;
+          }
+          // Without a filter the full list would be enormous (Group alone has 243 methods), so an
+          // unfiltered survey reports only services that have something worth showing and counts the
+          // rest.
+          if (!needle) {
+            services[name] = { total: methods.length };
+            total += methods.length;
+            continue;
+          }
+          if (methods.length) services[name] = { total: methods.length, methods };
+          total += methods.length;
+        }
+        return { service: '*', filtered: Boolean(needle), total, services };
+      }
+
+      if (!/^[A-Za-z]+$/.test(wanted)) invalid('service must be a plain name such as Msg, or "*"');
+      const getter = s[`get${wanted}Service`];
+      if (typeof getter !== 'function') {
+        fail('UNSUPPORTED', `this client has no get${wanted}Service`, {
+          service: wanted,
+          getters: Object.getOwnPropertyNames(s).filter(key => /^get[A-Za-z]+Service$/.test(key)).slice(0, 40),
+        });
+      }
+      const svc = getter.call(s);
+      if (!svc || typeof svc !== 'object') fail('UNSUPPORTED', `get${wanted}Service returned nothing`);
+      const matched = methodNames(svc);
+      return { service: wanted, filtered: Boolean(needle), matched: matched.length,
+               methods: matched.slice(0, 500) };
     }
     if (op === 'oidb.call') {
       // Send one OIDB command and hand back QQ's status plus the raw body.

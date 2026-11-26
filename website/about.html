@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>关于 · QSICK</title>
+  <meta name="description" content="关于 QSICK：一个基于原生注入的 QQNT API 导出工具。项目背景、为什么这样切、许可证边界与使用前必须知道的风险。">
+  <meta name="keywords" content="QSICK,关于,QSNT,原生注入,OneBot v11,Milky,AGPL,免责声明,ZY-Zone">
+  <meta name="author" content="ZY-Zone">
+  <meta name="theme-color" content="#f3f7ff">
+  <meta name="color-scheme" content="light dark">
+  <link rel="canonical" href="http://www.sickcc.online/QSICK/about.html">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="QSICK">
+  <meta property="og:title" content="关于 QSICK · 设计取舍、许可证与免责声明">
+  <meta property="og:description" content="QSICK 为什么选择原生注入、它的许可证边界，以及使用前必须知道的风险。">
+  <meta property="og:url" content="http://www.sickcc.online/QSICK/about.html">
+  <meta property="og:image" content="assets/img/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="关于 · QSICK">
+  <meta name="twitter:description" content="QSICK 的项目背景、设计取舍、许可证与免责声明。">
+  <meta name="twitter:image" content="assets/img/og.png">
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="assets/img/favicon-32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="preload" href="assets/fonts/outfit-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/noto-sans-sc-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <noscript><style>[data-reveal]{opacity:1!important;transform:none!important;filter:none!important}.marquee-track{animation:none!important}</style></noscript>
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("qsick-theme");
+        if (t === "dark") document.documentElement.dataset.theme = "dark";
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body data-page="about">
+  <a class="skip-link" href="#main">跳到主要内容</a>
+
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m-5-7 7 7-7 7"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+    <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m8.5 12.5 2.5 2.5 5-5.5"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8h12z"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m7 15 4-5 4 3 5-7"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v2"/><path d="M15 2v2"/><path d="M9 20v2"/><path d="M15 20v2"/><path d="M2 9h2"/><path d="M2 15h2"/><path d="M20 9h2"/><path d="M20 15h2"/></symbol>
+    <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+    <symbol id="i-network" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 3.9"/><path d="m15.4 6.6-6.8 3.9"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="m21 8-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></symbol>
+    <symbol id="i-branch" viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+    <symbol id="i-warning" viewBox="0 0 24 24"><path d="m10.3 3.9-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3 1.8 4.6L18 9.4l-4.2 1.8L12 15.8l-1.8-4.6L6 9.4l4.2-1.8L12 3z"/><path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 6.5h.01"/><path d="M6 17.5h.01"/></symbol>
+    <symbol id="i-instance" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1L12 21l7.7-7.6 1.1-1a5.5 5.5 0 0 0 0-7.8z"/></symbol>
+  </svg>
+
+  <div class="scroll-progress" id="scrollProgress" aria-hidden="true"></div>
+  <div class="bg" aria-hidden="true">
+    <div class="blob blob-blue"></div>
+    <div class="blob blob-yellow"></div>
+    <div class="blob blob-cyan"></div>
+  </div>
+  <div class="bg-grain" aria-hidden="true"></div>
+  <div class="cursor-glow" id="cursorGlow" aria-hidden="true"></div>
+
+  <header class="site-header" id="siteHeader">
+    <div class="wrap">
+      <nav class="nav-shell" aria-label="主导航">
+        <a class="brand" href="index.html" aria-label="QSICK 首页">
+          <span class="brand-avatar"><img src="assets/img/avatar-64.png" alt="QSICK 头像" width="40" height="40"></span>
+          <span class="brand-name">QSICK<span class="tick"></span></span>
+          <span class="brand-badge">v1</span>
+        </a>
+        <div class="nav-links">
+          <a class="nav-link" href="index.html#features">特性</a>
+          <a class="nav-link" href="index.html#architecture">架构</a>
+          <a class="nav-link" href="index.html#quickstart">快速开始</a>
+          <a class="nav-link" href="docs.html">文档</a>
+          <a class="nav-link" href="about.html">关于</a>
+          <a class="nav-link" href="index.html#community">社区</a>
+        </div>
+        <div class="nav-actions">
+          <button class="search-pill" id="searchOpen" type="button" aria-label="搜索文档">
+            <svg aria-hidden="true"><use href="#i-search"/></svg>
+            <span>搜索</span>
+            <kbd>Ctrl K</kbd>
+          </button>
+          <button class="icon-btn theme-toggle" id="themeToggle" type="button" aria-label="切换深浅色主题">
+            <svg class="sun" aria-hidden="true"><use href="#i-sun"/></svg>
+            <svg class="moon" aria-hidden="true"><use href="#i-moon"/></svg>
+          </button>
+          <a class="gh-btn" href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge" target="_blank" rel="noopener">
+            <svg aria-hidden="true"><use href="#i-github"/></svg><span>GitHub</span>
+          </a>
+          <button class="icon-btn nav-burger" id="navBurger" type="button" aria-label="打开菜单" aria-expanded="false" aria-controls="mobileNav">
+            <svg aria-hidden="true"><use href="#i-menu"/></svg>
+          </button>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <div class="mobile-nav" id="mobileNav">
+    <a href="index.html#features">特性 <svg width="14" height="14" aria-hidden="true"><use href="#i-chevron-right"/></svg></a>
+    <a href="index.html#architecture">架构 <svg width="14" height="14" aria-hidden="true"><use href="#i-chevron-right"/></svg></a>
+    <a href="index.html#quickstart">快速开始 <svg width="14" height="14" aria-hidden="true"><use href="#i-chevron-right"/></svg></a>
+    <a href="docs.html">文档 <svg width="14" height="14" aria-hidden="true"><use href="#i-chevron-right"/></svg></a>
+    <a href="about.html">关于 <svg width="14" height="14" aria-hidden="true"><use href="#i-chevron-right"/></svg></a>
+    <a href="index.html#community">社区 <svg width="14" height="14" aria-hidden="true"><use href="#i-chevron-right"/></svg></a>
+    <a class="m-cta" href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge" target="_blank" rel="noopener">
+      <svg width="15" height="15" aria-hidden="true"><use href="#i-github"/></svg> GitHub 仓库
+    </a>
+  </div>
+
+  <main id="main">
+    <!-- ================= 关于 QSICK HERO ================= -->
+    <section class="about-hero wrap" id="top" aria-labelledby="about-title">
+      <div class="about-avatar">
+        <img src="assets/img/avatar.webp" alt="ZY-Zone 组织头像" width="118" height="118">
+      </div>
+      <div>
+        <h1 id="about-title">关于 QSICK</h1>
+        <div class="about-sub">ZY-Zone · QSICK--QQ_NT-Bridge</div>
+        <p class="about-lead">
+          QSICK 是一个基于原生注入的 QQNT API 导出工具：把 QQNT 的收发能力导出成 OneBot v11 与 Milky，
+          让 QQ 重新成为可编程的基础设施。项目由 ZY-Zone 维护，源码与文档都公开在 GitHub。
+        </p>
+      </div>
+    </section>
+
+    <div class="about-layout">
+      <!-- ================= 01 项目 ================= -->
+      <article class="about-card glass" id="project" data-reveal style="scroll-margin-top: calc(var(--nav-h) + 26px)">
+        <h2><span class="num">01</span>项目</h2>
+        <p>
+          QSICK 要回答的是一个很具体的问题：<strong>QQNT 没有开放的机器人接口。</strong>
+          常见做法无非三种——模拟点击与截图识别，脆弱且只能覆盖眼睛看得见的功能；Electron 套壳，
+          把整个客户端再包一层；或者解析网络流量，被加密和版本更新反复挡住。
+          QSICK 选择第四条路：<strong>原生注入</strong>。
+        </p>
+        <p>
+          内核通过注入器把 C++ payload 注入 <code>QQ.exe</code>，payload 在 QQ 的收发路径上挂接钩子，
+          通过命名管道把事件与动作送进内核；内核再按每条连接自己的协议，把它们编码成 OneBot v11 或 Milky。
+          你拿到的不是屏幕里能点到的东西，而是客户端真正能做的事。
+        </p>
+
+        <h3>主要能力</h3>
+        <ul>
+          <li><strong>原生 payload 注入：</strong>C++ DLL 负责命名管道、钩子引擎与跳板，32 字节帧头 + JSON 体；偏移表驱动，可逐版本替换。</li>
+          <li><strong>OneBot v11 / Milky 双协议：</strong>同一实例可以同时挂两种协议，事件与动作按连接各自编解码，互不串味。</li>
+          <li><strong>插件系统：</strong>清单 + 权限 + 生命周期钩子，支持热重载、配置界面扩展与远程插件市场；故障隔离到单个插件。</li>
+          <li><strong>多实例：</strong>headless 与 pipe 两类实例，模板硬链接、数据目录重定向，每个实例有自己的消息库与网络配置。</li>
+          <li><strong>WebUI：</strong>FastAPI + Jinja2 面板，仪表盘、SSE 实时日志、动作测试器与消息库，都在 <code>127.0.0.1:5754</code>。</li>
+          <li><strong>maxStore 证据库：</strong>收到的原始 payload 先完整落库，再分发给协议连接；历史数据不会只剩当时那个协议要的字段。</li>
+        </ul>
+
+        <h3>技术栈</h3>
+        <ul>
+          <li><strong>原生侧：</strong>C++ DLL payload（MSVC，<code>/MT</code> 静态链接，只依赖 <code>KERNEL32</code> 与 <code>ADVAPI32</code>，不需要 VC++ 运行时）。</li>
+          <li><strong>内核：</strong>Python——实例中心、协议适配、动作注册表、插件宿主与 maxStore 都在这里。</li>
+          <li><strong>前端：</strong>FastAPI + Jinja2 提供 HTTP / WebSocket / SSE；图表是手写 SVG，没有前端框架，也没有 Electron。</li>
+        </ul>
+
+        <h3>项目数据</h3>
+        <div class="stats-band glass-soft">
+          <div class="stat-cell">
+            <div class="stat-number"><span data-count="242">242</span></div>
+            <div class="stat-label">Payload 动作</div>
+            <div class="stat-note">Action Registry</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-number"><span data-count="65">65</span><span class="suffix">/65</span></div>
+            <div class="stat-label">Milky API 覆盖</div>
+            <div class="stat-note">All Endpoints Classified</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-number"><span data-count="3">3</span></div>
+            <div class="stat-label">协议适配</div>
+            <div class="stat-note">onebotv11 · milky · maxStore</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-number"><span data-count="2">2</span></div>
+            <div class="stat-label">实例类型</div>
+            <div class="stat-note">headless · pipe</div>
+          </div>
+        </div>
+        <p>
+          242 个动作全部在注册表里标为 <code>implemented</code>，但 QQ 侧能否执行由运行时判定：
+          不支持的 op 会明确返回 <code>1502</code>，而不是假装成功。Milky 的 65 个端点已全部归类——
+          53 个已登记动作映射（不代表底层与返回字段全部可用），其余按
+          「缺翻译 / 无对应能力 / 按设计不支持 / 本地回答」明确处理，差什么就报什么。
+          动作清单见 <a href="docs.html#payload">Payload ABI</a>，端点归类见 <a href="docs.html#protocols">协议层</a>。
+        </p>
+
+        <h3>边界</h3>
+        <ul>
+          <li><strong>不在 QQ 内执行 JavaScript。</strong>QSICK 不是 JS 运行时，插件与协议适配都在内核里。</li>
+          <li><strong>登录与包签名尚未实现。</strong>加密属于 payload 的职责，目前仍是路线图上的阻塞点；QSICK 依赖真实的 QQNT 客户端运行时，而不是自己复刻一套协议栈。</li>
+        </ul>
+        <p>更完整的实现细节与路线图在 <a href="docs.html#architecture">架构文档</a>。</p>
+      </article>
+
+      <!-- ================= 02 设计取舍 ================= -->
+      <article class="about-card glass" id="philosophy" data-reveal style="scroll-margin-top: calc(var(--nav-h) + 26px)">
+        <h2><span class="num">02</span>设计取舍</h2>
+        <p>
+          QSICK 的很多决定，来自不愿意把问题藏起来。下面几条写在仓库文档里，
+          也决定了这个页面必须存在。
+        </p>
+
+        <h3>为什么这样切</h3>
+        <div class="quote-card">
+          必须跑在 <code>QQ.exe</code> 里的代码是原生实现，其余全部是 Python。
+          <cite>docs/architecture.md · 为什么这样切</cite>
+        </div>
+        <p>
+          这是一条不可移动的分界线。内联钩子、跳板与调用约定需要原始内存访问和逐版本偏移，
+          只能留在 C++ payload；消息语义、OneBot 映射、插件与 WebUI 放进 Python 内核，
+          可以热重载，可以对着 <code>MockTransport</code> 测试，改字段不需要重新编译。
+        </p>
+        <p>
+          动作这一层还有一道约束：<strong>处理器从不直接接触管道或 payload。</strong>
+          能力统一通过 <code>ActionContext</code> 暴露，注册表在入口做校验与分发——
+          这既是可测试性的来源，也是插件权限能真正生效的前提。
+        </p>
+
+        <h3>代价必须写在明处</h3>
+        <div class="quote-card">
+          注入类工具会让登录态暴露在额外的攻击面上。不要在主力账号上使用，更不要在公用或来路不明的机器上运行。
+          <cite>README · 免责声明</cite>
+        </div>
+        <p>
+          攻击面没法靠一句「注意安全」消除，能做的只有把它限制在明处：
+          命名管道使用 owner / SYSTEM / Administrators 的 DACL，每次会话带 128 位令牌，
+          随机模式下令牌同时出现在管道名与 HELLO 帧里，对不上就拒绝。
+          除此之外，请使用一次性账号。
+        </p>
+
+        <h3>一条不能让步的约束</h3>
+        <div class="quote-card">
+          动作必须经过 <code>runtime.invoke</code>。绕开它直接把调用转给宿主，core 插件的封禁就形同虚设——而那从外面完全看不出来。
+          <cite>docs/PROTOCOLS.md · 一条不能让步的约束</cite>
+        </div>
+        <p>
+          插件过滤、账号级出入限制、只读缓存、发送串行化全在这一个入口上。
+          协议适配层只负责把请求翻译成内部名字，不做决定；少一次「聪明」的绕过，
+          就少一类从外面看不见的漏洞。
+        </p>
+
+        <h3>四条小原则</h3>
+        <div class="two-col">
+          <div class="mini-card">
+            <b><svg aria-hidden="true"><use href="#i-database"/></svg>真实性</b>
+            <span>maxStore 先把原始 payload 完整落库再分发：整包 JSON 与摊平字段各留一份。冗余是刻意的——将来字段改名、嵌套加深，旧数据仍然取得到。</span>
+          </div>
+          <div class="mini-card">
+            <b><svg aria-hidden="true"><use href="#i-eye"/></svg>可观测性</b>
+            <span>仪表盘、SSE 实时日志与动作测试器在同一个面板里。「发生了什么」应该一眼能看到，而不是去翻进程内存。</span>
+          </div>
+          <div class="mini-card">
+            <b><svg aria-hidden="true"><use href="#i-shield"/></svg>失败可诊断</b>
+            <span>payload 中途死掉只推送 runtime.closed；单个插件抛异常只跳过该插件；解码失败向上抛，回一个明确的失败，而不是让客户端等到超时。</span>
+          </div>
+          <div class="mini-card">
+            <b><svg aria-hidden="true"><use href="#i-sparkles"/></svg>最小惊讶</b>
+            <span>看不懂的元素变成 unknown 段并保留原始载荷，解码器不会悄悄清空一条消息；计划中的动作返回明确的 retcode，而不是假装成功。</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- ================= 03 许可证 ================= -->
+      <article class="about-card glass" id="license" data-reveal style="scroll-margin-top: calc(var(--nav-h) + 26px)">
+        <h2><span class="num">03</span>许可证</h2>
+        <p>
+          QSICK 由两部分组成，适用两套条款：<strong>源码</strong>是开放的，
+          <strong>注入用的二进制 payload</strong> 是专有的。两者不要混为一谈。
+        </p>
+        <div class="license-grid">
+          <div class="license-card">
+            <div class="lc-tag">Source · AGPL-3.0-or-later</div>
+            <b>源码：AGPL-3.0-or-later</b>
+            <span>
+              Python 内核、协议适配器、插件 API 与 WebUI 等源码，以 GNU Affero 通用公共许可证
+              v3 或更高版本授权。分发修改版需要同样开源；通过网络向他人提供修改版时，
+              也需要向使用者提供对应源码。
+            </span>
+          </div>
+          <div class="license-card">
+            <div class="lc-tag">Binary · Proprietary</div>
+            <b>qsick_payload.dll</b>
+            <span>
+              专有二进制组件，<strong>不在 AGPL 范围内</strong>。仅随 QSICK 分发且仅限非商业用途；
+              不得单独再分发、反向工程、反编译或修改。C++ 源码、构建脚本与测试宿主不随仓库分发。
+            </span>
+          </div>
+        </div>
+        <p>
+          payload 的完整条款见
+          <a href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge/blob/main/native/qsick-payload/NATIVE-NOTICE.md" target="_blank" rel="noopener">NATIVE-NOTICE.md</a>，
+          源码许可证见
+          <a href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge/blob/main/LICENSE" target="_blank" rel="noopener">LICENSE</a>。
+          每个 release 都会在 <code>BUILD.txt</code> 里记录 <code>qsick_payload.dll</code> 的 SHA-256；
+          注入前可以核对本地哈希，不一致就说明二进制被换过，不要使用。
+        </p>
+      </article>
+
+      <!-- ================= 04 免责声明 ================= -->
+      <article class="about-card glass" id="disclaimer" data-reveal style="scroll-margin-top: calc(var(--nav-h) + 26px)">
+        <h2><span class="num">04</span>免责声明</h2>
+        <p><strong>请在使用前完整阅读本节。</strong></p>
+        <ul>
+          <li>
+            <strong>自担风险。</strong>QSICK 会向 <code>QQ.exe</code> 注入代码并接管其收发路径。
+            这违反了腾讯的用户协议，可能导致<strong>账号被限制、封禁或永久终止</strong>。
+            作者不对任何账号损失、数据丢失或服务中断负责。
+          </li>
+          <li>
+            <strong>仅限学习与研究。</strong>本项目用于协议互操作的研究与学习，
+            不鼓励也不支持任何违反服务条款或当地法律的用途。
+          </li>
+          <li>
+            <strong>账号安全。</strong>注入类工具会让登录态暴露在额外的攻击面上。
+            不要在主力账号上使用，更不要在公用或来路不明的机器上运行。建议全程使用一次性账号。
+          </li>
+          <li>
+            <strong>无任何担保。</strong>本项目按「现状」提供，不附带任何明示或暗示的担保，
+            包括适销性、特定用途适用性与非侵权。
+          </li>
+          <li>
+            <strong>第三方组件。</strong><code>qsick_payload.dll</code> 是专有二进制组件，
+            不在 AGPL 范围内，仅随 QSICK 分发且仅限非商业用途；条款见
+            <a href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge/blob/main/native/qsick-payload/NATIVE-NOTICE.md" target="_blank" rel="noopener">NATIVE-NOTICE.md</a>。
+            源码部分以 AGPL-3.0-or-later 授权，见
+            <a href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge/blob/main/LICENSE" target="_blank" rel="noopener">LICENSE</a>。
+          </li>
+          <li>
+            <strong>与腾讯无关。</strong>QQ 与腾讯是各自权利人的商标；
+            QSICK 与腾讯无隶属、背书或支持关系。
+          </li>
+        </ul>
+        <p><strong>如果你不同意以上任何一条，请不要使用本项目。</strong></p>
+      </article>
+
+      <!-- ================= 05 致谢与社区 ================= -->
+      <article class="about-card glass" id="thanks" data-reveal style="scroll-margin-top: calc(var(--nav-h) + 26px)">
+        <h2><span class="num">05</span>致谢与社区</h2>
+        <p>
+          QSICK 不是一个人从零写出来的。主结构、README 与少量代码由创作者手工编写，
+          其余实现由 cc 与 ds 混合协作完成；在少部分实现上，项目参考了
+          <strong>NapCat</strong> 与 <strong>SnowLuma</strong>——原生注入这条路并不好走，
+          谢谢它们，也谢谢每一个愿意把问题讲清楚的人。
+        </p>
+
+        <h3>社区与反馈</h3>
+        <ul>
+          <li>
+            <strong>QQ 交流群：</strong>
+            <a href="https://qm.qq.com/q/IDnnkW9eSs" target="_blank" rel="noopener">qm.qq.com/q/IDnnkW9eSs</a>
+            ——问题反馈、更新通知与实机测试结果，最直接的求助方式。
+          </li>
+          <li>
+            <strong>GitHub 仓库：</strong>
+            <a href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge" target="_blank" rel="noopener">ZY-Zone / QSICK--QQ_NT-Bridge</a>
+            ——源码、文档与 Release。
+          </li>
+          <li>
+            <strong>GitHub 组织：</strong>
+            <a href="https://github.com/ZY-Zone" target="_blank" rel="noopener">ZY-Zone</a>
+            ——项目所属组织，其他工具也在这里。
+          </li>
+          <li>
+            <strong>问题反馈：</strong>缺陷与功能建议请走
+            <a href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge/issues" target="_blank" rel="noopener">Issues</a>；
+            安全问题请按 NATIVE-NOTICE 的说明私下报告，不要开公开 issue。
+          </li>
+        </ul>
+        <p>
+          如果你只是想先看看它能做什么，<a href="docs.html#quickstart">快速开始</a>里的 mock 模式不需要真实账号；
+          如果你已经决定用它，请先回到上面的<a href="#disclaimer">免责声明</a>，确认你真的接受那些代价。
+        </p>
+      </article>
+
+      <div class="quick-actions" data-reveal style="justify-content: center; margin-top: 28px">
+        <a class="btn btn-primary" href="docs.html">
+          阅读文档
+          <svg class="arrow" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+        </a>
+        <a class="btn btn-ghost" href="index.html">回到首页</a>
+        <a class="btn btn-glass" href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge" target="_blank" rel="noopener">
+          <svg aria-hidden="true"><use href="#i-github"/></svg>
+          GitHub 仓库
+        </a>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a class="brand" href="index.html" aria-label="QSICK 首页">
+            <span class="brand-avatar"><img src="assets/img/avatar-64.png" alt="QSICK 头像" width="40" height="40"></span>
+            <span class="brand-name">QSICK<span class="tick"></span></span>
+          </a>
+          <p>现代化的 QQNT API 导出工具。通过原生注入把 QQNT 的收发能力导出为 OneBot v11 / Milky，附带插件系统与可视化 WebUI。</p>
+          <div class="footer-badges">
+            <span>AGPL-3.0</span><span>C++ / Python</span><span>OneBot v11</span><span>Milky</span>
+          </div>
+        </div>
+        <div class="footer-col">
+          <h4>项目</h4>
+          <ul>
+            <li><a href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge" target="_blank" rel="noopener">GitHub 仓库 <svg aria-hidden="true"><use href="#i-external"/></svg></a></li>
+            <li><a href="docs.html">文档</a></li>
+            <li><a href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge/commits/main" target="_blank" rel="noopener">更新日志 <svg aria-hidden="true"><use href="#i-external"/></svg></a></li>
+            <li><a href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge/issues" target="_blank" rel="noopener">问题反馈 <svg aria-hidden="true"><use href="#i-external"/></svg></a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>资源</h4>
+          <ul>
+            <li><a href="docs.html#quickstart">快速开始</a></li>
+            <li><a href="docs.html#payload">Payload 动作清单</a></li>
+            <li><a href="http://sickcc.online/QSICK/plugins-market" target="_blank" rel="noopener">插件市场 <svg aria-hidden="true"><use href="#i-external"/></svg></a></li>
+            <li><a href="docs.html#webui">WebUI 文档</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>关于</h4>
+          <ul>
+            <li><a href="about.html">关于 QSICK</a></li>
+            <li><a href="about.html#disclaimer">免责声明</a></li>
+            <li><a href="about.html#license">许可证</a></li>
+            <li><a href="https://qm.qq.com/q/IDnnkW9eSs" target="_blank" rel="noopener">QQ 交流群 <svg aria-hidden="true"><use href="#i-external"/></svg></a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="legal">
+          © 2026 QSICK · ZY-Zone. 本站与腾讯公司无关；QQ 与腾讯是各自权利人的商标。源码以 AGPL-3.0-or-later 授权，
+          <code>qsick_payload.dll</code> 为专有组件，仅随 QSICK 分发且仅限非商业用途。
+        </div>
+        <div class="made">Crafted with <span class="heart">♥</span> by ZY-Zone · hosted on sickcc.online</div>
+      </div>
+    </div>
+  </footer>
+
+  <button class="to-top" id="toTop" type="button" aria-label="回到顶部">
+    <svg aria-hidden="true"><use href="#i-arrow-right"/></svg>
+  </button>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <svg aria-hidden="true"><use href="#i-check-circle"/></svg>
+    <span id="toastText">已复制</span>
+  </div>
+
+  <script src="assets/js/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+[Unit]
+Description=QSICK static site (www.sickcc.online/QSICK)
+Documentation=https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+Environment=QSICK_SITE_ROOT=/opt/qsick-site/site
+Environment=QSICK_SITE_PREFIX=/QSICK
+Environment=QSICK_SITE_PORT=8790
+ExecStart=/usr/bin/python3 /opt/qsick-site/serve.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/qsick-site
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

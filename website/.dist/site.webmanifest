@@ -1,0 +1,32 @@
+{
+  "name": "QSICK · 现代化的 QQNT API 导出工具",
+  "short_name": "QSICK",
+  "description": "基于原生注入的 QQNT API 导出工具，支持 OneBot v11 / Milky 双协议、插件系统与可视化 WebUI。",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f7ff",
+  "theme_color": "#f3f7ff",
+  "icons": [
+    {
+      "src": "assets/img/avatar-192.webp",
+      "sizes": "192x192",
+      "type": "image/webp",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/img/avatar.webp",
+      "sizes": "512x512",
+      "type": "image/webp",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/img/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

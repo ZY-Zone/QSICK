@@ -1,0 +1,815 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>QSICK · 现代化的 QQNT API 导出工具</title>
+  <meta name="description" content="QSICK 通过原生 payload 注入接管 QQNT 收发路径，把客户端能力导出为 OneBot v11 / Milky 协议，内置插件系统、原始消息证据库与可视化 WebUI。">
+  <meta name="keywords" content="QSICK,QQNT,OneBot,OneBot v11,Milky,QQ机器人,协议端,NapCat">
+  <meta name="author" content="ZY-Zone">
+  <meta name="theme-color" content="#f3f7ff">
+  <meta name="color-scheme" content="light dark">
+  <link rel="canonical" href="http://www.sickcc.online/QSICK/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="QSICK">
+  <meta property="og:title" content="QSICK · 把 QQNT 的能力，导出成协议">
+  <meta property="og:description" content="基于原生注入的 QQNT API 导出工具：OneBot v11 / Milky 双协议、插件系统与可视化 WebUI。">
+  <meta property="og:url" content="http://www.sickcc.online/QSICK/">
+  <meta property="og:image" content="assets/img/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="QSICK · 现代化的 QQNT API 导出工具">
+  <meta name="twitter:description" content="基于原生注入的 QQNT API 导出工具：OneBot v11 / Milky 双协议、插件系统与可视化 WebUI。">
+  <meta name="twitter:image" content="assets/img/og.png">
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="assets/img/favicon-32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="preload" href="assets/fonts/outfit-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/noto-sans-sc-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <noscript><style>[data-reveal]{opacity:1!important;transform:none!important;filter:none!important}.marquee-track{animation:none!important}</style></noscript>
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("qsick-theme");
+        if (t === "dark") document.documentElement.dataset.theme = "dark";
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body data-page="home">
+  <a class="skip-link" href="#main">跳到主要内容</a>
+
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m-5-7 7 7-7 7"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+    <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m8.5 12.5 2.5 2.5 5-5.5"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8h12z"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m7 15 4-5 4 3 5-7"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v2"/><path d="M15 2v2"/><path d="M9 20v2"/><path d="M15 20v2"/><path d="M2 9h2"/><path d="M2 15h2"/><path d="M20 9h2"/><path d="M20 15h2"/></symbol>
+    <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+    <symbol id="i-network" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 3.9"/><path d="m15.4 6.6-6.8 3.9"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="m21 8-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></symbol>
+    <symbol id="i-branch" viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+    <symbol id="i-warning" viewBox="0 0 24 24"><path d="m10.3 3.9-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3 1.8 4.6L18 9.4l-4.2 1.8L12 15.8l-1.8-4.6L6 9.4l4.2-1.8L12 3z"/><path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 6.5h.01"/><path d="M6 17.5h.01"/></symbol>
+    <symbol id="i-instance" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1L12 21l7.7-7.6 1.1-1a5.5 5.5 0 0 0 0-7.8z"/></symbol>
+  </svg>
+
+  <div class="scroll-progress" id="scrollProgress" aria-hidden="true"></div>
+  <div class="bg" aria-hidden="true">
+    <div class="blob blob-blue"></div>
+    <div class="blob blob-yellow"></div>
+    <div class="blob blob-cyan"></div>
+  </div>
+  <div class="bg-grain" aria-hidden="true"></div>
+  <div class="cursor-glow" id="cursorGlow" aria-hidden="true"></div>
+
+  <header class="site-header" id="siteHeader">
+    <div class="wrap">
+      <nav class="nav-shell" aria-label="主导航">
+        <a class="brand" href="index.html" aria-label="QSICK 首页">
+          <span class="brand-avatar"><img src="assets/img/avatar-64.png" alt="QSICK 头像" width="40" height="40"></span>
+          <span class="brand-name">QSICK<span class="tick"></span></span>
+          <span class="brand-badge">v1</span>
+        </a>
+        <div class="nav-links">
+          <a class="nav-link" href="#features">特性</a>
+          <a class="nav-link" href="#architecture">架构</a>
+          <a class="nav-link" href="#quickstart">快速开始</a>
+          <a class="nav-link" href="docs.html">文档</a>
+          <a class="nav-link" href="about.html">关于</a>
+          <a class="nav-link" href="#community">社区</a>
+        </div>
+        <div class="nav-actions">
+          <button class="search-pill" id="searchOpen" type="button" aria-label="搜索文档">
+            <svg aria-hidden="true"><use href="#i-search"/></svg>
+            <span>搜索</span>
+            <kbd>Ctrl K</kbd>
+          </button>
+          <button class="icon-btn theme-toggle" id="themeToggle" type="button" aria-label="切换深浅色主题">
+            <svg class="sun" aria-hidden="true"><use href="#i-sun"/></svg>
+            <svg class="moon" aria-hidden="true"><use href="#i-moon"/></svg>
+          </button>
+          <a class="gh-btn" href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge" target="_blank" rel="noopener">
+            <svg aria-hidden="true"><use href="#i-github"/></svg><span>GitHub</span>
+          </a>
+          <button class="icon-btn nav-burger" id="navBurger" type="button" aria-label="打开菜单" aria-expanded="false" aria-controls="mobileNav">
+            <svg aria-hidden="true"><use href="#i-menu"/></svg>
+          </button>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <div class="mobile-nav" id="mobileNav">
+    <a href="#features">特性 <svg width="14" height="14" aria-hidden="true"><use href="#i-chevron-right"/></svg></a>
+    <a href="#architecture">架构 <svg width="14" height="14" aria-hidden="true"><use href="#i-chevron-right"/></svg></a>
+    <a href="#quickstart">快速开始 <svg width="14" height="14" aria-hidden="true"><use href="#i-chevron-right"/></svg></a>
+    <a href="docs.html">文档 <svg width="14" height="14" aria-hidden="true"><use href="#i-chevron-right"/></svg></a>
+    <a href="about.html">关于 <svg width="14" height="14" aria-hidden="true"><use href="#i-chevron-right"/></svg></a>
+    <a href="#community">社区 <svg width="14" height="14" aria-hidden="true"><use href="#i-chevron-right"/></svg></a>
+    <a class="m-cta" href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge" target="_blank" rel="noopener">
+      <svg width="15" height="15" aria-hidden="true"><use href="#i-github"/></svg> GitHub 仓库
+    </a>
+  </div>
+
+  <main id="main">
+    <!-- ================= HERO ================= -->
+    <section class="hero" id="top">
+      <div class="wrap">
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <span class="eyebrow" data-reveal>
+              <span class="pulse-dot"></span>Native Injection
+              <span class="sep"></span>
+              <span class="accent">OneBot v11</span> · Milky · maxStore
+            </span>
+
+            <h1 class="hero-title" data-reveal style="--reveal-delay:70ms">
+              <span class="grad-text">QSICK</span><span class="dot" aria-hidden="true"></span>
+            </h1>
+            <div class="hero-subline" data-reveal style="--reveal-delay:110ms">QQNT · API BRIDGE</div>
+
+            <h2 class="hero-headline" data-reveal style="--reveal-delay:160ms">
+              把 QQNT 的能力，<span class="hl">导出</span>成协议。
+            </h2>
+
+            <p class="hero-lead" data-reveal style="--reveal-delay:220ms">
+              QSICK 通过原生 payload 注入接管 QQNT 的收发路径，把客户端能力导出为 OneBot v11 与 Milky；
+              内置插件系统、原始消息证据库与可视化 WebUI，开箱即用地把 QQ 接进你的机器人。
+            </p>
+
+            <div class="hero-actions" data-reveal style="--reveal-delay:280ms">
+              <a class="btn btn-primary" href="docs.html#quickstart">
+                开始使用
+                <svg class="arrow" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+              </a>
+              <a class="btn btn-glass" href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge" target="_blank" rel="noopener">
+                <svg aria-hidden="true"><use href="#i-github"/></svg>
+                GitHub 仓库
+              </a>
+            </div>
+
+            <div class="hero-meta" data-reveal style="--reveal-delay:340ms">
+              <div class="hero-stat">
+                <div class="hero-stat-num"><em data-count="242">242</em></div>
+                <div class="hero-stat-label">Payload 动作</div>
+              </div>
+              <div class="hero-stat">
+                <div class="hero-stat-num"><em data-count="65">65</em><span class="hero-stat-total">/65</span></div>
+                <div class="hero-stat-label">Milky API 覆盖</div>
+              </div>
+              <div class="hero-stat">
+                <div class="hero-stat-num"><em data-count="3">3</em></div>
+                <div class="hero-stat-label">协议适配</div>
+              </div>
+              <div class="hero-stat">
+                <div class="hero-stat-num"><em data-count="2">2</em></div>
+                <div class="hero-stat-label">实例类型</div>
+              </div>
+            </div>
+
+            <div class="hero-chips" data-reveal style="--reveal-delay:400ms">
+              <span class="chip"><i></i>C++ Payload</span>
+              <span class="chip"><i></i>Python Kernel</span>
+              <span class="chip yellow"><i></i>FastAPI</span>
+              <span class="chip"><i></i>Named Pipe</span>
+              <span class="chip"><i></i>WebSocket</span>
+            </div>
+          </div>
+
+          <div class="hero-visual" data-reveal style="--reveal-delay:200ms">
+            <div class="visual-halo" aria-hidden="true"></div>
+            <div class="window tilt" id="heroWindow" aria-label="QSICK WebUI 界面预览">
+              <div class="window-bar">
+                <div class="traffic" aria-hidden="true"><span></span><span></span><span></span></div>
+                <div class="window-title">qsick — webui dashboard</div>
+                <span class="window-url">127.0.0.1:5754</span>
+              </div>
+              <div class="window-body">
+                <div class="orbit">
+                  <div class="orbit-ring r1" aria-hidden="true"></div>
+                  <div class="orbit-ring r2" aria-hidden="true"></div>
+                  <div class="avatar-medal">
+                    <img src="assets/img/avatar-192.webp" alt="QSICK 项目头像" width="192" height="192">
+                  </div>
+                  <span class="orbit-chip c1"><svg aria-hidden="true"><use href="#i-network"/></svg>OneBot v11</span>
+                  <span class="orbit-chip c2 yellow"><svg aria-hidden="true"><use href="#i-layers"/></svg>Milky</span>
+                  <span class="orbit-chip c3"><svg aria-hidden="true"><use href="#i-terminal"/></svg>WebUI</span>
+                  <span class="orbit-chip c4 yellow"><svg aria-hidden="true"><use href="#i-plug"/></svg>插件市场</span>
+                </div>
+                <div class="status-list">
+                  <div class="status-row">
+                    <span class="status-dot green" aria-hidden="true"></span>
+                    <span class="label">载荷注入 QQ.exe</span>
+                    <span class="value">已就绪</span>
+                  </div>
+                  <div class="status-row">
+                    <span class="status-dot blue" aria-hidden="true"></span>
+                    <span class="label">OneBot v11 · WS</span>
+                    <span class="status-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+                    <span class="value">2 conn</span>
+                  </div>
+                  <div class="status-row">
+                    <span class="status-dot yellow" aria-hidden="true"></span>
+                    <span class="label">plugin: guard</span>
+                    <span class="value">running</span>
+                  </div>
+                </div>
+                <div class="window-foot">
+                  <span class="prompt">pipe&nbsp;▸</span>
+                  <span>\\.\pipe\qsick.4242.ctl</span>
+                  <span class="caret" aria-hidden="true"></span>
+                </div>
+              </div>
+            </div>
+            <div class="float-card fc-a">
+              <span class="fc-icon"><svg aria-hidden="true"><use href="#i-activity"/></svg></span>
+              <div><b>242</b><span>动作已注册 · registry</span></div>
+            </div>
+            <div class="float-card fc-b yellow">
+              <span class="fc-icon"><svg aria-hidden="true"><use href="#i-zap"/></svg></span>
+              <div><b>0 Electron</b><span>原生注入 · 轻量内核</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="marquee" aria-hidden="true">
+        <div class="marquee-track">
+          <span class="marquee-item"><strong>开箱即用</strong></span>
+          <span class="marquee-item"><strong>原生注入</strong></span>
+          <span class="marquee-item"><strong>多协议适配</strong></span>
+          <span class="marquee-item"><strong>插件热重载</strong></span>
+          <span class="marquee-item"><strong>多实例隔离</strong></span>
+          <span class="marquee-item"><strong>WebUI 面板</strong></span>
+          <span class="marquee-item"><strong>插件市场</strong></span>
+          <span class="marquee-item"><strong>242 Payload 动作</strong></span>
+          <span class="marquee-item"><strong>OneBot v11</strong></span>
+          <span class="marquee-item"><strong>Milky</strong></span>
+          <span class="marquee-item"><strong>maxStore</strong></span>
+          <span class="marquee-item"><strong>FastAPI</strong></span>
+          <span class="marquee-item"><strong>C++ Payload</strong></span>
+          <span class="marquee-item"><strong>命名管道</strong></span>
+          <span class="marquee-item"><strong>开箱即用</strong></span>
+          <span class="marquee-item"><strong>原生注入</strong></span>
+          <span class="marquee-item"><strong>多协议适配</strong></span>
+          <span class="marquee-item"><strong>插件热重载</strong></span>
+          <span class="marquee-item"><strong>多实例隔离</strong></span>
+          <span class="marquee-item"><strong>WebUI 面板</strong></span>
+          <span class="marquee-item"><strong>插件市场</strong></span>
+          <span class="marquee-item"><strong>242 Payload 动作</strong></span>
+          <span class="marquee-item"><strong>OneBot v11</strong></span>
+          <span class="marquee-item"><strong>Milky</strong></span>
+          <span class="marquee-item"><strong>maxStore</strong></span>
+          <span class="marquee-item"><strong>FastAPI</strong></span>
+          <span class="marquee-item"><strong>C++ Payload</strong></span>
+          <span class="marquee-item"><strong>命名管道</strong></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= FEATURES ================= -->
+    <section class="section" id="features">
+      <div class="wrap">
+        <div class="section-head" data-reveal>
+          <div>
+            <span class="kicker">01 — Features</span>
+            <h2 class="section-title">小内核，<span class="grad">大能力</span></h2>
+            <p class="section-lead">不做危险的模拟点击，也不套一层 Chromium。QSICK 把 QQNT 的真实收发路径接出来，保持轻量，同时把可控性交还给你。</p>
+          </div>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card glass" data-reveal style="--reveal-delay:40ms">
+            <div class="feature-icon"><svg aria-hidden="true"><use href="#i-zap"/></svg></div>
+            <h3 class="feature-title">开箱即用</h3>
+            <p class="feature-desc"><code>start.bat</code> 一条命令完成 uv 依赖、QQNT 运行时拉取与 WebUI 启动；mock 模式不登账号也能调试整条链路。</p>
+            <div class="feature-tags"><span>start.bat</span><span>mock</span><span>WebUI</span></div>
+          </article>
+          <article class="feature-card glass" data-reveal style="--reveal-delay:100ms">
+            <div class="feature-icon"><svg aria-hidden="true"><use href="#i-cpu"/></svg></div>
+            <h3 class="feature-title">原生注入</h3>
+            <p class="feature-desc">C++ payload 以命名管道与跳板挂接 QQ 收发路径，242 个动作直达客户端能力，而不是截图识别或模拟点击。</p>
+            <div class="feature-tags"><span>C++ DLL</span><span>Hook</span><span>Named Pipe</span></div>
+          </article>
+          <article class="feature-card glass" data-reveal style="--reveal-delay:160ms">
+            <div class="feature-icon"><svg aria-hidden="true"><use href="#i-layers"/></svg></div>
+            <h3 class="feature-title">多协议适配</h3>
+            <p class="feature-desc">协议跟着连接走：同一实例可同时挂 OneBot v11 与 Milky，事件与动作按各自连接的协议独立编解码。</p>
+            <div class="feature-tags"><span>OneBot v11</span><span>Milky v1.3</span><span>maxStore</span></div>
+          </article>
+          <article class="feature-card glass" data-reveal style="--reveal-delay:40ms">
+            <div class="feature-icon"><svg aria-hidden="true"><use href="#i-plug"/></svg></div>
+            <h3 class="feature-title">插件系统</h3>
+            <p class="feature-desc">清单 + 权限 + 生命周期钩子，支持热重载、配置界面扩展与插件市场远程安装，故障隔离到单个插件。</p>
+            <div class="feature-tags"><span>manifest</span><span>hooks</span><span>hot reload</span></div>
+          </article>
+          <article class="feature-card glass" data-reveal style="--reveal-delay:100ms">
+            <div class="feature-icon"><svg aria-hidden="true"><use href="#i-instance"/></svg></div>
+            <h3 class="feature-title">多实例隔离</h3>
+            <p class="feature-desc">headless 与 pipe 两类实例：模板硬链接、数据目录重定向、每实例独立网络配置，多账号互不干扰。</p>
+            <div class="feature-tags"><span>headless</span><span>pipe</span><span>isolation</span></div>
+          </article>
+          <article class="feature-card glass" data-reveal style="--reveal-delay:160ms">
+            <div class="feature-icon"><svg aria-hidden="true"><use href="#i-chart"/></svg></div>
+            <h3 class="feature-title">可观测 WebUI</h3>
+            <p class="feature-desc">仪表盘、手写 SVG 图表、SSE 实时日志、动作测试器与消息库，把"发生了什么"变成一眼能看懂的画面。</p>
+            <div class="feature-tags"><span>FastAPI</span><span>SSE</span><span>SVG</span></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= ARCHITECTURE ================= -->
+    <section class="section" id="architecture">
+      <div class="wrap">
+        <div class="section-head" data-reveal>
+          <div>
+            <span class="kicker">02 — Architecture</span>
+            <h2 class="section-title">一条消息的<span class="grad">旅程</span></h2>
+            <p class="section-lead">从 QQ.exe 进程内的 payload，到 Python 内核，再到你选择的协议端。三条流水线，两个分流点，职责边界清晰。</p>
+          </div>
+          <a class="link-arrow" href="docs.html#architecture">完整架构文档
+            <svg aria-hidden="true"><use href="#i-arrow-right"/></svg>
+          </a>
+        </div>
+
+        <div class="arch-panel glass" data-reveal>
+          <div class="arch-flow">
+            <article class="arch-node">
+              <div class="node-icon"><svg aria-hidden="true"><use href="#i-cpu"/></svg></div>
+              <h3>QQ.exe</h3>
+              <div class="node-sub">QSICK payload · C++</div>
+              <ul>
+                <li>命名管道 <code>qsick.&lt;pid&gt;.ctl / .evt</code></li>
+                <li>32 字节帧头 + JSON 体</li>
+                <li>钩子引擎与跳板，偏移表驱动</li>
+                <li>窗口隐藏、数据目录重定向</li>
+              </ul>
+            </article>
+            <div class="arch-link" aria-hidden="true"><span>pipe · frames</span></div>
+            <article class="arch-node">
+              <div class="node-icon"><svg aria-hidden="true"><use href="#i-layers"/></svg></div>
+              <h3>qsick 内核</h3>
+              <div class="node-sub">Python · FastAPI</div>
+              <ul>
+                <li>实例中心 / 解码 / 插件钩子</li>
+                <li>OneBot 事件与动作注册表</li>
+                <li>maxStore 先落库再分发</li>
+                <li>网络配置按连接归属</li>
+              </ul>
+            </article>
+            <div class="arch-link" aria-hidden="true"><span>http · ws · sse</span></div>
+            <article class="arch-node">
+              <div class="node-icon"><svg aria-hidden="true"><use href="#i-network"/></svg></div>
+              <h3>协议端</h3>
+              <div class="node-sub">HTTP · WS · SSE</div>
+              <ul>
+                <li>OneBot v11 / Milky 双协议</li>
+                <li>反向 WebSocket 与 HTTP 动作</li>
+                <li>WebUI 面板与插件市场</li>
+                <li>Prometheus 文本指标</li>
+              </ul>
+            </article>
+          </div>
+
+          <div class="arch-pipes">
+            <div class="pipe-card">
+              <span class="pipe-dot"></span>
+              <div><b>事件推送</b><span>QQ 宿主 → runtime → 各连接，maxStore 先于一切裁剪保存原始 payload。</span></div>
+            </div>
+            <div class="pipe-card">
+              <span class="pipe-dot"></span>
+              <div><b>动作执行</b><span>连接 → 协议解码 → runtime.invoke，插件过滤、账号限制与发送锁都在这层。</span></div>
+            </div>
+            <div class="pipe-card">
+              <span class="pipe-dot"></span>
+              <div><b>原始存储</b><span>maxStore 是汇不是通道：没有端口，只把完整历史留在实例自己的库里。</span></div>
+            </div>
+          </div>
+
+          <div class="frame-strip">
+            <span><b>帧</b> 32 B header + JSON body</span>
+            <span><b>管道</b> <span class="pipe-name">ctl / evt</span></span>
+            <span><b>动作</b> 242 registered</span>
+            <span><b>协议</b> onebotv11 · milky · maxStore</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= QUICK START ================= -->
+    <section class="section" id="quickstart">
+      <div class="wrap">
+        <div class="section-head" data-reveal>
+          <div>
+            <span class="kicker">03 — Quick Start</span>
+            <h2 class="section-title">三步，让 QQ <span class="grad">开口说话</span></h2>
+            <p class="section-lead">Windows 双击即用；想先评估效果，可以走 mock 模式，不连接任何真实账号。</p>
+          </div>
+          <a class="link-arrow" href="docs.html#quickstart">快速开始文档
+            <svg aria-hidden="true"><use href="#i-arrow-right"/></svg>
+          </a>
+        </div>
+
+        <div class="quick-grid">
+          <div>
+            <div class="steps">
+              <div class="step" data-reveal style="--reveal-delay:40ms">
+                <span class="step-num">01</span>
+                <div>
+                  <h3>安装依赖</h3>
+                  <p>首次运行 <code>start.bat</code> 会用 uv 安装 Python 依赖，并检查 node 与 Python 环境。</p>
+                </div>
+              </div>
+              <div class="step" data-reveal style="--reveal-delay:100ms">
+                <span class="step-num">02</span>
+                <div>
+                  <h3>获取 QQNT 运行时</h3>
+                  <p>脚本联网拉取 <code>QQNT-9.9.33-52230</code>；网络不稳时可先双击 <code>获取QQnt.bat</code> 预下载。</p>
+                </div>
+              </div>
+              <div class="step" data-reveal style="--reveal-delay:160ms">
+                <span class="step-num">03</span>
+                <div>
+                  <h3>打开 WebUI</h3>
+                  <p>浏览器访问 <code>127.0.0.1:5754</code>：仪表盘、日志、动作测试器与实例管理都在这里。</p>
+                </div>
+              </div>
+            </div>
+            <div class="quick-note" data-reveal style="--reveal-delay:220ms">
+              <svg aria-hidden="true"><use href="#i-info"/></svg>
+              <span>只想看看效果？<code>qsick --mock</code> 用 Mock 传输跑通事件与动作链路，不需要真实账号，也不会连接 QQ 服务器。</span>
+            </div>
+            <div class="quick-actions" data-reveal style="--reveal-delay:260ms">
+              <a class="btn btn-ghost" href="docs.html#quickstart">阅读安装指南</a>
+              <a class="btn btn-ghost" href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge/blob/main/README.md" target="_blank" rel="noopener">README</a>
+            </div>
+          </div>
+
+          <div class="quick-right">
+          <div class="terminal" data-reveal style="--reveal-delay:120ms">
+            <div class="terminal-bar">
+              <div class="traffic" aria-hidden="true"><span></span><span></span><span></span></div>
+              <span class="terminal-title">qsick</span>
+              <div class="term-tabs" role="tablist" aria-label="命令示例">
+                <button class="term-tab active" type="button" role="tab" aria-selected="true" data-term="win">Windows</button>
+                <button class="term-tab" type="button" role="tab" aria-selected="false" data-term="src">源码运行</button>
+              </div>
+              <button class="copy-btn" type="button" data-copy-term aria-label="复制命令">
+                <svg aria-hidden="true"><use href="#i-copy"/></svg><span>复制</span>
+              </button>
+            </div>
+            <div class="terminal-body">
+              <div class="term-panel active" data-panel="win">
+                <div class="term-line" style="--i:0"><span class="pfx">PS&gt;</span><span class="cmd"> start.bat</span><span class="cmt">   :: WebUI + mock（安全的默认值）</span></div>
+                <div class="term-line" style="--i:1"><span class="pfx">PS&gt;</span><span class="cmd"> start.bat --check</span><span class="cmt">  :: 检查 uv / node / Python 依赖</span></div>
+                <div class="term-line" style="--i:2"><span class="pfx">QSICK&gt;</span><span class="ok"> ✓ runtime ready · QQNT 9.9.33</span></div>
+                <div class="term-line" style="--i:3"><span class="pfx">QSICK&gt;</span><span class="ok"> ✓ kernel up · protocol registry loaded</span></div>
+                <div class="term-line" style="--i:4"><span class="pfx">QSICK&gt;</span><span class="ok"> ✓ webui on http://127.0.0.1:5754</span></div>
+                <div class="term-line" style="--i:5"><span class="pfx">QSICK&gt;</span><span class="cmd"> waiting for instance…</span><span class="term-caret" aria-hidden="true"></span></div>
+              </div>
+              <div class="term-panel" data-panel="src">
+                <div class="term-line" style="--i:0"><span class="pfx">$</span><span class="cmd"> uv sync --extra dev</span></div>
+                <div class="term-line" style="--i:1"><span class="pfx">$</span><span class="cmd"> uv pip install -e . --no-deps</span></div>
+                <div class="term-line" style="--i:2"><span class="pfx">$</span><span class="cmd"> uv run qsick --mock</span></div>
+                <div class="term-line" style="--i:3"><span class="pfx">[qsick]</span><span class="ok"> transport: mock · store: maxStore</span></div>
+                <div class="term-line" style="--i:4"><span class="pfx">[qsick]</span><span class="warn"> no real account attached — safe to explore</span></div>
+                <div class="term-line" style="--i:5"><span class="pfx">[qsick]</span><span class="ok"> listening on 127.0.0.1:5754</span><span class="term-caret" aria-hidden="true"></span></div>
+              </div>
+            </div>
+            <div class="terminal-foot">
+              <span>WebUI ▸</span>
+              <a href="http://127.0.0.1:5754" target="_blank" rel="noopener">http://127.0.0.1:5754</a>
+              <span style="margin-left:auto">docs ▸</span>
+              <a href="docs.html#webui">WebUI 文档</a>
+            </div>
+          </div>
+          <div class="quick-extra" data-reveal style="--reveal-delay:180ms">
+            <div class="qe">
+              <span class="qe-kicker">WebUI</span>
+              <b>127.0.0.1:5754</b>
+              <small>地址、端口与访问令牌可在设置页修改</small>
+            </div>
+            <div class="qe">
+              <span class="qe-kicker">Access</span>
+              <b>密码 / Token</b>
+              <small>两种登录方式并存，任一通过即可访问</small>
+            </div>
+          </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= STATS ================= -->
+    <section class="section-sm">
+      <div class="wrap">
+        <div class="stats-band glass" data-reveal>
+          <div class="stat-cell">
+            <div class="stat-number"><span data-count="242">242</span></div>
+            <div class="stat-label">Payload 动作</div>
+            <div class="stat-note">Action Registry</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-number"><span data-count="65">65</span><span class="suffix">/65</span></div>
+            <div class="stat-label">Milky API 覆盖</div>
+            <div class="stat-note">All Endpoints Classified</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-number"><span data-count="3">3</span></div>
+            <div class="stat-label">协议适配</div>
+            <div class="stat-note">onebotv11 · milky · maxStore</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-number"><span data-count="2">2</span></div>
+            <div class="stat-label">实例类型</div>
+            <div class="stat-note">headless · pipe</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= DOCS ================= -->
+    <section class="section" id="docs">
+      <div class="wrap">
+        <div class="section-head" data-reveal>
+          <div>
+            <span class="kicker">04 — Documentation</span>
+            <h2 class="section-title">写给人看的<span class="grad">文档</span></h2>
+            <p class="section-lead">从架构到 Payload ABI，每一份文档都记录"为什么这样切"，而不只是"怎么调"。</p>
+          </div>
+          <a class="link-arrow" href="docs.html">浏览全部文档
+            <svg aria-hidden="true"><use href="#i-arrow-right"/></svg>
+          </a>
+        </div>
+        <div class="docs-grid">
+          <a class="doc-card glass" href="docs.html#architecture" data-reveal style="--reveal-delay:40ms">
+            <span class="doc-kicker">Architecture</span>
+            <h3>架构</h3>
+            <p>多实例数据流、消息与动作流水线、失败时的姿态与目录布局。</p>
+            <span class="doc-arrow">阅读 <svg aria-hidden="true"><use href="#i-arrow-right"/></svg></span>
+          </a>
+          <a class="doc-card glass" href="docs.html#protocols" data-reveal style="--reveal-delay:80ms">
+            <span class="doc-kicker">Protocols</span>
+            <h3>协议层</h3>
+            <p>onebotv11 / milky / maxStore 三条流水线如何协作，怎样新增协议。</p>
+            <span class="doc-arrow">阅读 <svg aria-hidden="true"><use href="#i-arrow-right"/></svg></span>
+          </a>
+          <a class="doc-card glass" href="docs.html#plugins" data-reveal style="--reveal-delay:120ms">
+            <span class="doc-kicker">Plugin API</span>
+            <h3>插件 API</h3>
+            <p>清单、权限、生命周期钩子、配置界面与插件市场的完整契约。</p>
+            <span class="doc-arrow">阅读 <svg aria-hidden="true"><use href="#i-arrow-right"/></svg></span>
+          </a>
+          <a class="doc-card glass" href="docs.html#payload" data-reveal style="--reveal-delay:40ms">
+            <span class="doc-kicker">Payload ABI</span>
+            <h3>Payload ABI</h3>
+            <p>帧协议、op 契约、钩子偏移表、注入与管道认证的实现细节。</p>
+            <span class="doc-arrow">阅读 <svg aria-hidden="true"><use href="#i-arrow-right"/></svg></span>
+          </a>
+          <a class="doc-card glass" href="docs.html#instances" data-reveal style="--reveal-delay:80ms">
+            <span class="doc-kicker">Instances</span>
+            <h3>实例</h3>
+            <p>headless 与 pipe 两类实例的创建、模板硬链接与启动链路。</p>
+            <span class="doc-arrow">阅读 <svg aria-hidden="true"><use href="#i-arrow-right"/></svg></span>
+          </a>
+          <a class="doc-card glass" href="docs.html#webui" data-reveal style="--reveal-delay:120ms">
+            <span class="doc-kicker">WebUI</span>
+            <h3>WebUI</h3>
+            <p>仪表盘的三块图表、实时日志、动作测试器与登录鉴权。</p>
+            <span class="doc-arrow">阅读 <svg aria-hidden="true"><use href="#i-arrow-right"/></svg></span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= ECOSYSTEM ================= -->
+    <section class="section-sm" id="ecosystem">
+      <div class="wrap">
+        <div class="section-head" data-reveal>
+          <div>
+            <span class="kicker">Ecosystem</span>
+            <h2 class="section-title">生态与入口</h2>
+            <p class="section-lead">协议、面板与社区，从这里出发。</p>
+          </div>
+        </div>
+        <div class="eco-grid">
+          <div class="eco-col glass" data-reveal style="--reveal-delay:40ms">
+            <div class="eco-head"><h3>生态</h3><span>Protocol</span></div>
+            <div class="eco-links">
+              <a class="eco-link" href="docs.html#protocols">
+                <span class="el-icon"><svg aria-hidden="true"><use href="#i-network"/></svg></span>
+                <span><b>OneBot v11</b><small>默认聊天协议 · 转换恒等</small></span>
+                <span class="el-arrow"><svg aria-hidden="true"><use href="#i-arrow-up-right"/></svg></span>
+              </a>
+              <a class="eco-link" href="docs.html#protocols">
+                <span class="el-icon"><svg aria-hidden="true"><use href="#i-layers"/></svg></span>
+                <span><b>Milky v1.3</b><small>POST /api · GET /event</small></span>
+                <span class="el-arrow"><svg aria-hidden="true"><use href="#i-arrow-up-right"/></svg></span>
+              </a>
+              <a class="eco-link" href="docs.html#protocols">
+                <span class="el-icon"><svg aria-hidden="true"><use href="#i-database"/></svg></span>
+                <span><b>maxStore</b><small>原始消息证据库 · 只写消息缓存</small></span>
+                <span class="el-arrow"><svg aria-hidden="true"><use href="#i-arrow-up-right"/></svg></span>
+              </a>
+            </div>
+          </div>
+          <div class="eco-col glass" data-reveal style="--reveal-delay:100ms">
+            <div class="eco-head"><h3>工具</h3><span>Tools</span></div>
+            <div class="eco-links">
+              <a class="eco-link" href="docs.html#webui">
+                <span class="el-icon"><svg aria-hidden="true"><use href="#i-terminal"/></svg></span>
+                <span><b>WebUI 面板</b><small>127.0.0.1:5754 · 可视化配置</small></span>
+                <span class="el-arrow"><svg aria-hidden="true"><use href="#i-arrow-up-right"/></svg></span>
+              </a>
+              <a class="eco-link" href="http://sickcc.online/QSICK/plugins-market" target="_blank" rel="noopener">
+                <span class="el-icon"><svg aria-hidden="true"><use href="#i-plug"/></svg></span>
+                <span><b>插件市场</b><small>搜索 · 安装 · 更新</small></span>
+                <span class="el-arrow"><svg aria-hidden="true"><use href="#i-arrow-up-right"/></svg></span>
+              </a>
+              <a class="eco-link" href="docs.html#quickstart">
+                <span class="el-icon"><svg aria-hidden="true"><use href="#i-download"/></svg></span>
+                <span><b>运行时</b><small>QQNT 9.9.33 · 一键拉取</small></span>
+                <span class="el-arrow"><svg aria-hidden="true"><use href="#i-arrow-up-right"/></svg></span>
+              </a>
+            </div>
+          </div>
+          <div class="eco-col glass" data-reveal style="--reveal-delay:160ms">
+            <div class="eco-head"><h3>社区</h3><span>Community</span></div>
+            <div class="eco-links">
+              <a class="eco-link" href="https://qm.qq.com/q/IDnnkW9eSs" target="_blank" rel="noopener">
+                <span class="el-icon"><svg aria-hidden="true"><use href="#i-chat"/></svg></span>
+                <span><b>QQ 交流群</b><small>问题反馈与更新通知</small></span>
+                <span class="el-arrow"><svg aria-hidden="true"><use href="#i-arrow-up-right"/></svg></span>
+              </a>
+              <a class="eco-link" href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge" target="_blank" rel="noopener">
+                <span class="el-icon"><svg aria-hidden="true"><use href="#i-github"/></svg></span>
+                <span><b>GitHub 仓库</b><small>ZY-Zone / QSICK--QQ_NT-Bridge</small></span>
+                <span class="el-arrow"><svg aria-hidden="true"><use href="#i-arrow-up-right"/></svg></span>
+              </a>
+              <a class="eco-link" href="https://github.com/ZY-Zone" target="_blank" rel="noopener">
+                <span class="el-icon"><svg aria-hidden="true"><use href="#i-github"/></svg></span>
+                <span><b>GitHub 组织</b><small>ZY-Zone · 更多项目</small></span>
+                <span class="el-arrow"><svg aria-hidden="true"><use href="#i-arrow-up-right"/></svg></span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= COMMUNITY CTA ================= -->
+    <section class="section" id="community">
+      <div class="wrap">
+        <div class="community" data-reveal>
+          <div class="community-inner">
+            <div class="community-copy">
+              <span class="kicker">Join the community</span>
+              <h2>把 QQNT 接进你的机器人</h2>
+              <p>遇到问题、想提需求、或者只是想看看别人用 QSICK 做了什么——来群里聊聊。更新通知、实机测试结果与踩坑记录也会同步到社区。</p>
+              <div class="community-actions">
+                <a class="btn btn-light" href="https://qm.qq.com/q/IDnnkW9eSs" target="_blank" rel="noopener">
+                  <svg aria-hidden="true"><use href="#i-chat"/></svg>
+                  加入 QQ 群
+                </a>
+                <a class="btn btn-outline-light" href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge" target="_blank" rel="noopener">
+                  <svg aria-hidden="true"><use href="#i-github"/></svg>
+                  GitHub 仓库
+                </a>
+              </div>
+            </div>
+            <div class="community-avatar">
+              <img src="assets/img/avatar.webp" alt="ZY-Zone 组织头像" width="190" height="190">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= DISCLAIMER ================= -->
+    <section class="section-sm" id="disclaimer">
+      <div class="wrap">
+        <div class="notice" data-reveal>
+          <div class="notice-icon"><svg aria-hidden="true"><use href="#i-warning"/></svg></div>
+          <div>
+            <h3>使用前请阅读免责声明</h3>
+            <ul>
+              <li>QSICK 会向 <strong>QQ.exe</strong> 注入代码并接管其收发路径，这可能违反腾讯用户协议，并导致账号被限制、封禁或永久终止。</li>
+              <li>仅限学习与研究。请使用<strong>一次性账号</strong>，不要在主力账号或公用机器上运行。</li>
+              <li>源码以 <strong>AGPL-3.0-or-later</strong> 授权；<code>qsick_payload.dll</code> 为专有二进制组件，不在 AGPL 范围内，仅限非商业用途。</li>
+            </ul>
+            <a class="link-arrow" href="about.html#disclaimer">查看完整免责声明
+              <svg aria-hidden="true"><use href="#i-arrow-right"/></svg>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a class="brand" href="index.html" aria-label="QSICK 首页">
+            <span class="brand-avatar"><img src="assets/img/avatar-64.png" alt="QSICK 头像" width="40" height="40"></span>
+            <span class="brand-name">QSICK<span class="tick"></span></span>
+          </a>
+          <p>现代化的 QQNT API 导出工具。通过原生注入把 QQNT 的收发能力导出为 OneBot v11 / Milky，附带插件系统与可视化 WebUI。</p>
+          <div class="footer-badges">
+            <span>AGPL-3.0</span><span>C++ / Python</span><span>OneBot v11</span><span>Milky</span>
+          </div>
+        </div>
+        <div class="footer-col">
+          <h4>项目</h4>
+          <ul>
+            <li><a href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge" target="_blank" rel="noopener">GitHub 仓库 <svg aria-hidden="true"><use href="#i-external"/></svg></a></li>
+            <li><a href="docs.html">文档</a></li>
+            <li><a href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge/commits/main" target="_blank" rel="noopener">更新日志 <svg aria-hidden="true"><use href="#i-external"/></svg></a></li>
+            <li><a href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge/issues" target="_blank" rel="noopener">问题反馈 <svg aria-hidden="true"><use href="#i-external"/></svg></a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>资源</h4>
+          <ul>
+            <li><a href="docs.html#quickstart">快速开始</a></li>
+            <li><a href="docs.html#payload">Payload 动作清单</a></li>
+            <li><a href="http://sickcc.online/QSICK/plugins-market" target="_blank" rel="noopener">插件市场 <svg aria-hidden="true"><use href="#i-external"/></svg></a></li>
+            <li><a href="docs.html#webui">WebUI 文档</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>关于</h4>
+          <ul>
+            <li><a href="about.html">关于 QSICK</a></li>
+            <li><a href="about.html#disclaimer">免责声明</a></li>
+            <li><a href="about.html#license">许可证</a></li>
+            <li><a href="https://qm.qq.com/q/IDnnkW9eSs" target="_blank" rel="noopener">QQ 交流群 <svg aria-hidden="true"><use href="#i-external"/></svg></a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="legal">
+          © 2026 QSICK · ZY-Zone. 本站与腾讯公司无关；QQ 与腾讯是各自权利人的商标。源码以 AGPL-3.0-or-later 授权，
+          <code>qsick_payload.dll</code> 为专有组件，仅随 QSICK 分发且仅限非商业用途。
+        </div>
+        <div class="made">Crafted with <span class="heart">♥</span> by ZY-Zone · hosted on sickcc.online</div>
+      </div>
+    </div>
+  </footer>
+
+  <button class="to-top" id="toTop" type="button" aria-label="回到顶部">
+    <svg aria-hidden="true"><use href="#i-arrow-right"/></svg>
+  </button>
+
+  <div class="search-overlay" id="searchOverlay" role="dialog" aria-modal="true" aria-label="搜索文档">
+    <div class="search-panel">
+      <div class="search-input-row">
+        <svg aria-hidden="true"><use href="#i-search"/></svg>
+        <input id="searchInput" type="text" placeholder="搜索功能、文档、命令…" autocomplete="off" spellcheck="false" aria-label="搜索关键词">
+        <span class="search-esc">ESC</span>
+      </div>
+      <div class="search-results" id="searchResults"></div>
+      <div class="search-hint">
+        <span><kbd>↑</kbd><kbd>↓</kbd> 选择 · <kbd>Enter</kbd> 打开</span>
+        <span>QSICK docs</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <svg aria-hidden="true"><use href="#i-check-circle"/></svg>
+    <span id="toastText">已复制</span>
+  </div>
+
+  <script src="assets/js/app.js" defer></script>
+</body>
+</html>
