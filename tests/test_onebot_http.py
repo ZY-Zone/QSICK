@@ -26,10 +26,32 @@ async def test_post_action_ok(runtime):
 
 
 async def test_get_action_ok(runtime):
+    """The query-string form lives at `/action`, the standard address.
+
+    It used to answer on the configured HTTP path too, but that GET now belongs to the SSE stream:
+    OneBot v11 serves actions and events on one URL, split by method (POST = action, GET = stream).
+    Both cannot own GET, and the stream is the one clients ask for by URL.
+    """
     async with await _client(runtime) as client:
-        response = await client.get("/ONEBOTV11/", params={"action": "get_login_info"})
+        response = await client.get("/ONEBOTV11/action", params={"action": "get_login_info"})
     payload = response.json()
     assert payload["data"]["user_id"] == 10001
+
+
+async def test_get_on_the_http_path_is_served_by_the_stream(runtime):
+    """The configured path's GET belongs to SSE, not to a JSON action reply.
+
+    Checked against the route table rather than by opening the stream: a streaming response never
+    finishes, so any client that reads it to the end (which is what leaving a `stream()` block
+    does) waits forever. `test_sse_path.py` covers the mounting rules in detail.
+    """
+    from qsick.onebot.server import create_app
+
+    app = create_app(runtime)
+    get_endpoints = {route.endpoint.__name__ for route in app.routes
+                     if getattr(route, "path", "") == "/ONEBOTV11/"
+                     and "GET" in (getattr(route, "methods", None) or set())}
+    assert get_endpoints == {"sse"}, get_endpoints
 
 
 async def test_unknown_action_uses_http_200_with_retcode(runtime):

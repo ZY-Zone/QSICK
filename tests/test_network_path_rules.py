@@ -37,8 +37,9 @@ def webui(tmp_path, monkeypatch):
 
 
 def save(client, **fields):
+    """Saving a server profile actually binds a listener, so the port must be one nobody uses."""
     payload = {"action": "upsert", "protocol": "onebotv11", "instance": "3905548034",
-               "enabled": True, "host": "127.0.0.1", "port": 3099}
+               "enabled": True, "host": "127.0.0.1", "port": 39217}
     payload.update(fields)
     return client.post("/api/network/profiles", json=payload)
 

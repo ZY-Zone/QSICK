@@ -179,7 +179,10 @@ class TestPrefixes:
     def test_both_protocols_are_mounted_under_their_own_prefix(self, runtime):
         app = create_app(runtime)
         paths = {getattr(route, "path", "") for route in app.routes}
-        for expected in ("/ONEBOTV11/ws", "/ONEBOTV11/sse", "/ONEBOTV11/health",
+        # SSE is not a path of its own: OneBot v11 serves the event stream on the HTTP endpoint
+        # itself (POST = action, GET = stream), so it is mounted at `/ONEBOTV11/` here rather than
+        # at `/ONEBOTV11/sse`. `test_sse_path.py` pins that arrangement.
+        for expected in ("/ONEBOTV11/ws", "/ONEBOTV11/", "/ONEBOTV11/health",
                          "/ONEBOTV11/action", "/MILKY/api/{api}", "/MILKY/event"):
             assert expected in paths, f"{expected} missing from {sorted(paths)}"
 

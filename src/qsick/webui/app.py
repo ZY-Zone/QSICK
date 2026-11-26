@@ -1029,9 +1029,14 @@ def create_app(runtime: "Runtime") -> FastAPI:
         for name, value in paths.items():
             if not value.startswith("/") or " " in value:
                 errors.append(f"{name} 必须以 / 开头且不含空格")
-        if len(set(paths.values())) != len(paths):
-            duplicated = sorted({value for value in paths.values()
-                                 if list(paths.values()).count(value) > 1})
+        # SSE shares the HTTP path by design (OneBot v11 puts actions and the event stream on one
+        # URL, split by method), so that pair is not a collision. The only choice left to the
+        # operator is the WS path, and a WS endpoint at the same URL as HTTP is genuinely
+        # ambiguous to anyone reading the address.
+        chosen = {name: value for name, value in paths.items() if name != "sse_path"}
+        if len(set(chosen.values())) != len(chosen):
+            duplicated = sorted({value for value in chosen.values()
+                                 if list(chosen.values()).count(value) > 1})
             errors.append("已启用的监听路径不能重复：" + "、".join(duplicated))
         urls = data.get("reverse_ws_urls", onebot.reverse_ws_urls)
         if isinstance(urls, str):

@@ -172,6 +172,11 @@ def _default_profiles(config: RuntimeConfig) -> list[dict[str, Any]]:
             "port": int(onebot.port),
             "path": onebot.http_path,
             "token": onebot.access_token,
+            # Carry the flag over from the global config. Without it, a store derived from a config
+            # that had SSE on would silently drop the event stream on the first save -- the checkbox
+            # only becomes meaningful once it is actually stored, so the derived profile must state
+            # what the old behaviour was.
+            "enable_sse": bool(onebot.enable_sse),
             "protocol": protocol,
             "instance": DEFAULT_INSTANCE,
         },
@@ -465,11 +470,28 @@ def apply_to_config(config: RuntimeConfig, profiles: list[dict[str, Any]]) -> tu
         elif str(ws.get("host") or "") != onebot.host or int(ws.get("port") or 0) != onebot.port:
             warnings.append("WS 服务器与 HTTP 服务器端口不同，当前内核只监听其中一个端口；已按 HTTP 配置应用。")
         onebot.ws_path = str(ws.get("path") or "/ws")
+    elif http and http.get("enable_websocket"):
+        # The http profile's own checkbox: accept WebSocket clients on the same listener. It was
+        # stored and then never read, so ticking it did nothing at all.
+        onebot.enable_ws = True
     else:
         onebot.enable_ws = False
 
-    # SSE shares the HTTP listener in this runtime.
-    onebot.enable_sse = bool(http)
+    # SSE is served at the HTTP endpoint itself, not at a path of its own.
+    #
+    # OneBot v11 (go-cqhttp and NapCat both do this) puts the event stream on the same URL as the
+    # action endpoint, separated by method: POST runs an action, GET streams events. A separate
+    # `{path}/sse` is this project's invention, and it made one configured address answer two
+    # different things depending on a field the operator never saw.
+    #
+    # The checkbox on the http profile decides *whether* SSE is offered. It used to be ignored --
+    # `enable_sse = bool(http)` -- so SSE was always on for any http profile and the box had no
+    # effect either way.
+    if http and http.get("enable_sse", False):
+        onebot.enable_sse = True
+        onebot.sse_path = onebot.http_path
+    else:
+        onebot.enable_sse = False
 
     clients = [str(item.get("url")) for item in profiles if item.get("kind") == "ws_client" and item.get("enabled")]
     onebot.reverse_ws_urls = [url for url in clients if url.startswith(("ws://", "wss://"))]

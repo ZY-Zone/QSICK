@@ -333,11 +333,6 @@ def create_app(runtime: "Runtime") -> FastAPI:
     async def action_post_standard(request: Request) -> JSONResponse:
         return await action_post(request)
 
-    @app.get(prefixed(ONEBOTV11_PREFIX, "/action"))
-    async def action_get_standard(request: Request) -> JSONResponse:
-        return await action_get(request)
-
-    @app.get(prefixed(ONEBOTV11_PREFIX, config.http_path))
     async def action_get(request: Request) -> JSONResponse:
         hub.note_http(1)
         if not authorized(request):
@@ -354,6 +349,21 @@ def create_app(runtime: "Runtime") -> FastAPI:
         }
         result = await handle_action(name, {**params, "echo": request.query_params.get("echo")})
         return JSONResponse(result)
+
+    @app.get(prefixed(ONEBOTV11_PREFIX, "/action"))
+    async def action_get_standard(request: Request) -> JSONResponse:
+        return await action_get(request)
+
+    # The configured HTTP path answers GET only when SSE is not using it.
+    #
+    # OneBot v11 puts actions and the event stream on one URL, separated by method: POST runs an
+    # action, GET streams events. So when SSE is enabled the GET side of that path belongs to the
+    # stream, and the query-string form of an action lives at `/action` (mounted above,
+    # unconditionally) instead. Registering both on the same path would leave Starlette serving
+    # whichever route it happened to add first, which is exactly how "SSE answered 405" or "GET
+    # action returned an event stream" would look from the outside.
+    if config.sse_path != config.http_path:
+        app.add_api_route(prefixed(ONEBOTV11_PREFIX, config.http_path), action_get, methods=["GET"])
 
     @app.websocket(prefixed(ONEBOTV11_PREFIX, config.ws_path))
     async def websocket_endpoint(ws: WebSocket) -> None:

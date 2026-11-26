@@ -171,7 +171,7 @@
           <input type="checkbox" id="profile-enable-ws" /> 同一端口也接受 WebSocket 客户端
         </label>
         <label class="check span-2" id="profile-http-sse-wrap">
-          <input type="checkbox" id="profile-enable-sse" /> 提供 SSE 事件流（<code>&lt;path&gt;/_events</code>）
+          <input type="checkbox" id="profile-enable-sse" /> 同一路径上用 GET 提供 SSE 事件流（POST 仍是动作端点）
         </label>
         {# 入站帧上限。留空表示用传输默认值；填了就是硬上限，超过会被断开（1009）。 #}
         <label class="span-2" id="profile-max-payload-wrap">单帧上限（字节，可留空）
