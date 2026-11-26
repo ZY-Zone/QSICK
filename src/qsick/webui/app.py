@@ -1014,16 +1014,25 @@ def create_app(runtime: "Runtime") -> FastAPI:
             errors.append("监听地址不能为空或包含空格")
         if not 1 <= port <= 65535:
             errors.append("OneBot 端口必须在 1..65535 之间")
-        paths = {
-            "http_path": str(data.get("http_path", onebot.http_path)),
-            "ws_path": str(data.get("ws_path", onebot.ws_path)),
-            "sse_path": str(data.get("sse_path", onebot.sse_path)),
-        }
+        # Only enabled transports can collide. The three paths live on one listener, so a duplicate
+        # among them is a real ambiguity -- but a *disabled* transport contributes nothing, and its
+        # path is only whatever stale value the config happens to hold. Comparing it anyway is what
+        # rejected a lone ws_server at "/": the unused http_path was still "/" from the defaults, so
+        # the page reported a duplicate for a path the user had typed exactly once.
+        paths = {}
+        if bool(data.get("enable_http", onebot.enable_http)):
+            paths["http_path"] = str(data.get("http_path", onebot.http_path))
+        if bool(data.get("enable_ws", onebot.enable_ws)):
+            paths["ws_path"] = str(data.get("ws_path", onebot.ws_path))
+        if bool(data.get("enable_sse", onebot.enable_sse)):
+            paths["sse_path"] = str(data.get("sse_path", onebot.sse_path))
         for name, value in paths.items():
             if not value.startswith("/") or " " in value:
                 errors.append(f"{name} 必须以 / 开头且不含空格")
         if len(set(paths.values())) != len(paths):
-            errors.append("HTTP / WS / SSE 路径不能重复")
+            duplicated = sorted({value for value in paths.values()
+                                 if list(paths.values()).count(value) > 1})
+            errors.append("已启用的监听路径不能重复：" + "、".join(duplicated))
         urls = data.get("reverse_ws_urls", onebot.reverse_ws_urls)
         if isinstance(urls, str):
             urls = _parse_urls(urls)

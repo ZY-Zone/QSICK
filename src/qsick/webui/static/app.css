@@ -943,6 +943,24 @@ body.qr-window.embedded .qr-window-card { padding: 12px; }
 /* （开关样式已统一到文件上方，此处不再重复定义。） */
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .form-grid .span-2 { grid-column: span 2; }
+
+/* The leading "/" of a path is not a choice, so it is shown as part of the field instead of being
+   something to type. Typing "ws" used to submit "ws" -- a value the page then reported as an
+   invalid path, which reads like a bug in the form rather than a missing slash. */
+.path-field {
+  display: flex; align-items: stretch; margin-top: 5px; overflow: hidden;
+  border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel);
+}
+.path-field:focus-within { border-color: var(--sky); box-shadow: 0 0 0 3px var(--sky-soft); }
+.path-prefix {
+  display: flex; align-items: center; padding: 0 1px 0 10px;
+  color: var(--faint); font-family: var(--mono); user-select: none;
+}
+.path-field > input {
+  flex: 1; min-width: 0; border: 0; border-radius: 0; padding-left: 2px;
+  background: transparent; font-family: var(--mono);
+}
+.path-field > input:focus { border-color: transparent; box-shadow: none; }
 .net-advanced { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
 .net-advanced summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .reverse-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }

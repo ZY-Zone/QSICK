@@ -155,7 +155,12 @@
       <div class="form-grid" id="profile-server-fields">
         <label>地址 <input id="profile-host" value="127.0.0.1" /></label>
         <label>端口 <input id="profile-port" type="number" min="1" max="65535" value="3000" /></label>
-        <label class="span-2">路径 <input id="profile-path" value="/" /></label>
+        <label class="span-2">路径
+          <span class="path-field">
+            <span class="path-prefix" aria-hidden="true">/</span>
+            <input id="profile-path" value="" placeholder="ws" spellcheck="false" autocomplete="off" />
+          </span>
+        </label>
         <label class="span-2">Access token
           <input id="profile-token" type="password" placeholder="留空表示不校验" autocomplete="new-password" />
         </label>
@@ -202,6 +207,24 @@
     function byId(id) {
       return profiles.find(function (item) { return item.id === id; });
     }
+
+    // The path input holds everything after the leading "/", which is rendered next to it and
+    // cannot be edited. "/" alone is the root, so an empty box means root -- that is why these two
+    // helpers exist rather than reading and writing the field directly.
+    function readPath() {
+      var tail = document.getElementById("profile-path").value.replace(/^\/+/, "").trim();
+      return tail ? "/" + tail : "/";
+    }
+
+    function setPath(path) {
+      document.getElementById("profile-path").value = String(path || "").replace(/^\/+/, "");
+    }
+
+    // Keep the visible tail a single segment: a user pasting "//ws/" should still get "/ws".
+    document.getElementById("profile-path").addEventListener("input", function () {
+      var cleaned = this.value.replace(/^\/+/, "").replace(/\/+$/, "");
+      if (cleaned !== this.value) this.value = cleaned;
+    });
 
     function selectTab(kind, remember) {
       document.querySelectorAll(".net-tab").forEach(function (button) {
@@ -283,7 +306,7 @@
         profile && profile.reconnect_interval_ms ? profile.reconnect_interval_ms : 5000;
       document.getElementById("profile-host").value = profile && profile.host ? profile.host : "127.0.0.1";
       document.getElementById("profile-port").value = profile && profile.port ? profile.port : (kind === "http" ? 3000 : 3001);
-      document.getElementById("profile-path").value = profile && profile.path ? profile.path : (kind === "http" ? "/" : "/ws");
+      setPath(profile && profile.path ? profile.path : (kind === "http" ? "/" : "/ws"));
       document.getElementById("profile-token").value = profile && profile.token ? profile.token : "";
       document.getElementById("profile-url").value = profile && profile.url ? profile.url : "ws://127.0.0.1:8080/onebot/v11/ws";
       // 账号：沿用配置里的值；新配置默认当前页面选中的账户。
@@ -367,7 +390,7 @@
       } else {
         payload.host = document.getElementById("profile-host").value;
         payload.port = Number(document.getElementById("profile-port").value || 0);
-        payload.path = document.getElementById("profile-path").value;
+        payload.path = readPath();
         payload.token = document.getElementById("profile-token").value;
         var maxPayload = Number(document.getElementById("profile-max-payload").value || 0);
         if (maxPayload > 0) payload.max_payload_bytes = maxPayload;
