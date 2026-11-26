@@ -332,18 +332,32 @@ def write_session_ports(tmp_id: str, root: Path | str = ROOT_NAME,
     return config
 
 
+def session_flag_enabled(config: dict[str, Any]) -> bool:
+    """The top-level `QSenabled` flag, read the way the DLL reads `port`.
+
+    Separate from :func:`session_status_command` only so the two levels can be reasoned about apart;
+    the legacy nested spellings live in that function.
+    """
+    return bool(config.get("QSenabled"))
+
+
 def session_status_command(config: dict[str, Any]) -> bool:
     """Whether this session answers the `#QS` status command.
 
-    Opt-in per session, and read from the nested block the same way the port is. Kept in the session
-    config rather than in the runtime's settings because the question it answers is per account: one
+    Stored as a top-level `QSenabled` in the session's own `qsick_pipe.json`, next to `port` and
+    `ws_token`: the file is rewritten in full on every launch, so anything not read back from it here
+    would reset. A nested `session.QSenabled` and the older `session.status_command` are also
+    accepted, because sessions created by the first version of this switch wrote it there.
+
+    Opt-in per session rather than global, because the question it answers is per account: one
     session may be a bot that should answer, while another on the same machine is a personal account
-    that should stay silent.
+    that should stay quiet.
     """
+    if session_flag_enabled(config):
+        return True
     block = config.get("session")
     block = block if isinstance(block, dict) else {}
-    value = block.get("status_command", config.get("status_command"))
-    return bool(value)
+    return bool(block.get("QSenabled") or block.get("status_command"))
 
 
 def set_session_status_command(tmp_id: str, enabled: bool,
@@ -361,8 +375,12 @@ def set_session_status_command(tmp_id: str, enabled: bool,
     block = config.get("session")
     block = block if isinstance(block, dict) else {}
     block["tmp_id"] = str(tmp_id)
-    block["status_command"] = bool(enabled)
+    # One place holds the answer. The old nested key is removed rather than left behind, so a stale
+    # `status_command: true` cannot contradict a `QSenabled: false`.
+    block.pop("status_command", None)
+    block.pop("QSenabled", None)
     config["session"] = block
+    config["QSenabled"] = bool(enabled)
     directory.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
     return config
@@ -2586,6 +2604,12 @@ class HeadlessManager:
         # 结构按新的格式带一层 session：
         #     { "session": { "tmp_id": "...", "port": 7540 } }
         # 保留旧的顶层 port，是因为已在运行的旧 DLL 仍读顶层字段；两个都写，谁读谁取。
+        # 这一份是整份重写，所以要显式把"不属于启动参数、但属于这个 session 的设置"带过来。
+        #
+        # 少了这一步，`#QS` 开关每启动一次就回到关：它是运维在这里按下的选择，而启动只该决定
+        # 端口、token、数据目录这些每次启动都要重新算的东西。
+        previous = read_session_config(tmp_id, self.root) if (
+            session_dir / PIPE_DLL_CONFIG).is_file() else {}
         (session_dir / PIPE_DLL_CONFIG).write_text(
             json.dumps({
                 # `port` is what this launch binds. `nowport` mirrors it for a freshly launched session --
@@ -2593,6 +2617,11 @@ class HeadlessManager:
                 # so a stopped session reports "nothing bound" rather than its last number.
                 "session": {"tmp_id": tmp_id, "port": int(port or instance.port),
                             "nowport": int(port or instance.port)},
+                # `#QS` 应答开关。字段名 `QSenabled`，顶层，和 DLL 读 `port` 的方式一致。
+                #
+                # 它属于这个 session 而不是这次启动，所以从上一份配置原样搬过来；没有上一份时
+                # 默认关闭（应答是要主动打开的行为）。
+                "QSenabled": session_status_command(previous),
                 # ABSOLUTE, and it has to be.
                 #
                 # The DLL resolves this path against the QQ process's working directory, which is the

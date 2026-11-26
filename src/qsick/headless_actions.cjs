@@ -318,6 +318,14 @@ const REQUIREMENTS = Object.freeze({
   // empty packet cannot decode, so every command answers 253). This op answers the question
   // directly: ask the client which methods exist.
   'service.methods': [],
+  // Invoke one method on a service, for the capabilities that exist but whose argument shapes are
+  // not published.
+  //
+  // Same class of tool as `oidb.call`: a transport, not a capability. Discovering that
+  // `Group.setIdentityTitleInfo` exists is half the answer; calling it with no arguments and reading
+  // the complaint is what reveals what it wants, and that beats guessing a struct shape and shipping
+  // an op that fails in a way nobody can debug.
+  'service.call': [],
   // A generic OIDB call, for the operations QQ exposes only as packets.
   //
   // Several capabilities have no kernel service method at all -- setting a member's title, adding a
@@ -1030,6 +1038,7 @@ function createActionDispatcher(options = {}) {
       'oidb.call',
       // Pure introspection: it reads property names off a service getter and takes no target.
       'service.methods',
+      'service.call',
       // Same reasoning for the private-file ops: they are addressed by `user_id`, and one of them
       // takes no target at all.
       'upload_private_file', 'private.file.download_url',
@@ -1082,6 +1091,64 @@ function createActionDispatcher(options = {}) {
       return { can_at_all: at.canAtAll,
         remain_at_all_count_for_group: resultInteger(at.RemainAtAllCountForGroup, 'RemainAtAllCountForGroup'),
         remain_at_all_count_for_uin: resultInteger(at.RemainAtAllCountForUin, 'RemainAtAllCountForUin') };
+    }
+    if (op === 'service.call') {
+      // Call one method on one service, with arguments supplied by the caller.
+      //
+      // Diagnostic, and honest about it: the four capabilities that have no op of their own -- a
+      // member's title, a reaction, a nudge, a join request -- were blocked on not knowing the
+      // argument shapes. Calling with no arguments and reading the error reveals them; inventing a
+      // struct shape and shipping an op around it produces a failure that is much harder to read.
+      //
+      // `args` is passed through untouched. Vanilla JS objects are what these methods take, and
+      // marshalling them here would be a second, wrong schema.
+      const serviceName = text(p.service === undefined ? '' : String(p.service));
+      if (!/^[A-Za-z]+$/.test(serviceName)) invalid('service must be a plain name such as Msg or Group');
+      const method = text(p.method === undefined ? '' : String(p.method));
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(method)) invalid('method must be a plain identifier');
+      if (p.args !== undefined && !Array.isArray(p.args)) invalid('args must be an array');
+      const args = Array.isArray(p.args) ? p.args : [];
+      if (args.length > 24) invalid('args may hold at most 24 entries');
+      const s = session();
+      const getter = s[`get${serviceName}Service`];
+      if (typeof getter !== 'function') {
+        fail('UNSUPPORTED', `this client has no get${serviceName}Service`, { service: serviceName });
+      }
+      const svc = getter.call(s);
+      if (!svc || typeof svc !== 'object') fail('UNSUPPORTED', `get${serviceName}Service returned nothing`);
+      if (typeof svc[method] !== 'function') {
+        fail('UNSUPPORTED', `${serviceName} service has no method ${method}`, {
+          service: serviceName, method,
+          methods: Object.getOwnPropertyNames(Object.getPrototypeOf(svc) || {})
+            .filter(key => key !== 'constructor').sort().slice(0, 500),
+        });
+      }
+      let raw;
+      try {
+        raw = await Promise.resolve(svc[method](...args));
+      } catch (error) {
+        // The complaint is the payload: it names the missing property or the wrong type, which is
+        // exactly what a caller probing an unpublished signature needs.
+        fail('UPSTREAM', `${serviceName}.${method}: ${String((error && error.message) || error).slice(0, 300)}`,
+          { service: serviceName, method, args });
+      }
+      if (session() !== s) fail('NOT_READY', 'QQNT session changed during service call');
+      // Result is reported as-is when JSON can express it; a Map or a class instance is described
+      // rather than silently serialised into an empty object.
+      let result;
+      try {
+        result = raw === undefined ? null : JSON.parse(JSON.stringify(raw));
+      } catch (error) {
+        result = { unserialisable: String((raw && raw.constructor && raw.constructor.name) || typeof raw) };
+      }
+      return {
+        service: serviceName,
+        method,
+        arg_count: args.length,
+        result,
+        // A void method returning nothing is still a successful call, and worth saying plainly.
+        returned: raw === undefined ? 'undefined' : typeof raw,
+      };
     }
     if (op === 'service.methods') {
       // List what the client's service objects actually expose.

@@ -4584,6 +4584,39 @@
         }
       ],
       "wire": "payload"
+    },
+    {
+      "name": "service_call",
+      "module": "system/service_call",
+      "class": "ServiceCallAction",
+      "category": "system",
+      "summary": "调用某个 QQNT 服务上的方法（诊断用；用于探未公开的参数签名）",
+      "status": "implemented",
+      "read_only": false,
+      "params": [
+        {
+          "name": "service",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": "服务名，如 Group / Msg"
+        },
+        {
+          "name": "method",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": "方法名，如 setIdentityTitleInfo"
+        },
+        {
+          "name": "args",
+          "kind": "list",
+          "required": false,
+          "default": null,
+          "desc": "按位置传给方法的参数；留空用于探签名"
+        }
+      ],
+      "wire": "payload"
     }
   ],
   "aliases": {

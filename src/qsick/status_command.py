@@ -59,8 +59,8 @@ def build_reply(*, version: str, uptime: str, account: str) -> str:
     """
     return "\n".join((
         "QSICK状态",
-        f"QSICK版本：{version}",
+        f"版本：{version}",
+        f"账号：{account}",
         f"运行时间：{uptime}",
-        f"当前账号：{account}",
-        f"欢迎访问{SITE}了解更多",
+        f"欢迎访问{SITE}",
     ))

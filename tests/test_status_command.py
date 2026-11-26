@@ -53,10 +53,10 @@ def test_the_reply_is_the_five_agreed_lines():
                                        account="3905548034")
     assert reply.splitlines() == [
         "QSICK状态",
-        "QSICK版本：0.3.0",
+        "版本：0.3.0",
+        "账号：3905548034",
         "运行时间：1小时 2分 3秒",
-        "当前账号：3905548034",
-        "欢迎访问http://www.sickcc.online/QSICK了解更多",
+        "欢迎访问http://www.sickcc.online/QSICK",
     ]
 
 
@@ -78,7 +78,7 @@ def session_root(tmp_path):
     directory.mkdir(parents=True)
     (directory / headless.PIPE_DLL_CONFIG).write_text(json.dumps({
         "session": {"tmp_id": "k3m9", "port": 7601, "nowport": 7601},
-        "port": 7601, "nowport": 7601,
+        "port": 7601, "nowport": 7601, "QSenabled": False,
     }), encoding="utf-8")
     return tmp_path
 
@@ -278,3 +278,87 @@ def test_the_segment_predicate_requires_every_segment_to_be_text():
     assert not is_status_command_segments(None)
     assert not is_status_command_segments([{"type": "text"}])
     assert not is_status_command_segments([{"nope": 1}])
+
+
+def test_the_flag_is_stored_under_QSenabled_at_the_top_level(session_root):
+    """The field name is part of the contract: the DLL and the operator both look for `QSenabled`,
+    next to `port` and `ws_token`, not nested somewhere of our own choosing."""
+    from qsick import headless
+
+    headless.set_session_status_command("k3m9", True, session_root)
+    raw = json.loads((headless.session_dll_dir(session_root) / "k3m9"
+                      / headless.PIPE_DLL_CONFIG).read_text(encoding="utf-8"))
+    assert raw["QSenabled"] is True
+
+
+def test_the_legacy_nested_spellings_are_still_read(session_root):
+    """Sessions written by the first version of this switch stored it under `session`."""
+    from qsick import headless
+
+    path = headless.session_dll_dir(session_root) / "k3m9" / headless.PIPE_DLL_CONFIG
+    for legacy in ({"session": {"QSenabled": True}}, {"session": {"status_command": True}}):
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+        assert headless.session_status_command(
+            headless.read_session_config("k3m9", session_root)) is True
+
+
+def test_turning_it_on_removes_the_legacy_keys(session_root):
+    """Two spellings that disagree is how a setting starts lying about itself."""
+    from qsick import headless
+
+    path = headless.session_dll_dir(session_root) / "k3m9" / headless.PIPE_DLL_CONFIG
+    path.write_text(json.dumps({"session": {"tmp_id": "k3m9", "status_command": True}}),
+                    encoding="utf-8")
+    headless.set_session_status_command("k3m9", False, session_root)
+    config = headless.read_session_config("k3m9", session_root)
+    assert headless.session_status_command(config) is False
+    assert "status_command" not in config["session"]
+    assert "QSenabled" not in config["session"]
+
+
+def test_starting_a_session_keeps_the_switch_on(tmp_path, monkeypatch):
+    """The reported bug: every launch reset it to off.
+
+    `_start_pipe` rewrites `qsick_pipe.json` in full, so anything it does not carry over is lost. The
+    switch belongs to the session, not to the launch, and this is what pins that.
+    """
+    from qsick import headless
+
+    directory = headless.session_dll_dir(tmp_path) / "k3m9"
+    directory.mkdir(parents=True)
+    (directory / headless.PIPE_DLL_CONFIG).write_text(json.dumps({
+        "session": {"tmp_id": "k3m9", "port": 7601, "nowport": 7601},
+        "port": 7601, "nowport": 7601, "QSenabled": True,
+    }), encoding="utf-8")
+
+    # The launch path re-derives the whole file. Reproduce just that step rather than starting QQ:
+    # the failure was in which keys survive the rewrite, not in the launch itself.
+    previous = headless.read_session_config("k3m9", tmp_path)
+    rewritten = {
+        "session": {"tmp_id": "k3m9", "port": 7602, "nowport": 7602},
+        "QSenabled": headless.session_status_command(previous),
+        "port": 7602, "nowport": 7602, "ws_token": "abc",
+    }
+    (directory / headless.PIPE_DLL_CONFIG).write_text(json.dumps(rewritten), encoding="utf-8")
+
+    assert headless.session_status_command(
+        headless.read_session_config("k3m9", tmp_path)) is True
+
+
+def test_a_brand_new_session_defaults_to_off():
+    """Answering is something an operator switches on; a fresh session has to keep quiet."""
+    from qsick import headless
+
+    assert headless.session_status_command({}) is False
+    assert headless.session_status_command({"session": {}}) is False
+
+
+def test_the_launch_path_carries_the_flag_forward():
+    """Guards the source-level wiring: the rewrite must consult the previous config."""
+    source = (Path(ROOT) / "src" / "qsick" / "headless.py").read_text(encoding="utf-8")
+    start = source.index("def _start_pipe")
+    end = source.index("def ", start + 10)
+    body = source[start:end]
+    assert "read_session_config(tmp_id" in body, "the launch must read the previous config"
+    assert "\"QSenabled\": session_status_command(previous)" in body, \
+        "the launch must carry the flag into the rewritten file"
