@@ -32,27 +32,34 @@ Msg.setMsgEmojiLikes(peer, msgSeq, msgId, emojiId, setFlag)
 读回用 `Msg.getMsgEmojiLikesList(peer, msgSeq, emojiId, emojiType, cookie, isFirst, count)`
 （7 个参数，原生断言）。注意 `emojiType`：长度大于 3 的 id 是 `"2"`，否则 `"1"`。
 
-## 二、设置群成员专属头衔 —— 形状接近，卡在群功能开关
+## 二、设置群成员专属头衔 —— 两个候选方法都不是它
+
+试过两个方法，都不是 OneBot 意义上的「专属头衔」：
+
+**`Group.setIdentityTitleInfo(obj)`** —— 单对象参数。字段二分证明 `groupId` 是唯一承重字段
+（去掉它错误从 `10006` 退回 `10005 not group member`）。`groupId` 传字符串时错误变成
+`20000 medal not available`；即使该群已启用头衔，这个错误不变。名字里的 "Title" 指的应该是
+**群勋章**。
+
+**`Group.setGroupIdentitySpec(obj)`** —— 单对象参数，这条能一路跟着错误走：
 
 ```
-Group.setIdentityTitleInfo(obj)
+{}                                        -> invalid SetSpecReq.GroupCode: value must be greater than 0
+{groupCode}                               -> invalid SetSpecReq.Infos: value must contain at least 1 item(s)
+{groupCode, infos: [{}]}                  -> invalid SetSpecReq.Infos[0]: ...
+                                            caused by: invalid SpecInfo.SpecType: value must not be in list [UNKNOWN]
+{groupCode, infos: [{specType: 1}]}       -> 10004 udc数据错误 ... [oidb] error login sig
+{groupCode, infos: [{specType: 2}]}       -> 10001 错误互动标识ID
 ```
 
-单个对象参数。**字段二分结论**：`groupId` 是唯一承重的字段——去掉它错误从
-`10006 other error(0x899_0)` 退回 `10005 not group member(0x899_0)`；其余十几个候选
-（`uid` / `memberUid` / `uids` / `uin` / `memberUin` / `title` / `specialTitle` / `duration` …）
-全部无效，加不加都一样。
+字段名是 `groupCode`（大写 C）、`infos`（数组）、内层 `specType`（枚举，1 和 2 都有不同反应）。
+`10001 错误互动标识ID` 说明这条也是**互动标识**，不是头衔。
 
-关键一步：`groupId` 传**字符串**而不是数字时，错误变成
+**`Group.getIdentityList(groupId, ?)`** —— 读侧，2 个参数。第二个参数给空串时报
+`0x88d_131 ... rule type not match appid`，即它要一个 appid 类的值，不是随便的字符串。
 
-```
-20000 medal not available
-```
-
-这不再是参数问题，是**群没有开通头衔（勋章）功能**。测试群 2169010946 只有 3 个成员，大概率
-没有这个功能。
-
-所以下一步不是继续猜字段，而是换一个有头衔功能的群再试。成员标识的字段名仍未确定。
+结论：`headless_actions.cjs` 里那条原始判断（`No verified title-setting service signature`）
+目前仍然站得住 —— 在这个客户端的 Group 服务上，找不到签名可验证的「设专属头衔」方法。
 
 ## 三、戳一戳 —— 形状未知
 
@@ -77,7 +84,7 @@ Msg.sendNudge(a, b, c)
 验证方式：戳一戳成功会产生 `notice.notify`，`sub_type` 为 `poke`，带 `user_id`（发起者）、
 `target_id`（被戳者）、`group_id`。事件流里已经有一条真实的 poke 通知可以对照。
 
-## 四、入群 / 邀请请求的同意与拒绝 —— 需要真实待处理请求
+## 四、入群 / 邀请请求的同意与拒绝 —— 卡在读取这一步
 
 ```
 Group.operateSysNotify(a, b)
@@ -89,10 +96,18 @@ Group.operateSysNotify(a, b)
 Cannot convert undefined or null to object
 ```
 
-说明它要展开某个属性，而那个属性必须由真实的通知对象提供。**没有待处理请求就无法测**。
+说明它要展开某个属性，而那个属性必须来自真实的通知对象。
 
-配套方法存在：`Group.fetchGroupNotify`、`Group.getGroupNotifiesUnreadCount`、
-`Group.setRcvJoinVerifyMsg`。合理的顺序是先取真实通知，再从它的字段构造操作参数。
+读侧的问题：`Group.fetchGroupNotify(x)` 是 **1 个参数的触发器**，返回只有 `{result: 0}`
+—— 通知不会作为返回值给出，而是通过内核 Group **监听器**异步推送
+（`addKernelGroupListener` 的 notify 回调）。QSICK 目前没有注册这类监听器，所以待处理请求
+拿不到。
+
+也就是说这一步缺的不是猜测，是一段接线：注册监听器 → 收到通知对象 → 按其字段构造操作。
+事件流里也确认没有请求类事件（只有 poke 这类 `notice.notify`）。
+
+配套方法都在：`fetchGroupNotify`、`getGroupNotifiesUnreadCount`、`clearGroupNotifies`、
+`setRcvJoinVerifyMsg`、`operateSysNotifyV2`。
 
 ## 附：几条通用经验
 
