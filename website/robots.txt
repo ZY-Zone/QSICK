@@ -1,5 +1,0 @@
-User-agent: *
-Allow: /QSICK/
-Disallow: /QSICK/healthz
-
-Sitemap: http://www.sickcc.online/QSICK/sitemap.xml

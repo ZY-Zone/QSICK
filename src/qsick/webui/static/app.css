@@ -566,7 +566,9 @@ label > input, label > select, label > textarea { display: block; width: 100%; m
    buttons, which is what a session row now carries. */
 .session-row {
   display: grid;
-  grid-template-columns: minmax(150px, 1.2fr) 90px 130px minmax(300px, 1fr);
+  /* Five cells: name, state, port, the #QS switch, and the actions. The switch column is sized for a
+     checkbox plus the two-character label, which is all it holds. */
+  grid-template-columns: minmax(150px, 1.2fr) 90px 130px 84px minmax(300px, 1fr);
   align-items: center; gap: 12px;
   padding: 10px 0; border-top: 1px solid var(--line);
 }
@@ -587,6 +589,9 @@ label > input, label > select, label > textarea { display: block; width: 100%; m
 .session-port-note { display: block; margin-top: 3px; font-size: 10.5px; line-height: 1.3; }
 .session-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
 .session-actions button { font-size: 12px; }
+/* The #QS switch sits in its own column: it is a per-session setting, not one of the row's actions,
+   and putting it in the button cluster made it look like something that would restart the session. */
+.session-command { white-space: nowrap; }
 .switch-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .switch-inline input { width: auto; }
 

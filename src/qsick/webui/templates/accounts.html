@@ -501,9 +501,44 @@
       });
       actions.appendChild(deleteBtn);
 
+      // #QS 开关：这个 session 收到内容为 #QS 的消息时，用该账号回一条状态。
+      //
+      // 放在每个 session 上而不是全局，因为"要不要应答"是账号的属性：同一台机器上可以有一个
+      // 应答的机器人号，和一个不该出声的私人号。写入即刻生效（应答器每次从会话列表读这个标记），
+      // 所以不做 needs_restart 那套提示。未登录时禁用：没有账号就没有可归属的回信。
+      var commandWrap = document.createElement("label");
+      // 复用已有的 .switch-inline（内联复选框 + 文字），不新增一套样式。
+      commandWrap.className = "session-command switch-inline";
+      commandWrap.title = "收到内容为 #QS 的消息时，用这个账号回复一条 QSICK 状态";
+      var commandToggle = document.createElement("input");
+      commandToggle.type = "checkbox";
+      commandToggle.checked = Boolean(item.status_command);
+      commandToggle.disabled = !item.logged_in;
+      var commandLabel = document.createElement("span");
+      commandLabel.textContent = " #QS";
+      commandWrap.appendChild(commandToggle);
+      commandWrap.appendChild(commandLabel);
+      commandToggle.addEventListener("change", async function () {
+        commandToggle.disabled = true;
+        try {
+          await call("/api/sessions/" + item.tmp_id + "/status-command", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled: commandToggle.checked })
+          });
+        } catch (error) {
+          commandToggle.checked = !commandToggle.checked;
+          alert("设置 #QS 开关失败：" + error.message);
+        } finally {
+          commandToggle.disabled = !item.logged_in;
+        }
+        loadSessions();
+      });
+
       row.appendChild(name);
       row.appendChild(state);
       row.appendChild(port);
+      row.appendChild(commandWrap);
       row.appendChild(actions);
       return row;
     }

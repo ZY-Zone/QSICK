@@ -1920,6 +1920,40 @@ def create_app(runtime: "Runtime") -> FastAPI:
             "needs_restart": was_running and effective != (old_nowport or old_port),
         })
 
+    @app.post("/api/sessions/{tmp_id}/status-command")
+    async def sessions_status_command(tmp_id: str, request: Request) -> JSONResponse:
+        """Turn the `#QS` responder on or off for one session.
+
+        Unlike the port, this takes effect at once: the responder reads the flag from the session list
+        the three-second poll maintains, so the next poll after this write is enough. Nothing needs a
+        restart, which is why the reply does not carry a `needs_restart` field.
+        """
+        denied = guard(request)
+        if denied:
+            return denied
+        try:
+            payload = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+        if not isinstance(payload, dict) or "enabled" not in payload:
+            return JSONResponse({"ok": False, "error": "body must be {\"enabled\": true|false}"},
+                                status_code=400)
+
+        from .. import headless as headless_mod
+
+        directory = headless_mod.session_dll_dir() / tmp_id
+        if not (directory / headless_mod.PIPE_DLL_CONFIG).is_file():
+            return JSONResponse({"ok": False, "error": f"找不到 session {tmp_id!r} 的配置"},
+                                status_code=404)
+        enabled = bool(payload.get("enabled"))
+        try:
+            await asyncio.to_thread(headless_mod.set_session_status_command, tmp_id, enabled)
+        except OSError as exc:
+            return JSONResponse({"ok": False, "error": f"写入配置失败：{exc}"}, status_code=500)
+        logmod.get_logger("WebUI.Sessions").debug(
+            "status command switch", tmp_id=tmp_id, enabled=enabled)
+        return JSONResponse({"ok": True, "tmp_id": tmp_id, "status_command": enabled})
+
     @app.post("/api/sessions/autostart")
     async def sessions_autostart(request: Request) -> JSONResponse:
         """Read or set which pipe session starts with QSICK.

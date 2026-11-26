@@ -1450,6 +1450,68 @@ class Runtime:
             rows.append(row)
         return rows
 
+    def status_command_accounts(self) -> set[str]:
+        """The uins whose session has the `#QS` responder switched on.
+
+        Read from the session rows the three-second poll already maintains: re-reading the config
+        files per message would put file I/O on the inbound path, and the answer only has to be
+        fresh to within a poll.
+
+        A session that is switched on but not logged in contributes nothing -- there is no account to
+        attribute the reply to, and the message that arrives carries a uin regardless.
+        """
+        allowed: set[str] = set()
+        for row in self.session_rows():
+            if not row.get("status_command"):
+                continue
+            account = row.get("account") or {}
+            uin = str(account.get("uin") or "").strip()
+            if uin:
+                allowed.add(uin)
+        return allowed
+
+    async def answer_status_command(self, event: dict[str, Any]) -> bool:
+        """Answer one `#QS` message, if this account should.
+
+        Returns whether a reply was attempted, which is what the tests assert on -- "nothing
+        happened" and "a reply was sent elsewhere" must not look the same.
+
+        The reply goes out through `invoke`, so it is an ordinary send: the account's own session
+        carries it, plugin outbound restrictions apply, and it appears in the message cache like any
+        other message the account sends.
+        """
+        from .status_command import build_reply, is_status_command_segments
+
+        if str(event.get("post_type") or "") != "message":
+            return False
+        uin = str(event.get("self_id") or "").strip()
+        if not uin or uin not in self.status_command_accounts():
+            return False
+        if not is_status_command_segments(event.get("message")):
+            return False
+
+        info = self.info()
+        reply = build_reply(version=str(__version__), uptime=str(info.get("uptime_human") or ""),
+                            account=uin)
+        params: dict[str, Any] = {"message": reply, "account": uin}
+        if str(event.get("message_type") or "") == "group" and event.get("group_id") is not None:
+            action = "send_group_msg"
+            params["group_id"] = event["group_id"]
+        else:
+            # A private message's sender is `user_id`; `target_id` is what the event uses for the
+            # conversation, and both are present on a real event. Prefer the sender: replying to
+            # `target_id` would answer the wrong side of a self-conversation.
+            peer = event.get("user_id") or event.get("target_id")
+            if peer in (None, ""):
+                return False
+            action = "send_private_msg"
+            params["user_id"] = peer
+        try:
+            await self.invoke(action, params)
+        except Exception as exc:  # noqa: BLE001 - a status reply must never disturb the event flow
+            log.warn("status command reply failed", account=uin, error=f"{type(exc).__name__}: {exc}")
+        return True
+
     def _on_link_change(self, link: Any) -> None:
         """React to a state push without blocking the link's own task."""
         if self._stopping.is_set():
@@ -2156,6 +2218,13 @@ class Runtime:
         a protocol without being selectable as a chat protocol.
         """
         await self._cache_pipeline(event)
+        # The `#QS` responder runs as its own task, after the cache copy and before the fan-out only
+        # in ordering terms -- it does not hold either up. A reply that fails, or a send that blocks
+        # on a slow account, must not delay the clients waiting for this event; and a client must
+        # not be able to see the command without the cache having recorded it first.
+        if str(event.get("post_type") or "") == "message":
+            self._tasks.append(asyncio.create_task(
+                self.answer_status_command(event), name="qsick-status-command"))
         await self.hub.broadcast(event)
         await self.reverse.broadcast(event)
 

@@ -332,6 +332,42 @@ def write_session_ports(tmp_id: str, root: Path | str = ROOT_NAME,
     return config
 
 
+def session_status_command(config: dict[str, Any]) -> bool:
+    """Whether this session answers the `#QS` status command.
+
+    Opt-in per session, and read from the nested block the same way the port is. Kept in the session
+    config rather than in the runtime's settings because the question it answers is per account: one
+    session may be a bot that should answer, while another on the same machine is a personal account
+    that should stay silent.
+    """
+    block = config.get("session")
+    block = block if isinstance(block, dict) else {}
+    value = block.get("status_command", config.get("status_command"))
+    return bool(value)
+
+
+def set_session_status_command(tmp_id: str, enabled: bool,
+                               root: Path | str = ROOT_NAME) -> dict[str, Any]:
+    """Turn the `#QS` responder on or off for one session, leaving the rest of its config alone."""
+    directory = session_dll_dir(root) / str(tmp_id)
+    config_path = directory / PIPE_DLL_CONFIG
+    config: dict[str, Any] = {}
+    if config_path.is_file():
+        try:
+            loaded = json.loads(config_path.read_text(encoding="utf-8"))
+            config = loaded if isinstance(loaded, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            config = {}
+    block = config.get("session")
+    block = block if isinstance(block, dict) else {}
+    block["tmp_id"] = str(tmp_id)
+    block["status_command"] = bool(enabled)
+    config["session"] = block
+    directory.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    return config
+
+
 def read_session_dirs(root: Path | str = ROOT_NAME) -> list[dict[str, Any]]:
     """Describe every session directory under `dll/`, newest first.
 
@@ -378,6 +414,9 @@ def read_session_dirs(root: Path | str = ROOT_NAME) -> list[dict[str, Any]]:
             "nowport": nowport,
             "path": str(entry),
             "has_dll": (entry / PIPE_DLL_NAME).is_file(),
+            # Carried in the same dict so every consumer -- the page, the runtime's responder --
+            # reads one answer rather than each re-parsing the config.
+            "status_command": session_status_command(config),
         })
     # Newest first: the session just started is the one being looked at.
     sessions.sort(key=lambda item: Path(item["path"]).stat().st_mtime, reverse=True)
