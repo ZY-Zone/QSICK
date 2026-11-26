@@ -2302,7 +2302,7 @@ def create_app(runtime: "Runtime") -> FastAPI:
                 {
                     "message_id": message.message_id,
                     "group_id": int(message.chat_id),
-                    "sender": message.sender_name or str(message.sender_uin),
+                    "sender": message.sender_label,
                     "text": message.text,
                     "time": message.time,
                 }

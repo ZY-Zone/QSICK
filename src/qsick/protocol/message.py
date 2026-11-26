@@ -33,6 +33,24 @@ class Message:
     def text(self) -> str:
         return preview(self.elements, limit=10_000)
 
+    @property
+    def sender_label(self) -> str:
+        """`昵称（QQ号）` — both halves are needed, for different readers.
+
+        The nickname is what a person recognises; the number is the only part a client can act on
+        (mention, look up, correlate with a log line). Showing one alone loses the other: a name
+        matching several members is ambiguous, and a bare number says nothing at a glance.
+        """
+        name = self.sender_name.strip()
+        uin = self.sender_uin
+        if name and uin:
+            return f"{name}（{uin}）"
+        if name:
+            return name
+        if uin:
+            return str(uin)
+        return "未知"
+
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "Message":
         chat = payload.get("chat") or {}

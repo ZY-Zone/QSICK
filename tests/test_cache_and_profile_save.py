@@ -149,3 +149,30 @@ def test_a_rejected_save_leaves_the_running_config_untouched(webui):
     assert response.status_code == 400, response.text
     assert runtime.config.onebot.host == host_before
     assert runtime.config.onebot.port == port_before
+
+def test_the_sender_label_carries_both_name_and_number():
+    """`昵称（QQ号）`: the name is readable, the number is the part a client can act on."""
+    message = Message.from_payload(cached_payload(
+        {"user_id": 3572474519, "nickname": "洛", "card": "", "role": "member"}))
+    assert message.sender_label == "洛（3572474519）"
+
+
+def test_the_sender_label_degrades_without_inventing_parts():
+    """Whichever half is known is shown; neither is invented to fill the other."""
+    named = Message.from_payload(cached_payload({"user_id": 0, "nickname": "洛"}))
+    assert named.sender_label == "洛"
+    numbered = Message.from_payload(cached_payload({"user_id": 1410675509, "nickname": ""}))
+    assert numbered.sender_label == "1410675509"
+    neither = Message.from_payload(cached_payload({}))
+    assert neither.sender_label == "未知"
+
+
+def test_the_messages_page_renders_the_label(webui):
+    """The page must show it too, not just the object."""
+    from qsick.protocol.message import Message
+
+    client, runtime = webui
+    runtime.cache_store.put(Message.from_payload(cached_payload(
+        {"user_id": 3572474519, "nickname": "洛", "card": "", "role": "member"})))
+    body = client.get("/messages").text
+    assert "洛（3572474519）" in body, body[:400]
