@@ -678,7 +678,7 @@
       "module": "group_file/download_file",
       "class": "DownloadFileAction",
       "category": "group_file",
-      "summary": "下载消息里的文件元素到本地（群聊与私聊都支持）",
+      "summary": "下载消息里的文件元素到本地（群聊与私聊都支持；只给 message_id 时从缓存取 element_id）",
       "status": "implemented",
       "read_only": false,
       "params": [
@@ -692,9 +692,9 @@
         {
           "name": "element_id",
           "kind": "str",
-          "required": true,
+          "required": false,
           "default": null,
-          "desc": "该文件元素的 element_id（消息里带的）"
+          "desc": "留空则从消息缓存读取"
         },
         {
           "name": "chat_type",
@@ -730,6 +730,13 @@
           "required": false,
           "default": "",
           "desc": "本地保存路径；留空由客户端决定"
+        },
+        {
+          "name": "index",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": "一条消息里有多个可下载元素时选第几个（从 0 起）"
         }
       ],
       "op": "download_file",

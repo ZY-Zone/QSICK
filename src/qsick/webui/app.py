@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 import os
 import re
 import secrets
+import shutil
 import time
 from urllib.parse import quote
 from pathlib import Path
@@ -2434,7 +2435,51 @@ def create_app(runtime: "Runtime") -> FastAPI:
             if not file_id:
                 return PlainTextResponse("the file element carries no file id", status_code=404)
             if not target.is_group:
-                return PlainTextResponse("private file transfer is not supported here", status_code=501)
+                # A private file has no URL we can produce: the command that would answer one (OIDB
+                # 0xE37_800) is not mapped yet, so this used to be a flat 501.
+                #
+                # Downloading the element is the route that works -- `Msg.downloadRichMedia` handles
+                # C2C as well as groups, and it needs message_id + element_id, both of which the
+                # element carries (the cache now keeps `element_id` for exactly this reason).
+                element_id = str(data.get("element_id") or "")
+                if not element_id:
+                    return PlainTextResponse(
+                        "this cached private-file element has no element_id (recorded before elements "
+                        "carried one), so the download cannot be correlated; re-receive the message",
+                        status_code=409)
+                try:
+                    answer = await runtime.invoke("download_file", {
+                        "message_id": str(wanted),
+                        "element_id": element_id,
+                        "user_id": int(target.chat_id),
+                        "account": str(getattr(target, "account", "") or ""),
+                    })
+                except Exception as exc:  # noqa: BLE001 - report the reason, not a stack trace
+                    return PlainTextResponse(f"private file download failed: {exc}", status_code=502)
+                payload = answer.get("data") if isinstance(answer, dict) else None
+                staged = payload.get("file_path") if isinstance(payload, dict) else None
+                if not (isinstance(staged, str) and staged):
+                    message = (answer.get("message") if isinstance(answer, dict) else "") or "no local path returned"
+                    return PlainTextResponse(f"private file download failed: {message}", status_code=502)
+                source = Path(staged)
+                if not source.is_file():
+                    return PlainTextResponse(
+                        f"the client reported {staged!r} but nothing is there", status_code=502)
+                # Copy it into the download directory: `/downloads/...` is served from there, and the
+                # client's own cache location is not ours to hand out.
+                directory = downloads.export_dir(_QSICK_ROOT)
+                name = downloads.name_for(
+                    wanted, index, str(data.get("file_name") or data.get("name") or ""), file_id)
+                destination = directory / name
+                try:
+                    directory.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, destination)
+                except OSError as exc:
+                    return PlainTextResponse(f"could not keep the downloaded file: {exc}", status_code=500)
+                logmod.get_logger("WebUI.Messages").debug(
+                    "downloaded a private file for the cache page",
+                    message_id=wanted, name=name, size=destination.stat().st_size)
+                return RedirectResponse(f"/downloads/{quote(name)}")
             try:
                 answer = await runtime.invoke("get_group_file_url", {
                     "group_id": int(target.chat_id),

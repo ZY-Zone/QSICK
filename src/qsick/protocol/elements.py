@@ -58,6 +58,14 @@ MEDIA_TYPES = {"image", "record", "video", "file", "flashtransfer", "flash_file"
 #: so emitting `flash_file` reached it as an unrecognised segment. Old payloads are still accepted.
 _ELEMENT_ALIASES = {"flash_file": "flashtransfer"}
 
+#: Element fields that address a media item for a later download.
+#:
+#: `element_id` is the kernel's own handle for one element inside a message; `file_sub_id` and `md5`
+#: are what a private file's URL command needs; `download_url` is filled only when QQ supplied one;
+#: `path`/`local_path` say where the client already put the bytes. They travel on the OneBot segment
+#: as extension fields because the standard shape has nowhere else to put them.
+_MEDIA_IDENTITY_KEYS = ("element_id", "file_sub_id", "md5", "download_url", "path", "local_path")
+
 
 @dataclass(slots=True)
 class Element:
@@ -275,6 +283,21 @@ def _media_data(d: dict[str, Any], *, summary_key: str | None = None, extra: tup
     size = d.get("file_size", d.get("size"))
     if size is not None:
         out["file_size"] = size
+    # Identifiers a later download needs, carried through the OneBot segment shape.
+    #
+    # `media.download` correlates its completion callback by (message_id, element_id), and the
+    # private-file URL command wants the md5 -- but a OneBot `file`/`image`/`record`/`video` segment
+    # has no standard slot for either. Dropping them here is what made a cached private file
+    # undownloadable: the event's `message` field is built by `to_onebot`, and the message cache
+    # stores exactly that shape, so `element_id` never reached storage. `set_media_path` matches on
+    # the same field, so it silently returned False for every file as well.
+    #
+    # These are extensions, like `width`/`height` below: nothing that reads the standard fields
+    # changes, and a client that does not know them ignores them.
+    for key in _MEDIA_IDENTITY_KEYS:
+        value = d.get(key)
+        if value is not None and value != "":
+            out[key] = str(value)
     # Width/height are what the client needs to reserve layout space before the media
     # loads, and they are already in the element from the native picture/video fields.
     # They are kept as an extension (NapCat's schema omits them) so nothing that reads
@@ -403,6 +426,13 @@ def _media_in(data: dict[str, Any]) -> dict[str, Any]:
     for key in ("file", "url", "name", "file_id", "file_size", "path"):
         if data.get(key) is not None:
             out["file_id" if key == "file" else key] = data[key]
+    # The identity fields have to survive this direction too. `to_onebot` now writes them onto the
+    # segment, and a message read back out of the cache is parsed here -- a whitelist that dropped
+    # them again would put `element_id` back out of reach for exactly the download that needs it.
+    for key in _MEDIA_IDENTITY_KEYS:
+        value = data.get(key)
+        if value is not None and value != "":
+            out[key] = str(value)
     # 图片子类型必须原样带过这一层。QQ 用 picSubType 区分"图片"与"表情"，宿主
     # 的 prepareImage 读不到就按 NORMAL(0) 发——收藏表情因此变成一张普通图片，
     # 动图也不再被当表情渲染。OneBot 客户端写 `sub_type`，WebUI 上传表单写
