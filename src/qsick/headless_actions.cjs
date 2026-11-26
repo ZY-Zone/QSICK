@@ -1468,19 +1468,51 @@ function createActionDispatcher(options = {}) {
       // same index the reaction-listing op reads, filled by the receive path.
       const ref = options.messageRefs instanceof Map
         ? options.messageRefs.get(String(p.message_id)) : undefined;
-      if (!object(ref) || !object(ref.peer) || typeof ref.msgSeq !== 'string') {
-        fail('NOT_FOUND', 'No cached native reference for this message; a reaction needs a received message');
-      }
-      const chatType = Number(ref.peer.chatType);
-      if (chatType !== 1 && chatType !== 2) fail('UNSUPPORTED', 'Reactions support only C2C and group messages');
       const emojiId = text(p.emoji_id === undefined ? '128077' : String(p.emoji_id), 'emoji_id', false);
       if (!emojiId) invalid('emoji_id is required');
       // Boolean, not a number: `1` is how the client says "remove", so coercing would invert the
       // meaning of the call.
       const setFlag = p.set === undefined ? true : p.set === true || p.set === 'true';
-      const peer = { chatType, peerUid: String(ref.peer.peerUid), guildId: '' };
+
+      let chatType;
+      let peerUid;
+      let msgSeq;
+      if (object(ref) && object(ref.peer) && typeof ref.msgSeq === 'string') {
+        chatType = Number(ref.peer.chatType);
+        peerUid = String(ref.peer.peerUid);
+        msgSeq = ref.msgSeq;
+      } else {
+        // Fallback for a message this process has not indexed.
+        //
+        // `messageRefs` is filled from history reads, so a message that just arrived is not in it --
+        // and a reaction is almost always to a message that just arrived. The caller can supply the
+        // conversation and the sequence instead; both are on the event it received.
+        const groupId = p.group_id === undefined ? undefined : id(p.group_id, 'group_id');
+        const userId = p.user_id === undefined ? undefined : id(p.user_id, 'user_id');
+        if (groupId !== undefined) {
+          chatType = 2;
+          peerUid = String(groupId);
+        } else if (userId !== undefined) {
+          chatType = 1;
+          peerUid = await resolveUid(userId);
+          if (typeof peerUid !== 'string' || !/^u_[A-Za-z0-9_-]+$/.test(peerUid)) {
+            fail('UNSUPPORTED', 'No verified peer UID for this account; a private reaction needs it');
+          }
+        } else {
+          fail('NOT_FOUND',
+            'No cached native reference for this message; pass group_id (or user_id) and message_seq '
+            + 'from the message event');
+        }
+        const seq = text(p.message_seq === undefined ? '' : String(p.message_seq));
+        if (!seq || seq === '0') {
+          fail('INVALID_PARAMS', 'message_seq is required when the message is not in the cache');
+        }
+        msgSeq = seq;
+      }
+      if (chatType !== 1 && chatType !== 2) fail('UNSUPPORTED', 'Reactions support only C2C and group messages');
+      const peer = { chatType, peerUid: String(peerUid), guildId: '' };
       const msg = service(s, 'Msg', REQUIREMENTS[op].slice(1));
-      const response = await msg.setMsgEmojiLikes(peer, ref.msgSeq, String(p.message_id),
+      const response = await msg.setMsgEmojiLikes(peer, String(msgSeq), String(p.message_id),
         emojiId, setFlag);
       if (session() !== s) fail('NOT_READY', 'QQNT session changed during reaction');
       const result = object(response) ? response : {};

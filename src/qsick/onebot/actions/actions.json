@@ -3916,7 +3916,7 @@
       "module": "interaction/set_msg_emoji_like",
       "class": "SetMsgEmojiLikeAction",
       "category": "interaction",
-      "summary": "设置消息表情回应",
+      "summary": "设置消息表情回应（收到即可回应；会话与序号留空时从消息缓存推断）",
       "status": "implemented",
       "read_only": false,
       "params": [
@@ -3940,6 +3940,27 @@
           "required": false,
           "default": true,
           "desc": ""
+        },
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": "消息所在群；留空时从缓存推断"
+        },
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": "私聊对方；留空时从缓存推断"
+        },
+        {
+          "name": "message_seq",
+          "kind": "str",
+          "required": false,
+          "default": null,
+          "desc": "消息序号；留空时从缓存推断"
         }
       ],
       "wire": "core"

@@ -150,3 +150,35 @@ def test_the_op_is_declared_and_handled():
     end = source.index("});", start)
     assert "'message.emoji_like':" in source[start:end]
     assert "op === 'message.emoji_like'" in source
+
+
+@requires_node
+def test_an_unindexed_message_can_be_reacted_to_with_explicit_parameters():
+    """`messageRefs` only holds messages read from history, and a reaction almost always targets a
+    message that just arrived. Without this fallback the op could not do the one thing it is for."""
+    result = dispatch(
+        "await d.execute('message.emoji_like', "
+        "{message_id: '1', emoji_id: '128512', group_id: '2169010946', message_seq: '1464'})",
+        refs="new Map()")
+    call_seen = result["calls"][0]
+    assert call_seen["peer"] == {"chatType": 2, "peerUid": "2169010946", "guildId": ""}
+    assert call_seen["seq"] == "1464"
+
+
+@requires_node
+def test_explicit_parameters_do_not_override_an_indexed_message():
+    result = dispatch(
+        "await d.execute('message.emoji_like', {message_id: '1', group_id: '999999', message_seq: '7'})")
+    # The indexed peer and seq win: they came from the client itself.
+    assert result["calls"][0]["peer"]["peerUid"] == "2169010946"
+    assert result["calls"][0]["seq"] == "1464"
+
+
+@requires_node
+def test_a_missing_sequence_is_reported_not_guessed():
+    result = dispatch(
+        "await d.execute('message.emoji_like', {message_id: '1', group_id: '2169010946'})",
+        refs="new Map()")
+    assert result["code"] == "INVALID_PARAMS"
+    assert "message_seq" in result["message"]
+    assert result["calls"] == []
