@@ -678,10 +678,60 @@
       "module": "group_file/download_file",
       "class": "DownloadFileAction",
       "category": "group_file",
-      "summary": "",
+      "summary": "下载消息里的文件元素到本地（群聊与私聊都支持）",
       "status": "implemented",
       "read_only": false,
-      "params": [],
+      "params": [
+        {
+          "name": "message_id",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": "文件所在消息"
+        },
+        {
+          "name": "element_id",
+          "kind": "str",
+          "required": true,
+          "default": null,
+          "desc": "该文件元素的 element_id（消息里带的）"
+        },
+        {
+          "name": "chat_type",
+          "kind": "str",
+          "required": false,
+          "default": "",
+          "desc": "group / private；留空则按 group_id / user_id 推断"
+        },
+        {
+          "name": "chat_id",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "group_id",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": "群号（chat_type=group 时可代替 chat_id）"
+        },
+        {
+          "name": "user_id",
+          "kind": "int",
+          "required": false,
+          "default": null,
+          "desc": "好友号（chat_type=private 时可代替 chat_id）"
+        },
+        {
+          "name": "file_path",
+          "kind": "str",
+          "required": false,
+          "default": "",
+          "desc": "本地保存路径；留空由客户端决定"
+        }
+      ],
       "op": "download_file",
       "wire": "pending"
     },
