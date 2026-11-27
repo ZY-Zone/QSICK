@@ -41,6 +41,11 @@ import sys
 #: directory holding this file, which is the only stable anchor for the entry script.
 ENTRY = os.path.join(SPECPATH, "launcher.py")
 
+#: Built from the artwork by `packaging/make_icon.py`; committed so a build does not depend on Pillow
+#: or on the original PNG being present. Eight sizes from 16 to 256, because Windows picks a
+#: different one per surface (title bar, taskbar, Alt+Tab, large-icon view).
+ICON = os.path.join(SPECPATH, "qsick.ico")
+
 #: Direct dependencies from `pyproject.toml`, plus the distribution names that differ from the import
 #: names (`python-multipart` is imported as `python_multipart`, and older code says `multipart`).
 #:
@@ -148,6 +153,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=ICON,
 )
 
 coll = COLLECT(

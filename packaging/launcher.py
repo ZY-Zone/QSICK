@@ -159,12 +159,83 @@ def show_error(root: Path, log_path: Path, detail: str) -> None:
         print(message)
 
 
+def show_info(title: str, message: str) -> None:
+    try:
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(None, message, title, 0x40)
+    except Exception:  # noqa: BLE001
+        print(message)
+
+
+#: `QSICK.exe --fetch-runtime` replaces `获取QQnt.bat`.
+#:
+#: The two are not the same path. QSICK already fetches the client by itself at startup
+#: (`qsick/runtime_fetch.py`): it downloads the project's pre-built tarball, resumes with HTTP Range
+#: and checks a sha256. `qqnt_get.py` is the other route -- it downloads the *official Tencent
+#: installer* and unpacks the embedded 7z in pure Python, and it accepts `--source` for a file that
+#: is already on disk. That second route is the one that works when the release server is
+#: unreachable or the machine is offline, which is exactly when a frozen distribution needs it.
+FETCH_FLAG = "--fetch-runtime"
+
+
+def run_runtime_fetch(root: Path, log_path: Path, arguments: list[str]) -> int:
+    script = root / "qqnt_get.py"
+    if not script.is_file():
+        detail = f"缺少 qqnt_get.py：{script}"
+        print(detail)
+        show_error(root, log_path, detail)
+        return 2
+    # `qqnt_get` resolves its default output directory from `__file__`, so importing it from this
+    # directory makes `<app>/runtime` the default without any argument.
+    sys.path.insert(0, str(root))
+    try:
+        import qqnt_get
+    except Exception:  # noqa: BLE001
+        detail = traceback.format_exc()
+        print(detail)
+        show_error(root, log_path, detail.strip().splitlines()[-1])
+        return 3
+
+    print(f"fetching the QQ NT client into {root / 'runtime'}")
+    try:
+        code = int(qqnt_get.main(arguments) or 0)
+    except SystemExit as exc:
+        # argparse's `--help` and its own errors both land here. Neither is a fetch result, so
+        # neither should be dressed up as one -- `--help` exited 0, an error is non-zero.
+        code = int(exc.code or 0)
+    except Exception:  # noqa: BLE001
+        detail = traceback.format_exc()
+        print(detail)
+        show_error(root, log_path, detail.strip().splitlines()[-1])
+        return 1
+    # No console means the download progress was invisible; say how it ended.
+    if code == 0:
+        # ...but only when something was actually fetched.
+        #
+        # Measured: `QSICK.exe --fetch-runtime --help` hung forever, because argparse answered the
+        # help, exited 0, and this dialog then waited for a click that a script would never give.
+        # Any argument-only invocation is exempt; a real fetch still gets its confirmation.
+        informational = any(flag in arguments for flag in ("--help", "-h"))
+        if not informational:
+            show_info("QSICK", f"QQ NT 客户端已就绪：\n{root / 'runtime'}")
+    else:
+        show_error(root, log_path, f"获取 QQ NT 失败，退出码 {code}")
+    return code
+
+
 def main(argv: list[str] | None = None) -> int:
     root = app_dir()
     # Every cwd-relative directory QSICK owns (`data`, `logs`, `headlessClient`, `plugins`, `runtime`)
     # is relative to this, matching how `start.bat` did `cd /d "%~dp0"`.
     os.chdir(root)
     log_path = redirect_streams(root)
+
+    arguments = list(argv if argv is not None else sys.argv[1:])
+    # Dispatched before anything else: this command must not care whether a QSICK instance is already
+    # running, and it must not try to start one.
+    if arguments and arguments[0] == FETCH_FLAG:
+        return run_runtime_fetch(root, log_path, arguments[1:])
 
     src = resolve_src(root)
     if src is None:
@@ -203,7 +274,6 @@ def main(argv: list[str] | None = None) -> int:
     # Measured: `QSICK.exe --version` was hijacked by this probe and opened the running instance's
     # page instead of printing the version, because 5754 answered. An explicit argument means the
     # operator wants that command, not the default launch path.
-    arguments = argv if argv is not None else sys.argv[1:]
     if not arguments and qsick_is_running(host, port):
         # `start.bat` did the same and waited for a keypress; with no console the only sensible
         # action is to show the instance that is already there.

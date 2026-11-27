@@ -65,7 +65,11 @@ $BuildVenv = Join-Path $RepoRoot '.venv-build'
 $ResourceRoots = @('src', 'protocols', 'native', 'build', 'plugins')
 
 #: 单独复制的根目录文件。
-$ResourceFiles = @('qsick.example.json')
+#:
+#: `qqnt_get.py` 是 `QSICK.exe --fetch-runtime` 的实现，等同原来的 `获取QQnt.bat`：从腾讯官方安装包
+#: 解出客户端，纯标准库，支持 `--source` 用本地安装包离线解。它与启动时自动下载是两条不同的路
+#: （那条走项目自己的发布包，可续传、校验 sha256），留着是因为发布服务器不可达时只剩这条能用。
+$ResourceFiles = @('qsick.example.json', 'qqnt_get.py')
 
 #: 产物里预先建好的空目录。exe 启动后按需写入；预先建出来，运维一眼能看出哪些是可写数据。
 $DataDirs = @('data', 'logs', 'downloads', 'temp')
@@ -312,6 +316,20 @@ QSICK 分发版
   1. 双击 QSICK.exe，浏览器会打开 http://127.0.0.1:5754/
   2. 在「账户管理」里新增 pipe session 并扫码登录
   3. QQ 客户端副本会在首次用到时自动下载到 runtime\（约 1.1 GB）
+
+获取 / 修复 QQ 客户端副本
+-------------------------
+  正常情况下不用管：QSICK 启动时发现 runtime\ 缺失会自动下载（走项目发布包，可续传、校验 sha256）。
+
+  如果那台服务器不可达，或要用本地安装包离线解，用这条路：
+
+      QSICK.exe --fetch-runtime                 下载腾讯官方安装包并解出 runtime\
+      QSICK.exe --fetch-runtime --source X.exe  用本地安装包，不联网
+      QSICK.exe --fetch-runtime --force         强制重新下载
+      QSICK.exe --fetch-runtime --clean         解压前清空 runtime\
+      QSICK.exe --fetch-runtime --delete-source 解压完删掉安装包（省 300MB）
+
+  窗口是隐藏的，进度写在 logs\console.log，结束时弹框告知结果。
 
 构建信息
 --------
