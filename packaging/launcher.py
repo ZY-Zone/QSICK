@@ -178,6 +178,73 @@ def show_info(title: str, message: str) -> None:
 #: unreachable or the machine is offline, which is exactly when a frozen distribution needs it.
 FETCH_FLAG = "--fetch-runtime"
 
+#: Arguments that must never wait on the client download.
+#:
+#: `--version` / `--help` answer immediately and have nothing to do with the QQ client; `--no-serve`
+#: is the test/CI switch. Gating those behind a 480 MB download would make a trivial question cost
+#: several minutes.
+GATE_EXEMPT_FLAGS = ("--version", "-h", "--help", "--no-serve", FETCH_FLAG)
+
+
+def runtime_gate_needed(config: object, arguments: list[str]) -> bool:
+    """Whether this launch needs the QQ client on disk before it can be useful.
+
+    Only `headless` and `pipe` do: they attach to a real QQ process, and `headless` starts instances
+    from `runtime/`. `mock` runs a synthetic runtime and needs nothing -- gating it would make a
+    smoke test pay for a 480 MB download it will never touch.
+    """
+    mode = str(getattr(getattr(config, "transport", None), "mode", "") or "").lower()
+    # The CLI flags win over the file, exactly as `qsick.__main__.apply_args` does it.
+    if "--mock" in arguments:
+        mode = "mock"
+    if "--pipe" in arguments:
+        mode = "pipe"
+    return mode in ("headless", "pipe")
+
+
+def ensure_client_ready(root: Path, log_path: Path) -> tuple[bool, str]:
+    """Block until `runtime/` is a complete client, or explain why it could not become one.
+
+    The client is not optional for headless/pipe: without `wrapper.node` every instance fails at
+    login with an error that names nothing useful. So this runs *before* the server starts rather
+    than alongside it -- an earlier version kicked the download off in a background task and started
+    serving immediately, which meant the WebUI was up while anything that needed QQ silently failed.
+
+    Order inside `runtime_fetch`: GitHub installer first (5 s probe, then give up on it), then the
+    project's own release server.
+    """
+    try:
+        from qsick import runtime_fetch
+        from qsick.headless import default_runtime_dir
+    except Exception:  # noqa: BLE001
+        detail = traceback.format_exc()
+        print(detail)
+        return False, detail.strip().splitlines()[-1]
+
+    runtime = default_runtime_dir()
+    if runtime_fetch.runtime_ready(runtime):
+        print(f"client ready: {runtime}")
+        return True, ""
+
+    print(f"client missing at {runtime}; fetching before start")
+    try:
+        did_download = runtime_fetch.ensure_runtime(runtime)
+    except Exception as exc:  # noqa: BLE001 - the reason is what the operator needs
+        print(f"client fetch failed: {type(exc).__name__}: {exc}")
+        return False, f"{type(exc).__name__}: {exc}"
+
+    if not runtime_fetch.runtime_ready(runtime):
+        # Two distinct cases, and conflating them produces a misleading message:
+        # `False` from ensure_runtime means it never tried (download disabled), while `True` with an
+        # incomplete directory means a source claimed success and lied.
+        if not did_download:
+            print("client fetch was skipped (runtime download disabled) and runtime/ is incomplete")
+            return False, "runtime\\ 不完整，且自动下载已被关闭（QSICK_SKIP_RUNTIME_DOWNLOAD）"
+        print("client fetch reported success but runtime/ is still incomplete")
+        return False, "下载完成但 runtime/ 仍不完整"
+    print(f"client ready: {runtime}")
+    return True, ""
+
 
 def run_runtime_fetch(root: Path, log_path: Path, arguments: list[str]) -> int:
     script = root / "qqnt_get.py"
@@ -282,6 +349,20 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     print(f"QSICK {__version__} starting; WebUI {url}")
+    # The client gate, before the server starts.
+    #
+    # Deliberately here rather than before the already-running check: if an instance is already
+    # serving, this launch is only going to open its page, and making it download 480 MB first would
+    # be absurd.
+    if runtime_gate_needed(config, arguments) and not any(
+            flag in arguments for flag in GATE_EXEMPT_FLAGS):
+        ready, detail = ensure_client_ready(root, log_path)
+        if not ready:
+            show_error(root, log_path,
+                       f"QQ 客户端未就绪，已拒绝启动。\n\n{detail}\n\n"
+                       f"可以手动重试：QSICK.exe --fetch-runtime")
+            return 4
+
     schedule_browser(url)
     try:
         code = qsick_main(arguments)

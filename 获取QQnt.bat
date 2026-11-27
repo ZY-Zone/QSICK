@@ -1,15 +1,25 @@
 @echo off
 rem ===========================================================================
-rem  Launcher: download the QQ NT installer and unpack it into .\runtime\
+rem  Launcher: fetch the QQ NT client from QSICK's own release server.
 rem
-rem  Everything (network, PE resources, 7z container, LZMA, BCJ2) is done by
-rem  qqnt_get.py using only the Python standard library; this file just locates
-rem  Python and runs it.
+rem  This used to call qqnt_get.py against GitHub. It now asks for the
+rem  server source explicitly (`--server`), because the two routes differ:
 rem
-rem  Extra arguments are forwarded, for example:
-rem      --force          re-download even if the installer already exists
-rem      --clean          wipe runtime\ before extracting
-rem      --source X.exe   use a local installer, no network
+rem      server (this script)   a tar.gz prepared by the project, described by
+rem                            descriptor.json with size + sha256, resumable
+rem                            through HTTP Range. Fast and predictable.
+rem      GitHub (default)      the official Tencent installer, unpacked by
+rem                            qqnt_get.py in pure Python (PE + embedded 7z,
+rem                            LZMA + BCJ2). Slower, and it downloads the
+rem                            installer from a third-party mirror of GitHub
+rem                            releases, so it is the fallback rather than the
+rem                            first choice.
+rem
+rem  qqnt_get.py itself no longer uses gh-proxy mirrors at all: GitHub direct
+rem  with a 5 s timeout, then this same server source.
+rem
+rem  Arguments are forwarded. Only --dir applies to the server route:
+rem      --dir D:\out    unpack into another directory (default .\runtime)
 rem
 rem  Set QSICK_NO_PAUSE=1 to skip the trailing "press any key" (for scripts).
 rem ===========================================================================
@@ -43,7 +53,8 @@ for /f "delims=" %%v in ('%PY% -c "import sys;print(sys.version.split()[0])" 2^>
 echo Using Python %PYVER% via "%PY%"
 echo.
 
-%PY% "%~dp0qqnt_get.py" %*
+rem `--server` first so the script never reaches for GitHub.
+%PY% "%~dp0qqnt_get.py" --server %*
 set "RC=%ERRORLEVEL%"
 
 :halt

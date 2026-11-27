@@ -30,6 +30,7 @@ import time
 import urllib.error
 import urllib.request
 import zlib
+from pathlib import Path
 
 # ---------------------------------------------------------------- 常量
 
@@ -38,20 +39,14 @@ GITHUB_URL = (
     "https://github.com/Rodert/qq-versions/releases/download/"
     "qq-packages-20260813-1d08f1d4/QQ_9.9.33_260813_x64_01.exe"
 )
-# 官方源不通时的 gh-proxy 镜像（前缀 + 完整 GitHub 地址）
-MIRRORS = [
-    "https://ghfast.top/",
-    "https://gh-proxy.com/",
-    "https://ghproxy.net/",
-    "https://gh.llkk.cc/",
-    "https://ghproxy.imciel.com/",
-    "https://gh.acmsz.top/",
-    "https://gh.monlor.com/",
-    "https://git.669966.xyz/",
-    "https://gitproxy.mrhjx.cn/",
-    "https://ghm.078465.xyz/",
-    "https://github.dpik.top/",
-]
+# 连 GitHub 最多等这么久（秒）。
+#
+# 5 秒够一次 DNS 解析加 TLS 握手，不够把一个卡死的连接拖成"程序没反应"。超时即判定这条路走不通，
+# 转去自己的服务器——用户宁可换个源，也不愿意盯着一个不动的窗口猜它在干什么。
+GITHUB_TIMEOUT = 5.0
+# 兜底：项目自己的发布服务器（由 runtime_fetch 下载并解包，带 descriptor + sha256）。
+# 这里只存地址，真正的下载逻辑复用 runtime_fetch，不复制第二份。
+SERVER_BASE_URL = "http://49.235.134.245/qq_got/QQNT-9.9.33-52230"
 EXPECTED_SHA256 = "b25c0d3ce9df764074a9118d0ded927e1b2d7ebf60e306112e8df18a040ec492"
 SEVENZIP_MAGIC = b"7z\xbc\xaf\x27\x1c"
 
@@ -99,14 +94,18 @@ def _request(url: str, offset: int = 0) -> urllib.request.Request:
     return urllib.request.Request(url, headers=headers)
 
 
-def _download_one(url: str, dest: str, expect: int | None) -> None:
-    """从 url 下载到 dest，支持断点续传。失败抛异常。"""
+def _download_one(url: str, dest: str, expect: int | None, timeout: float = 60) -> None:
+    """从 url 下载到 dest，支持断点续传。失败抛异常。
+
+    ``timeout`` 是 urllib 的套接字超时：连接建立和数据读取都受它约束，所以传 5 秒时，一路卡住的
+    连接会在 5 秒后抛出来，而不是让整个启动挂在这里。
+    """
     have = os.path.getsize(dest) if os.path.exists(dest) else 0
     if expect and have > expect:
         os.remove(dest)
         have = 0
     req = _request(url, have)
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         if have and resp.status != 206:
             have = 0  # 服务器不支持续传，从头来
         total = expect
@@ -138,23 +137,28 @@ def _download_one(url: str, dest: str, expect: int | None) -> None:
         raise IOError("大小不符: 期望 %d 实际 %d" % (total, os.path.getsize(dest)))
 
 
-def download_installer(dest: str, expect_size: int | None = None) -> str:
-    urls = [GITHUB_URL] + [m + GITHUB_URL for m in MIRRORS]
-    errors = []
-    for i, url in enumerate(urls, 1):
-        host = url.split("/")[2]
-        log("  [%d/%d] 尝试 %s" % (i, len(urls), host))
-        try:
-            _download_one(url, dest, expect_size)
-            log("")
-            return url
-        except Exception as exc:                      # noqa: BLE001
-            log("")
-            errors.append("%s -> %s: %s" % (host, type(exc).__name__, exc))
-            log("        失败: %s: %s" % (type(exc).__name__, exc))
-            if os.path.exists(dest) and os.path.getsize(dest) == 0:
-                os.remove(dest)
-    raise RuntimeError("所有下载地址均失败:\n  " + "\n  ".join(errors))
+def download_installer(dest: str, expect_size: int | None = None,
+                       timeout: float = GITHUB_TIMEOUT) -> str:
+    """纯 GitHub 直连下载，只有这一个地址，不经过任何镜像或代理。
+
+    这里曾经挂着一串 gh-proxy 镜像（ghfast.top、gh-proxy.com……），按顺序在失败时逐个换。
+    去掉它们有两个理由：
+
+    * 镜像会把安装包经第三方转发一次。安装包本身有 sha256 校验，篡改能被发现，但"把 300 MB
+      的软件分发给谁的服务器"这件事本身不该顺手做掉；
+    * 它们的可用性不受控。真正需要的兜底是**我们自己的服务器**，那是我们知道它是什么、
+      由谁维护的地址，而不是十几个陌生域名。
+    """
+    log("  直连 GitHub（%.0f 秒超时）" % timeout)
+    try:
+        _download_one(GITHUB_URL, dest, expect_size, timeout)
+    except Exception as exc:                          # noqa: BLE001
+        log("")
+        if os.path.exists(dest) and os.path.getsize(dest) == 0:
+            os.remove(dest)
+        raise RuntimeError("GitHub 直连失败: %s: %s" % (type(exc).__name__, exc)) from exc
+    log("")
+    return GITHUB_URL
 
 
 def sha256_file(path: str) -> str:
@@ -873,15 +877,58 @@ def flatten_files_dir(out_dir: str) -> bool:
 
 # ---------------------------------------------------------------- 主流程
 
+def _runtime_fetch():
+    """加载 ``qsick.runtime_fetch``，用于服务器源的下载与解包。
+
+    不复制那份逻辑：它已经处理了 descriptor.json、Range 续传、sha256 校验和 tar.gz 布局，再写一份
+    只会让两条路慢慢分叉。它就在同一个仓库里（``src/qsick``），按路径加进 sys.path 即可——源码树和
+    打包产物（``src`` 紧跟 ``qqnt_get.py``）两种布局都适用。
+    """
+    here = Path(script_dir())
+    for candidate in (here / "src", here.parent / "src"):
+        if (candidate / "qsick" / "runtime_fetch.py").is_file():
+            if str(candidate) not in sys.path:
+                sys.path.insert(0, str(candidate))
+            break
+    try:
+        from qsick import runtime_fetch  # noqa: PLC0415 - 故意延后到需要时
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            "找不到 qsick.runtime_fetch，无法使用服务器源（需要 src/ 目录）"
+        ) from exc
+    return runtime_fetch
+
+
+def fetch_from_server(runtime_dir: str) -> int:
+    """用项目自己的发布服务器铺好 runtime\\。成功返回 0。"""
+    log("")
+    log("  转到服务器源：%s" % SERVER_BASE_URL)
+    try:
+        module = _runtime_fetch()
+        module.ensure_runtime(Path(runtime_dir), base_url=SERVER_BASE_URL)
+    except Exception as exc:                          # noqa: BLE001
+        log("[错误] 服务器源也失败: %s" % exc)
+        return 5
+    if not module.runtime_ready(Path(runtime_dir)):
+        log("[错误] 服务器包已解开，但 runtime\\ 仍不完整")
+        return 5
+    log("  服务器源完成")
+    return 0
+
+
 def main(argv=None) -> int:
     _init_console()
     here = script_dir()
     ap = argparse.ArgumentParser(
-        description="下载 QQ NT 安装包并解压到 runtime\\（纯标准库）")
+        description="下载 QQ NT 并解压到 runtime\\（纯标准库）")
     ap.add_argument("--dir", default=os.path.join(here, "runtime"),
                     help="解压目标目录，默认 <脚本目录>\\runtime")
     ap.add_argument("--source", default=None,
                     help="直接用本地安装包，不联网")
+    ap.add_argument("--server", action="store_true",
+                    help="跳过 GitHub，直接用项目发布服务器（获取QQnt.bat 用这个）")
+    ap.add_argument("--github-only", action="store_true",
+                    help="只走 GitHub，失败即退出，不转服务器源（供 runtime_fetch 编排用）")
     ap.add_argument("--force", action="store_true", help="强制重新下载")
     ap.add_argument("--no-verify", action="store_true", help="跳过 SHA256 校验")
     ap.add_argument("--no-flatten", action="store_true", help="不把 Files\\ 内容上提")
@@ -889,6 +936,13 @@ def main(argv=None) -> int:
     ap.add_argument("--delete-source", action="store_true",
                     help="解压完成后删除安装包（可省 300MB）")
     args = ap.parse_args(argv)
+
+    # 只走服务器源：不碰 GitHub，也就不需要安装包与那套 PE+7z 解包。
+    if args.server:
+        log("=" * 62)
+        log(" 获取 QQ NT（服务器源）")
+        log("=" * 62)
+        return fetch_from_server(os.path.abspath(args.dir))
 
     log("=" * 62)
     log(" 获取 QQ NT   (%s)" % INSTALLER_NAME)
@@ -916,8 +970,18 @@ def main(argv=None) -> int:
                 used = download_installer(exe)
                 log("      来源: %s" % used)
             except Exception as exc:                  # noqa: BLE001
-                log("[错误] 下载失败: %s" % exc)
-                return 3
+                log("[提示] %s" % exc)
+                if args.github_only:
+                    # 上层（runtime_fetch.ensure_runtime）自己排了源顺序，这里不该替它做决定。
+                    return 3
+                # GitHub 5 秒内没连上（或中途失败）就换自己的服务器。
+                # 服务器给的是项目压好的 tar.gz，不是安装包，所以这一步不再往下走校验/解包，
+                # 直接交出整个流程。
+                code = fetch_from_server(out_dir)
+                if code == 0:
+                    log("")
+                    log("[完成] runtime\\ 已就绪：%s" % out_dir)
+                return code
 
     log("[2/4] 校验 SHA256")
     if args.no_verify:
@@ -939,8 +1003,14 @@ def main(argv=None) -> int:
                 used = download_installer(exe)
                 log("      来源: %s" % used)
             except Exception as exc:                  # noqa: BLE001
-                log("[错误] 下载失败: %s" % exc)
-                return 3
+                log("[提示] %s" % exc)
+                if args.github_only:
+                    return 3
+                code = fetch_from_server(out_dir)
+                if code == 0:
+                    log("")
+                    log("[完成] runtime\\ 已就绪：%s" % out_dir)
+                return code
             digest = sha256_file(exe)
             if digest != EXPECTED_SHA256:
                 log("      期望 %s" % EXPECTED_SHA256)

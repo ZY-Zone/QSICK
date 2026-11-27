@@ -19,9 +19,11 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
+import sys
 import tarfile
 import urllib.error
 import urllib.parse
@@ -31,6 +33,25 @@ from pathlib import Path
 from . import log as logmod
 
 DEFAULT_BASE_URL = "http://49.235.134.245/qq_got/QQNT-9.9.33-52230"
+
+#: 第一条源：GitHub 上的官方安装包，由 `qqnt_get.py` 解包。
+#:
+#: 与第二条源不是同一份东西。这一条下载的是腾讯官方安装包（PE 外壳 + 内嵌 7z，LZMA+BCJ2），
+#: 由 `qqnt_get` 纯标准库解开；第二条是项目自己压好的 tar.gz，带 descriptor.json 描述大小与
+#: sha256，支持 Range 续传。
+#:
+#: 放在前面是因为 GitHub 通常比自建服务器快，而且 `qqnt_get` 内置了 11 个 gh-proxy 镜像——
+#: 国内直连 GitHub 经常握手慢，那些镜像就是为这种情况准备的。
+GITHUB_INSTALLER_URL = (
+    "https://github.com/Rodert/qq-versions/releases/download/"
+    "qq-packages-20260813-1d08f1d4/QQ_9.9.33_260813_x64_01.exe"
+)
+
+#: 探测第一条源最多等多久（秒）。
+#:
+#: 5 秒是"能连上就能连上"的量级：够一次 DNS + TLS 握手，不够拖住整个启动。超时就跳到第二条，
+#: 而不是在这里挂着——用户宁可慢一点拿到客户端，也不愿意对着一个不动的窗口猜它在干什么。
+GITHUB_PROBE_TIMEOUT = 5.0
 
 #: 解包后必须存在的文件；缺任何一个都不算成功。
 REQUIRED = ("wrapper.node", "package.json", "major.node")
@@ -264,22 +285,85 @@ def _archive_url(base: str, info: dict) -> str:
     return base + "/" + archive.lstrip("/")
 
 
-def ensure_runtime(runtime: Path, base_url: str | None = None, config=None) -> bool:
-    """确保 ``runtime/`` 可用；需要时下载。
+def _qqnt_get_module():
+    """按路径加载仓库根（或 exe 旁）的 ``qqnt_get.py``。
 
-    返回 ``True`` 表示这次做了下载，``False`` 表示原本就可用或已关闭下载。
-    失败抛 :class:`RuntimeDownloadError`——调用方要么明确报错，要么准备一个
-    有效的 runtime 目录，不允许静默降级到"随便找个本机 QQ"。
+    它不在包里，因为它同时是一个能单独运行的命令行工具（``获取QQnt.bat`` 就是调它）。为了复用
+    那份 PE+7z 解包逻辑而把它复制进包内，会让两份实现逐渐分叉；按路径导入是这里更小的恶。
     """
-    runtime = Path(runtime)
-    if runtime_ready(runtime):
-        return False
-    if not _enabled(config):
-        _log().info("已关闭 runtime 自动下载，跳过")
-        return False
+    candidates: list[Path] = []
+    override = os.environ.get("QSICK_QQNT_GET", "").strip()
+    if override:
+        candidates.append(Path(override))
+    # 冻结版：脚本在 exe 旁边。
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).resolve().parent / "qqnt_get.py")
+    # 源码树：`src/qsick/runtime_fetch.py` 往上两层是仓库根。
+    candidates.append(Path(__file__).resolve().parents[2] / "qqnt_get.py")
 
-    base = (base_url or os.environ.get("QSICK_RUNTIME_URL") or DEFAULT_BASE_URL).rstrip("/")
-    _log().info("runtime 缺失，准备下载", runtime=str(runtime), source=base)
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location("qsick_qqnt_get", candidate)
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+        except Exception as exc:  # noqa: BLE001 - 一条源不可用不该拖垮整次下载
+            _log().warn("qqnt_get 加载失败", path=str(candidate), error=f"{type(exc).__name__}: {exc}")
+    return None
+
+
+def _github_reachable(url: str, timeout: float = GITHUB_PROBE_TIMEOUT) -> bool:
+    """5 秒内能否拿到这条地址的响应头。
+
+    只探测可达性，不读正文：目的是"要不要走这条源"，不是下载。``HEAD`` 被某些镜像拒绝，所以
+    退到 ``GET`` 并只读首块就关掉连接。
+    """
+    for method in ("HEAD", "GET"):
+        try:
+            request = urllib.request.Request(url, method=method)
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                if 200 <= getattr(response, "status", 0) < 400:
+                    return True
+        except urllib.error.HTTPError as exc:
+            # 405 = 这个方法不被允许，换一个再试；其它状态码说明服务器就是这样答的。
+            if exc.code in (403, 405) and method == "HEAD":
+                continue
+            return False
+        except Exception:  # noqa: BLE001 - 超时、DNS、TLS 都算"不可达"
+            return False
+    return False
+
+
+def _fetch_from_github(runtime: Path) -> bool:
+    """用 GitHub 上的官方安装包铺好 ``runtime/``。成功返回 True。"""
+    module = _qqnt_get_module()
+    if module is None:
+        raise RuntimeDownloadError("找不到 qqnt_get.py，无法使用 GitHub 源")
+    if not _github_reachable(GITHUB_INSTALLER_URL):
+        raise RuntimeDownloadError(f"GitHub 源 {GITHUB_PROBE_TIMEOUT:.0f} 秒内没有响应")
+    _log().info("从 GitHub 获取官方安装包", url=GITHUB_INSTALLER_URL)
+    # `--dir` 显式给定：默认值是脚本所在目录，而这里的目标与它无关。
+    # `--github-only`：`qqnt_get` 自身也带服务器兜底，但这里已经有自己的源顺序了；
+    # 不关掉它，失败时会先被它切去服务器，上面那条"GitHub 失败"的分支就再也不会被走到，
+    # 日志也会说谎。
+    try:
+        code = int(module.main(["--dir", str(runtime), "--github-only"]) or 0)
+    except SystemExit as exc:
+        code = int(exc.code or 0)
+    if code != 0:
+        raise RuntimeDownloadError(f"qqnt_get 退出码 {code}")
+    if not runtime_ready(runtime):
+        raise RuntimeDownloadError("安装包已解开，但 runtime/ 仍不完整")
+    return True
+
+
+def _fetch_from_server(runtime: Path, base: str) -> bool:
+    """用项目自己的发布包铺好 ``runtime/``。成功返回 True。"""
+    _log().info("从发布服务器获取", source=base)
     info = _descriptor(base)
 
     archive_path = runtime.parent / f"{runtime.name}.download.tar.gz"
@@ -294,5 +378,54 @@ def ensure_runtime(runtime: Path, base_url: str | None = None, config=None) -> b
 
     _extract(archive_path, runtime)
     archive_path.unlink(missing_ok=True)
-    _log().info("runtime 就绪", runtime=str(runtime))
+    if not runtime_ready(runtime):
+        raise RuntimeDownloadError("压缩包已解开，但 runtime/ 仍不完整")
     return True
+
+
+def ensure_runtime(runtime: Path, base_url: str | None = None, config=None) -> bool:
+    """确保 ``runtime/`` 可用；需要时按源优先级下载。
+
+    顺序：GitHub 官方安装包 → 发布服务器。每条源单独失败不影响下一条，只有全部失败才抛
+    :class:`RuntimeDownloadError`，消息里按顺序列出每条源失败的原因——"两条都试过"和
+    "第一条没试"是完全不同的诊断信息。
+
+    返回 ``True`` 表示这次做了下载，``False`` 表示原本就可用或已关闭下载。
+
+    ``base_url`` / ``QSICK_RUNTIME_URL`` 给定时只用那一条源：调用方明确指定了地址，就不该再
+    擅自回退到别的地址。
+    """
+    runtime = Path(runtime)
+    if runtime_ready(runtime):
+        return False
+    if not _enabled(config):
+        _log().info("已关闭 runtime 自动下载，跳过")
+        return False
+
+    explicit = (base_url or os.environ.get("QSICK_RUNTIME_URL") or "").strip()
+    _log().info("runtime 缺失，准备下载", runtime=str(runtime),
+                pinned=explicit or "(无，按优先级)")
+
+    attempts: list[str] = []
+    if explicit:
+        sources = [("服务器(指定)", lambda: _fetch_from_server(runtime, explicit.rstrip("/")))]
+    else:
+        sources = [
+            ("GitHub", lambda: _fetch_from_github(runtime)),
+            ("服务器", lambda: _fetch_from_server(runtime, DEFAULT_BASE_URL.rstrip("/"))),
+        ]
+
+    for label, run in sources:
+        try:
+            run()
+        except Exception as exc:  # noqa: BLE001 - 一条源失败就换下一条，理由记下来
+            reason = str(exc) or type(exc).__name__
+            _log().warn("下载源失败", source=label, reason=reason[:220])
+            attempts.append(f"{label}: {reason[:220]}")
+            continue
+        _log().info("runtime 就绪", runtime=str(runtime), source=label)
+        return True
+
+    raise RuntimeDownloadError(
+        "runtime/ 无法就绪，所有下载源都失败：" + "；".join(attempts)
+    )

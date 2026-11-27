@@ -319,17 +319,21 @@ QSICK 分发版
 
 获取 / 修复 QQ 客户端副本
 -------------------------
-  正常情况下不用管：QSICK 启动时发现 runtime\ 缺失会自动下载（走项目发布包，可续传、校验 sha256）。
+  QSICK 启动前会先确认 runtime\ 是完整的客户端（wrapper.node / package.json / major.node 三个文件），
+  **不完整就不启动**。缺失时按下面顺序取，前一条失败才走后一条：
 
-  如果那台服务器不可达，或要用本地安装包离线解，用这条路：
+      1. GitHub 官方安装包   直连，不用任何镜像或代理；5 秒内没响应就换下一条
+      2. 项目发布服务器      tar.gz，带 descriptor.json 与 sha256，支持续传
 
-      QSICK.exe --fetch-runtime                 下载腾讯官方安装包并解出 runtime\
+  也可以手动触发：
+
+      QSICK.exe --fetch-runtime                 同样的两条源，按顺序
       QSICK.exe --fetch-runtime --source X.exe  用本地安装包，不联网
       QSICK.exe --fetch-runtime --force         强制重新下载
       QSICK.exe --fetch-runtime --clean         解压前清空 runtime\
-      QSICK.exe --fetch-runtime --delete-source 解压完删掉安装包（省 300MB）
 
   窗口是隐藏的，进度写在 logs\console.log，结束时弹框告知结果。
+  两条源都失败时同样弹框，并拒绝启动。
 
 构建信息
 --------
