@@ -22,6 +22,13 @@ dev = [
     "pytest-asyncio>=0.23",
 ]
 
+# Build tooling, kept out of `dev` so a test-only environment does not pull a 30 MB freezer.
+# Installed with `uv sync --group build`; used by `build.ps1` only.
+[dependency-groups]
+build = [
+    "pyinstaller>=6.11",
+]
+
 [project.scripts]
 qsick = "qsick.__main__:main"
 qsick-launcher = "qsick.launcher:main"
