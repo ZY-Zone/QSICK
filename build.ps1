@@ -332,8 +332,8 @@ QSICK 分发版
       QSICK.exe --fetch-runtime --force         强制重新下载
       QSICK.exe --fetch-runtime --clean         解压前清空 runtime\
 
-  窗口是隐藏的，进度写在 logs\console.log，结束时弹框告知结果。
-  两条源都失败时同样弹框，并拒绝启动。
+  下载时会另外弹出一个 cmd 窗口显示进度（源码运行与构建版都一样），窗口在完成后自动关闭。
+  同时全程写入 logs\console.log。两条源都失败时会弹框说明并拒绝启动。
 
 构建信息
 --------

@@ -183,7 +183,13 @@ FETCH_FLAG = "--fetch-runtime"
 #: `--version` / `--help` answer immediately and have nothing to do with the QQ client; `--no-serve`
 #: is the test/CI switch. Gating those behind a 480 MB download would make a trivial question cost
 #: several minutes.
-GATE_EXEMPT_FLAGS = ("--version", "-h", "--help", "--no-serve", FETCH_FLAG)
+GATE_EXEMPT_FLAGS = ("--version", "-h", "--help", "--no-serve", FETCH_FLAG, "--fetch-worker")
+
+#: Internal: download the client in this process, with this process's console window.
+#:
+#: `qsick.fetch_console` starts the exe with this flag and `CREATE_NEW_CONSOLE`, which is how the
+#: download gets its own window without detaching the console of whatever started us.
+WORKER_FLAG = "--fetch-worker"
 
 
 def runtime_gate_needed(config: object, arguments: list[str]) -> bool:
@@ -228,7 +234,7 @@ def ensure_client_ready(root: Path, log_path: Path) -> tuple[bool, str]:
 
     print(f"client missing at {runtime}; fetching before start")
     try:
-        did_download = runtime_fetch.ensure_runtime(runtime)
+        did_download = runtime_fetch.ensure_runtime(runtime, console=True)
     except Exception as exc:  # noqa: BLE001 - the reason is what the operator needs
         print(f"client fetch failed: {type(exc).__name__}: {exc}")
         return False, f"{type(exc).__name__}: {exc}"
@@ -316,6 +322,22 @@ def main(argv: list[str] | None = None) -> int:
     protocols = root / "protocols"
     if protocols.is_dir():
         sys.path.insert(0, str(protocols))
+
+    # Worker mode: this process exists only to download the client into its own console window.
+    # Dispatched after `sys.path` is ready (it imports `qsick`), and before anything server-shaped.
+    #
+    # The env var is set here as well as by the spawner: `--fetch-worker` typed by hand would
+    # otherwise reach `ensure_runtime(console=True)`, which spawns another worker, which ...
+    if arguments and arguments[0] == WORKER_FLAG:
+        os.environ["QSICK_FETCH_WORKER"] = "1"
+        try:
+            from qsick.fetch_worker import main as worker_main
+        except Exception:  # noqa: BLE001
+            detail = traceback.format_exc()
+            print(detail)
+            show_error(root, log_path, detail.strip().splitlines()[-1])
+            return 3
+        return worker_main(arguments[1:])
 
     try:
         from qsick import __version__

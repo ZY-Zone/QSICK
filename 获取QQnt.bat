@@ -54,6 +54,10 @@ echo Using Python %PYVER% via "%PY%"
 echo.
 
 rem `--server` first so the script never reaches for GitHub.
+rem
+rem QSICK_NO_FETCH_CONSOLE=1: this window already exists to show this download. Without it the
+rem downloader would open a *second* window for the progress and leave this one blank.
+set "QSICK_NO_FETCH_CONSOLE=1"
 %PY% "%~dp0qqnt_get.py" --server %*
 set "RC=%ERRORLEVEL%"
 

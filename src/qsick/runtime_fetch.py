@@ -67,6 +67,32 @@ def _log():
     return logmod.get_logger("Runtime.Fetch")
 
 
+#: 下载进度往哪里额外写一份（除了日志）。
+#:
+#: 让子进程把自己的窗口当输出目标：`fetch_worker` 会设它，父进程不设。为 ``None`` 时行为与以前
+#: 完全一致——只写日志。
+_progress_sink = None
+
+
+def set_progress_sink(fn) -> None:
+    """设定进度输出（可传 ``None`` 取消）。
+
+    接收一个字符串参数的任意可调用对象。它只影响"额外抄一份到哪里"，不改变日志。
+    """
+    global _progress_sink
+    _progress_sink = fn
+
+
+def _say(message: str) -> None:
+    """同时写日志与进度窗口。用在下源顺序、失败原因这类"人要读"的节点上。"""
+    _log().info(message)
+    if _progress_sink is not None:
+        try:
+            _progress_sink(message)
+        except Exception:  # noqa: BLE001 - 输出失败不该中断下载
+            pass
+
+
 def app_dir(runtime: Path) -> Path:
     """返回真正含 ``wrapper.node`` 的那一层目录。
 
@@ -167,6 +193,12 @@ def _download(url: str, target: Path, expected_size: int | None, expected_sha: s
                         total = expected_size or 0
                         suffix = f"/{total // (1024 * 1024)} MB" if total else ""
                         _log().info("下载中", done_mb=megabyte, total=suffix)
+                        if _progress_sink is not None:
+                            percent = f"  {megabyte * 100 // (total // (1024 * 1024))}%" if total else ""
+                            try:
+                                _progress_sink(f"  已下载 {megabyte} MB{suffix}{percent}")
+                            except Exception:  # noqa: BLE001
+                                pass
     except urllib.error.HTTPError as exc:
         if exc.code == 416:
             # Range 越界：本地 .part 已经是完整文件了，交给下面的校验判断。
@@ -383,7 +415,29 @@ def _fetch_from_server(runtime: Path, base: str) -> bool:
     return True
 
 
-def ensure_runtime(runtime: Path, base_url: str | None = None, config=None) -> bool:
+def _download_in_console(runtime: Path) -> bool:
+    """交给子进程用独立窗口下载。返回是否由子进程完成了这次下载。
+
+    子进程只是"多一个窗口"，不改变源顺序——它跑的是同一份 ``ensure_runtime``。
+    """
+    from . import fetch_console
+
+    process = fetch_console.spawn(runtime)
+    if process is None:
+        return False
+    _log().info("下载将在独立窗口中进行", pid=getattr(process, "pid", 0))
+    code = process.wait()
+    if code == 0 and runtime_ready(runtime):
+        return True
+    # 子进程已经按同样的顺序试过两条源了，失败原因在它那个窗口里（并在日志里）。
+    # 这里再在本进程重试一遍只会让启动多等一轮下载，所以直接报出来。
+    raise RuntimeDownloadError(
+        f"独立窗口里的下载未成功（退出码 {code}），详情见该窗口或 logs\\console.log"
+    )
+
+
+def ensure_runtime(runtime: Path, base_url: str | None = None, config=None,
+                   console: bool = False) -> bool:
     """确保 ``runtime/`` 可用；需要时按源优先级下载。
 
     顺序：GitHub 官方安装包 → 发布服务器。每条源单独失败不影响下一条，只有全部失败才抛
@@ -394,6 +448,9 @@ def ensure_runtime(runtime: Path, base_url: str | None = None, config=None) -> b
 
     ``base_url`` / ``QSICK_RUNTIME_URL`` 给定时只用那一条源：调用方明确指定了地址，就不该再
     擅自回退到别的地址。
+
+    ``console=True`` 时把下载交给带独立控制台窗口的子进程（见 :mod:`qsick.fetch_console`）。
+    默认关闭，是刻意的：测试和内部调用不该因为一次下载就弹出窗口，需要窗口的调用方显式要。
     """
     runtime = Path(runtime)
     if runtime_ready(runtime):
@@ -402,7 +459,13 @@ def ensure_runtime(runtime: Path, base_url: str | None = None, config=None) -> b
         _log().info("已关闭 runtime 自动下载，跳过")
         return False
 
+    # 窗口化下载：子进程跑的是同一个函数，所以在它自己里面不会再次派生（fetch_console 会拦）。
+    if console and _download_in_console(runtime):
+        _log().info("runtime 就绪", runtime=str(runtime), source="独立窗口")
+        return True
+
     explicit = (base_url or os.environ.get("QSICK_RUNTIME_URL") or "").strip()
+    _say(f"runtime 缺失，准备下载（目标 {runtime}）")
     _log().info("runtime 缺失，准备下载", runtime=str(runtime),
                 pinned=explicit or "(无，按优先级)")
 
@@ -416,13 +479,16 @@ def ensure_runtime(runtime: Path, base_url: str | None = None, config=None) -> b
         ]
 
     for label, run in sources:
+        _say(f"尝试下载源：{label}")
         try:
             run()
         except Exception as exc:  # noqa: BLE001 - 一条源失败就换下一条，理由记下来
             reason = str(exc) or type(exc).__name__
             _log().warn("下载源失败", source=label, reason=reason[:220])
+            _say(f"  {label} 失败：{reason[:220]}")
             attempts.append(f"{label}: {reason[:220]}")
             continue
+        _say(f"  {label} 成功")
         _log().info("runtime 就绪", runtime=str(runtime), source=label)
         return True
 

@@ -2152,7 +2152,7 @@ class HeadlessManager:
         if not runtime_fetch.runtime_ready(runtime):
             # 下载锁定版本：它是唯一能保证版本一致（clientVer/qua 与二进制对得上）的来源。
             try:
-                runtime_fetch.ensure_runtime(runtime)
+                runtime_fetch.ensure_runtime(runtime, console=True)
             except runtime_fetch.RuntimeDownloadError as exc:
                 raise RuntimeError(
                     f"runtime 不可用，且下载失败：{exc}\n"
