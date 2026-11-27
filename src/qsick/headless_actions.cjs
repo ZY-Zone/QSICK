@@ -524,7 +524,13 @@ function createActionDispatcher(options = {}) {
     }
     return out;
   }
-  async function groupEvent(svc, method, args, eventName, select) {
+  async function groupEvent(svc, method, args, eventName, select, timeoutOverrideMs) {
+    // `timeoutOverrideMs` exists because one deadline does not fit every call. The dispatcher-wide
+    // 5 s is right for a listener that fires with a list the client already has; a call that makes
+    // the server answer a query first needs longer. Measured: `getSingleScreenNotifies` timed out at
+    // 5 s while a request was pending, and the same call with no pending request answered at once.
+    const eventTimeoutMs = timeoutOverrideMs === undefined ? timeoutMs
+      : integer(timeoutOverrideMs, 'timeoutMs', 1, 120000);
     // Register first so synchronous/early callbacks cannot be lost. ACK success and
     // a matching event are BOTH required. Mutating list deltas are not full lists.
     let handle, timer, accept, rejectEvent;
@@ -551,7 +557,7 @@ function createActionDispatcher(options = {}) {
       if (!(handleText !== '' && /^\d+$/.test(handleText))) {
         badResult(`Group listener registration did not return a valid handle (got ${JSON.stringify(handle)})`);
       }
-      const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(new ActionError('TIMEOUT', `No complete ${eventName} response before timeout`, { timeoutMs })), timeoutMs); });
+      const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(new ActionError('TIMEOUT', `No complete ${eventName} response before timeout`, { timeoutMs: eventTimeoutMs })), eventTimeoutMs); });
       const ack = Promise.resolve().then(() => svc[method](...args)).then(resultCode);
       const [, payload] = await Promise.race([Promise.all([ack, event]), deadline]);
       return payload;
@@ -2355,11 +2361,15 @@ function createActionDispatcher(options = {}) {
       // scope where the rows are built, and referring to it there threw `doubt is not defined`
       // *after* the call had already succeeded -- a confusing failure for a working request.
       let doubtFlag = false;
+      // 15 s, not the dispatcher-wide 5 s: this call makes the server answer a query, and a 5 s
+      // deadline reported TIMEOUT while a request was genuinely pending.
+      const deadlineMs = p.timeout_ms === undefined ? 15000
+        : integer(p.timeout_ms, 'timeout_ms', 1000, 120000);
       const notifies = await groupEvent(svc, 'getSingleScreenNotifies', [false, '', count],
         'onGroupSingleScreenNotifies', (doubt, seq, list) => {
           doubtFlag = Boolean(doubt);
           return Array.isArray(list) ? list : undefined;
-        });
+        }, deadlineMs);
       const rows = notifies.map(row => {
         if (!object(row)) return null;
         const group = object(row.group) ? row.group : {};

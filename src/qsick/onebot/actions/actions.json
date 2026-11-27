@@ -4661,7 +4661,22 @@
       "summary": "获取待处理的群通知（入群申请/邀请/管理员变动），带审批所需的 flag",
       "status": "implemented",
       "read_only": true,
-      "params": [],
+      "params": [
+        {
+          "name": "count",
+          "kind": "int",
+          "required": false,
+          "default": 50,
+          "desc": "最多取几条"
+        },
+        {
+          "name": "timeout_ms",
+          "kind": "int",
+          "required": false,
+          "default": 15000,
+          "desc": "等待通知列表的超时（毫秒）；默认 15 秒"
+        }
+      ],
       "wire": "payload"
     }
   ],

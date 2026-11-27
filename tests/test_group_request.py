@@ -203,3 +203,42 @@ def test_the_list_comes_from_the_pair_napcat_uses():
     assert "fetchGroupNotify" not in code
     # The count is a parameter of the call, not a fixed literal.
     assert "integer(p.count" in code
+
+
+def test_the_deadline_can_be_overridden_per_call():
+    """One deadline does not fit every call.
+
+    Measured: `getSingleScreenNotifies` reported TIMEOUT at the dispatcher-wide 5 s while a request
+    was genuinely pending, and the same call answered immediately when nothing was pending. So the
+    deadline is not evidence about whether the request exists.
+    """
+    source = MODULE.read_text(encoding="utf-8")
+    # groupEvent accepts an override and uses it for its own deadline.
+    assert "async function groupEvent(svc, method, args, eventName, select, timeoutOverrideMs)" in source
+    assert "const eventTimeoutMs = timeoutOverrideMs === undefined ? timeoutMs" in source
+    assert "timeoutMs: eventTimeoutMs" in source
+    start = source.index("if (op === 'group.notices')")
+    end = source.index("if (op === 'group.request.operate')")
+    body = source[start:end]
+    # The notices call asks for longer than the default and lets a caller ask for longer still.
+    assert "15000" in body
+    assert "integer(p.timeout_ms" in body
+    assert "}, deadlineMs);" in body
+
+
+async def test_the_action_forwards_count_and_timeout():
+    ctx = Ctx({"notifies": []})
+    await GetGroupNoticesAction().run(ctx, count=20, timeout_ms=30000)
+    payload = ctx.seen[0][1]
+    assert payload["count"] == 20
+    assert payload["timeout_ms"] == 30000
+
+
+async def test_the_action_sends_only_the_account_by_default():
+    """No arguments means the payload's own defaults, not a wall of nulls.
+
+    `account` is stamped by the shared `call` helper for every handler, so it is expected here.
+    """
+    ctx = Ctx({"notifies": []})
+    await GetGroupNoticesAction().run(ctx)
+    assert set(ctx.seen[0][1]) == {"account"}

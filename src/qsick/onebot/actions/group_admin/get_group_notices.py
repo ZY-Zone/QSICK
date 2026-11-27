@@ -35,8 +35,14 @@ def _row(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def _handle(ctx: Any, **_: Any) -> dict[str, Any]:
-    data = await call(ctx, "group.notices", {}, "group notices")
+async def _handle(ctx: Any, count: Any = None, timeout_ms: Any = None,
+                  **_: Any) -> dict[str, Any]:
+    params: dict[str, Any] = {}
+    if count not in (None, ""):
+        params["count"] = int(count)
+    if timeout_ms not in (None, ""):
+        params["timeout_ms"] = int(timeout_ms)
+    data = await call(ctx, "group.notices", params, "group notices")
     notifies = [_row(item) for item in (data.get("notifies") or []) if isinstance(item, dict)]
     return {
         "count": len(notifies),
