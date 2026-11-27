@@ -905,7 +905,7 @@ def fetch_from_server(runtime_dir: str) -> int:
     log("  转到服务器源：%s" % SERVER_BASE_URL)
     try:
         module = _runtime_fetch()
-        module.ensure_runtime(Path(runtime_dir), base_url=SERVER_BASE_URL)
+        module.ensure_runtime(Path(runtime_dir), base_url=SERVER_BASE_URL, console=True)
     except Exception as exc:                          # noqa: BLE001
         log("[错误] 服务器源也失败: %s" % exc)
         return 5

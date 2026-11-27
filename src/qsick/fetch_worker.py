@@ -31,8 +31,21 @@ def _say(message: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     arguments = list(argv if argv is not None else sys.argv[1:])
+
+    # `<dir> [--base URL]`. `--base` pins one source: the caller already decided which one to use
+    # (the "server only" launcher does), and re-deriving that here would silently undo the choice.
+    base_url = ""
+    if "--base" in arguments:
+        index = arguments.index("--base")
+        try:
+            base_url = arguments[index + 1]
+        except IndexError:
+            print("--base 缺少地址", file=sys.stderr)
+            return 2
+        del arguments[index:index + 2]
+
     if not arguments:
-        print("用法: <exe> --fetch-worker <runtime 目录>", file=sys.stderr)
+        print("用法: <exe> --fetch-worker <runtime 目录> [--base 服务器地址]", file=sys.stderr)
         return 2
 
     runtime = Path(arguments[0])
@@ -42,6 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     _say("=" * 60)
     _say("  正在下载 QQ 客户端")
     _say(f"  目标: {runtime}")
+    _say(f"  来源: {base_url or 'GitHub -> 服务器（按优先级）'}")
     if not attached:
         _say("  （无法写入控制台，进度只记录在 logs\\console.log）")
     _say("=" * 60)
@@ -53,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     runtime_fetch.set_progress_sink(_say)
     started = time.time()
     try:
-        runtime_fetch.ensure_runtime(runtime)
+        runtime_fetch.ensure_runtime(runtime, base_url=base_url or None)
     except Exception as exc:  # noqa: BLE001 - the message is the point
         _say("")
         _say(f"[失败] {type(exc).__name__}: {exc}")

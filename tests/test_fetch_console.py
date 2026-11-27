@@ -171,5 +171,35 @@ def test_the_tee_writes_to_both_sinks_and_survives_a_dead_one():
     assert "still" in log.getvalue()
 
 
+def test_a_pinned_source_is_carried_into_the_child(monkeypatch):
+    """The "server only" launcher must not reopen the GitHub route in the child.
+
+    `ensure_runtime(console=True, base_url=...)` spawns a worker; without forwarding the address the
+    child would re-derive the default order and try GitHub first, which is exactly what the operator
+    ruled out by using that launcher.
+    """
+    monkeypatch.setattr(fetch_console.sys, "frozen", False, raising=False)
+    command = fetch_console.worker_command(Path("/tmp/rt"), "http://server.example/x")
+    assert "--base" in command
+    assert command[command.index("--base") + 1] == "http://server.example/x"
+
+
+def test_no_base_flag_when_no_source_is_pinned(monkeypatch):
+    monkeypatch.setattr(fetch_console.sys, "frozen", False, raising=False)
+    command = fetch_console.worker_command(Path("/tmp/rt"))
+    assert "--base" not in command
+
+
+def test_the_build_ships_a_server_only_launcher():
+    """`build.ps1` must generate the bat into the output root, next to the exe.
+
+    Asserted on the generator rather than on a build artefact: the artefact only exists after a
+    build, while the rule ("this script is generated, and it calls --server") holds in the source.
+    """
+    script = (ROOT / "build.ps1").read_text(encoding="utf-8-sig")
+    assert "仅服务器源下载QQnt.bat" in script
+    assert "--fetch-runtime --server" in script
+
+
 def _explode(*args, **kwargs):  # pragma: no cover - only used to prove a path is not taken
     raise AssertionError("这里不该派生进程")

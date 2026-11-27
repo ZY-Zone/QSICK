@@ -415,14 +415,15 @@ def _fetch_from_server(runtime: Path, base: str) -> bool:
     return True
 
 
-def _download_in_console(runtime: Path) -> bool:
+def _download_in_console(runtime: Path, base_url: str = "") -> bool:
     """交给子进程用独立窗口下载。返回是否由子进程完成了这次下载。
 
     子进程只是"多一个窗口"，不改变源顺序——它跑的是同一份 ``ensure_runtime``。
+    ``base_url`` 会一并传下去：调用方钉死了某一条源（例如"只用服务器"），子进程不该把它解开。
     """
     from . import fetch_console
 
-    process = fetch_console.spawn(runtime)
+    process = fetch_console.spawn(runtime, base_url)
     if process is None:
         return False
     _log().info("下载将在独立窗口中进行", pid=getattr(process, "pid", 0))
@@ -460,7 +461,7 @@ def ensure_runtime(runtime: Path, base_url: str | None = None, config=None,
         return False
 
     # 窗口化下载：子进程跑的是同一个函数，所以在它自己里面不会再次派生（fetch_console 会拦）。
-    if console and _download_in_console(runtime):
+    if console and _download_in_console(runtime, (base_url or os.environ.get("QSICK_RUNTIME_URL") or "").strip()):
         _log().info("runtime 就绪", runtime=str(runtime), source="独立窗口")
         return True
 

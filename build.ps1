@@ -309,6 +309,7 @@ QSICK 分发版
   build\QQNT.dll   headless 实例的宿主垫片
   plugins\         内置插件
   qsick.example.json  配置样板。需要改端口/令牌时，复制成 qsick.json 再改
+  仅服务器源下载QQnt.bat  只用项目发布服务器下载客户端（不碰 GitHub），双击即可
   data\ logs\ downloads\ temp\    运行时可写目录，可随时清空（logs 除外）
 
 首次使用
@@ -344,6 +345,65 @@ $readmePath = Join-Path $AppDir '使用说明.txt'
 # UTF-8 with BOM：记事本对无 BOM 的 UTF-8 中文会显示成乱码。
 [System.IO.File]::WriteAllText($readmePath, $readme, (New-Object System.Text.UTF8Encoding($true)))
 Write-Info '使用说明.txt'
+
+# --------------------------------------------------------------------------- 服务器源专用启动脚本
+
+Write-Step '生成「仅服务器源下载」脚本'
+
+# 为什么单独给一个 bat：
+#
+# `--fetch-runtime` 按优先级走 GitHub → 服务器，5 秒探测一次 GitHub。GitHub 不可达时那 5 秒是白等的；
+# 更要紧的是，运维如果已经知道该走自家服务器（内网、CI、离线机器），就不该让程序还去试一次外网。
+# `--server` 是 qqnt_get 的开关，只认 SERVER_BASE_URL。
+#
+# 这个 bat 放在 exe 旁边，双击即可；不需要系统里有 Python，用的是打包进去的那份 qqnt_get。
+$serverBat = @'
+@echo off
+rem ===========================================================================
+rem  Fetch the QQ NT client from QSICK's own release server, server only.
+rem
+rem  Same download as --fetch-runtime, except GitHub is never contacted:
+rem  qqnt_get.py is asked for --server, which goes straight to the project's
+rem  release server (descriptor.json + sha256, resumable through HTTP Range).
+rem
+rem  Use this when GitHub is slow or blocked, or when the machine has no
+rem  business reaching out to it at all.
+rem
+rem  The download runs in its own console window; progress is also written to
+rem  logs\console.log. QSICK itself is not started by this script.
+rem ===========================================================================
+setlocal EnableExtensions
+cd /d "%~dp0"
+title QSICK - QQ NT (server only)
+
+if not exist "%~dp0QSICK.exe" (
+    echo [ERROR] QSICK.exe is missing next to this script.
+    pause
+    exit /b 1
+)
+
+echo Fetching the QQ NT client from the release server only.
+echo A separate window shows the progress; this one waits for it to finish.
+echo.
+
+rem No `start`: cmd waits for a GUI application when it is invoked from a batch
+rem file, so the exit code below is the real one.
+"%~dp0QSICK.exe" --fetch-runtime --server
+set "RC=%ERRORLEVEL%"
+
+echo.
+echo Exit code %RC%
+if not "%RC%"=="0" echo See logs\console.log for the reason.
+echo.
+pause
+exit /b %RC%
+'@
+$serverBatPath = Join-Path $AppDir '仅服务器源下载QQnt.bat'
+# CRLF + GBK 之外的写法：bat 里只有 ASCII，编码不成问题，但换行必须是 CRLF，否则 cmd 的
+# 标签跳转在某些位置会读错行。
+$serverBatText = $serverBat -replace "`r?`n", "`r`n"
+[System.IO.File]::WriteAllText($serverBatPath, $serverBatText, (New-Object System.Text.UTF8Encoding($false)))
+Write-Info '仅服务器源下载QQnt.bat'
 
 # --------------------------------------------------------------------------- 汇总
 

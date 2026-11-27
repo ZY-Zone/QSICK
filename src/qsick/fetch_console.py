@@ -175,7 +175,7 @@ def attach_output(title: str = WINDOW_TITLE) -> bool:
         return False
 
 
-def worker_command(runtime: Path) -> list[str] | None:
+def worker_command(runtime: Path, base_url: str = "") -> list[str] | None:
     """The command line that re-runs this program in worker mode.
 
     Two shapes, because the two launches are genuinely different programs:
@@ -183,22 +183,27 @@ def worker_command(runtime: Path) -> list[str] | None:
     * frozen -- the exe itself, with ``--fetch-worker``, which `packaging/launcher.py` dispatches.
     * source -- ``-m qsick.fetch_worker``. ``PYTHONPATH`` is carried over so a source checkout that
       is *not* installed still resolves ``qsick`` in the child.
+
+    ``base_url`` is carried across when the caller pinned one source, so a server-only download
+    does not quietly reopen the GitHub route in the child -- the child would otherwise have no way
+    to know the parent had already ruled GitHub out.
     """
     target = str(runtime)
+    extra = ["--base", base_url] if base_url else []
     if getattr(sys, "frozen", False):
-        return [sys.executable, "--fetch-worker", target]
+        return [sys.executable, "--fetch-worker", target, *extra]
     package_root = Path(__file__).resolve().parents[1]
     env_path = os.environ.get("PYTHONPATH", "")
     parts = [str(package_root)] + ([env_path] if env_path else [])
     os.environ["PYTHONPATH"] = os.pathsep.join(parts)
-    return [sys.executable, "-m", "qsick.fetch_worker", target]
+    return [sys.executable, "-m", "qsick.fetch_worker", target, *extra]
 
 
-def spawn(runtime: Path) -> subprocess.Popen | None:
+def spawn(runtime: Path, base_url: str = "") -> subprocess.Popen | None:
     """Start the worker in its own console window. Returns None if it could not be started."""
     if disabled() or is_worker() or sys.platform != "win32":
         return None
-    command = worker_command(runtime)
+    command = worker_command(runtime, base_url)
     if not command:
         return None
     env = dict(os.environ)
