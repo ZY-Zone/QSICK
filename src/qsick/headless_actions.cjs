@@ -307,7 +307,7 @@ const REQUIREMENTS = Object.freeze({
   // absent only because no message builder existed. See headless_groupfile.cjs for the field numbers,
   // which are transcribed from Lagrange's ProtoMember attributes rather than guessed.
   // Pending group notifications: the only source of a request's flag (`seq`) and the applicant's uid.
-  'group.notices': ['Group', 'fetchGroupNotify', 'addKernelGroupListener', 'removeKernelGroupListener'],
+  'group.notices': ['Group', 'getSingleScreenNotifies', 'addKernelGroupListener', 'removeKernelGroupListener'],
   // Agree / refuse / ignore one pending request. `operateSysNotify` spreads its second argument.
   'group.request.operate': ['Group', 'operateSysNotify'],
   'group.file.download': ['Msg', 'sendSsoCmdReqByContend'],
@@ -2332,22 +2332,31 @@ function createActionDispatcher(options = {}) {
       //
       // This is the only source of a request's `flag` (the kernel calls it `seq`) and of the
       // applicant's uid -- the OLPush frame that announces a request carries neither, which is why
-      // the event stream could only say "a request exists" with no applicant. `fetchGroupNotify` is a
-      // trigger; the list arrives on `onGroupNotifiesUpdated`.
+      // the event stream could only say "a request exists" with no applicant.
+      //
+      // The call is a trigger and the list arrives on a listener. Measured: the earlier pair
+      // (fetchGroupNotify / onGroupNotifiesUpdated) answered an empty list on a session that had a
+      // pending request; `getSingleScreenNotifies(doubt, '', count)` +
+      // `onGroupSingleScreenNotifies(doubt, seq, notifies)` is what NapCat uses, and it takes a count.
       //
       // Shape per NapCat's `NodeIKernelGroupService`:
       //     GroupNotify { seq, type, status, group: { groupCode, groupName }, user1: { uid, nickName },
       //                   user2: {...}, actionUser: {...}, actionTime, postscript, ... }
       // `type` 7 is "a request to join that needs an admin's approval"; `NTGroupRequestOperateTypes`
       // 1 = agree, 2 = refuse, 3 = ignore.
+      // `getSingleScreenNotifies(doubt, '', count)` is the pair NapCat's `getSingleScreenNotifies`
+      // uses: the call is a trigger, and the list arrives on `onGroupSingleScreenNotifies(doubt, seq,
+      // notifies)`. `fetchGroupNotify` / `onGroupNotifiesUpdated` is a different pair and answered an
+      // empty list on a session that had a pending request; this one takes a count and returns it.
       const svc = service(s, 'Group',
-        ['fetchGroupNotify', 'addKernelGroupListener', 'removeKernelGroupListener']);
+        ['getSingleScreenNotifies', 'addKernelGroupListener', 'removeKernelGroupListener']);
+      const count = p.count === undefined ? 50 : integer(p.count, 'count', 1, 200);
       // `doubt` arrives as the callback's first argument and has to be captured here: it is not in
       // scope where the rows are built, and referring to it there threw `doubt is not defined`
       // *after* the call had already succeeded -- a confusing failure for a working request.
       let doubtFlag = false;
-      const notifies = await groupEvent(svc, 'fetchGroupNotify', [{}], 'onGroupNotifiesUpdated',
-        (doubt, list) => {
+      const notifies = await groupEvent(svc, 'getSingleScreenNotifies', [false, '', count],
+        'onGroupSingleScreenNotifies', (doubt, seq, list) => {
           doubtFlag = Boolean(doubt);
           return Array.isArray(list) ? list : undefined;
         });

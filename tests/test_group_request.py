@@ -183,3 +183,23 @@ def test_doubt_is_captured_from_the_callback_and_not_referenced_out_of_scope():
     assert "doubt: doubtFlag" in body
     # And it must not reference the bare name in the returned object.
     assert "doubt: Boolean(doubt)" not in body
+
+
+def test_the_list_comes_from_the_pair_napcat_uses():
+    """`getSingleScreenNotifies(doubt, '', count)` + `onGroupSingleScreenNotifies(doubt, seq, list)`.
+
+    The `fetchGroupNotify` / `onGroupNotifiesUpdated` pair answered an empty list on a session that
+    had a pending request, so it is not interchangeable with this one.
+    """
+    source = MODULE.read_text(encoding="utf-8")
+    start = source.index("if (op === 'group.notices')")
+    end = source.index("if (op === 'group.request.operate')")
+    # Comments are allowed to name the rejected pair -- that note is why it is rejected. Only the
+    # executable lines are checked.
+    code = "\n".join(line for line in source[start:end].splitlines()
+                      if not line.strip().startswith("//"))
+    assert "getSingleScreenNotifies" in code
+    assert "onGroupSingleScreenNotifies" in code
+    assert "fetchGroupNotify" not in code
+    # The count is a parameter of the call, not a fixed literal.
+    assert "integer(p.count" in code
