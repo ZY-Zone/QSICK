@@ -15,7 +15,8 @@
 声明：仅项目主要结构、readme.md、以及少量代码由创作者人工编写\
 其余部分均由cc和ds混合工作完成\
 本项目在少部分实现上有所参考napcat/snowluma，实属无奈之举，望见谅\
-有任何疑问可以前往QQ群聊：https://qm.qq.com/q/IDnnkW9eSs
+有任何疑问可以前往QQ群聊：https://qm.qq.com/q/IDnnkW9eSs \
+新项目起步，请多关照，谢谢
 
 </div>
 
@@ -23,13 +24,15 @@
 
 ## 快速开始（Windows）
 
-双击仓库根目录的 **`start.bat`**\
-首次运行：\
+双击仓库根目录的 **`start.bat`**\ 即可
+首次运行流程：\
 1.uv安装依赖\
 2.从联网服务器获取QQNT-9.9.33-52230（这会需要一些时间）\
 ***如果你能够开启魔法，并且魔法稳定性不错 \
 也可以选择双击 **`获取QQnt.bat`** 以提前完成 **`\runtime`** 的下载***\
-3.启动 WebUI 组件并打开 <http://127.0.0.1:5754/>
+3.启动QSICK\
+4.QSICK初始化，生成配置文件，创建pipe实例目录\
+5.启动 WebUI 组件并打开 <http://127.0.0.1:5754/>
 
 ```bat
 start.bat            :: WebUI + mock（安全的默认值）
@@ -66,7 +69,6 @@ uv run qsick --mock
 
 ```
 src/qsick/
-  runtime/     源QQnt客户端，创建实例时会引用
   transport/   帧协议、mock、管道客户端、headless 桥、Windows 注入器
   protocol/    元素、消息模型、rkey、媒体、protobuf 辅助
   instances.py 实例中心：每实例的库、处理器、网络配置
@@ -75,6 +77,7 @@ src/qsick/
   plugins/     清单、带权限的上下文、宿主、热重载
   webui/       FastAPI 应用、Jinja2 模板、静态资源
   headless*    无头宿主桥（host.js / codec / sender / media）
+runtime/              源QQnt客户端，创建实例时会引用
 protocols/            聊天/存储协议适配器（一个目录 = 一个协议）
 plugins/              插件目录
 headlessClient/       实例存放目录，headless为早期设计时命名，现在略有歧义
@@ -89,18 +92,18 @@ sentences/            陶冶情操hh😄
 
 ## 文档
 
-| 文档                                                                             | 内容                                        |
-|--------------------------------------------------------------------------------|-------------------------------------------|
-| [docs/architecture.md](docs/architecture.md)                                   | 架构、多实例数据流、消息与动作流水线、失败姿态                   |
+| 文档                                                                             | 内容                                  |
+|--------------------------------------------------------------------------------|-------------------------------------|
+| [docs/architecture.md](docs/architecture.md)                                   | 架构、多实例数据流、消息与动作流水线、失败姿态             |
 | [docs/PROTOCOLS.md](docs/PROTOCOLS.md)                                         | 协议层：onebotv11 / milky / maxStore 协作 |
-| [docs/plugin-api.md](docs/plugin-api.md)                                       | 插件清单、权限、钩子、配置界面、市场                        |
-| [docs/payload-abi.md](docs/payload-abi.md)                                     | 原生 payload 的帧协议、op 契约、偏移表                 |
-| [docs/payload-ops.md](docs/payload-ops.md)                                     | 242 个动作的清单与 QQ 侧实现状态                      |
-| [docs/headless-capabilities.md](docs/headless-capabilities.md)                 | 无头宿主的能力边界与已知限制                            |
-| [docs/headless-events.md](docs/headless-events.md)                             | 事件从哪来：哪些有、哪些缺通道、为什么                      |
-| [docs/instances.md](docs/instances.md)                                         | 实例类型（headless / pipe）、创建对话框、模板与硬链接        |
-| [docs/onebot-action-audit-summary.md](docs/onebot-action-audit-summary.md)     | 动作实现状态的静态审计结论                             |
-| [docs/audit-onebot11-protocol-notes.md](docs/audit-onebot11-protocol-notes.md) | OneBot v11 协议与本地实现的差异记录                   |
+| [docs/plugin-api.md](docs/plugin-api.md)                                       | 插件清单、权限、钩子、配置界面、市场                  |
+| [docs/payload-abi.md](docs/payload-abi.md)                                     | 原生 payload 的帧协议、op 契约、偏移表           |
+| [docs/payload-ops.md](docs/payload-ops.md)                                     | 242 个动作的清单与 QQ 侧实现状态                |
+| [docs/headless-capabilities.md](docs/headless-capabilities.md)                 | 无头宿主的能力边界与已知限制                      |
+| [docs/headless-events.md](docs/headless-events.md)                             | 事件从哪来：哪些有、哪些缺通道、为什么                 |
+| [docs/instances.md](docs/instances.md)                                         | 实例类型（headless / pipe）、创建对话框、模板与硬链接  |
+| [docs/onebot-action-audit-summary.md](docs/onebot-action-audit-summary.md)     | 动作实现状态的静态审计结论                       |
+| [docs/audit-onebot11-protocol-notes.md](docs/audit-onebot11-protocol-notes.md) | OneBot v11 协议与本地实现的差异记录             |
 
 ## 免责声明
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import httpx
@@ -38,6 +39,11 @@ async def test_pages_render_with_navigation(runtime: Runtime):
         home = await web.get("/")
         assert home.status_code == 200
         assert "总览" in home.text and "QSICK" in home.text
+        assert "/static/logo.png" in home.text
+
+        logo = await web.get("/static/logo.png")
+        assert logo.status_code == 200
+        assert logo.headers["content-type"].startswith("image/png")
 
         logs = await web.get("/logs")
         assert logs.status_code == 200 and "实时日志" in logs.text
@@ -370,6 +376,20 @@ async def test_the_chat_page_is_gone(tmp_path: Path, monkeypatch):
     finally:
         await runtime.stop()
 
+
+async def test_the_topbar_quit_button_shuts_the_runtime_down(runtime: Runtime):
+    """红色「退出」关闭的是进程，不是会话：POST /shutdown 后 runtime.wait() 会返回。"""
+    async with client(runtime) as web:
+        page = await web.get("/")
+        assert "quit-btn" in page.text
+        assert "退出" in page.text
+
+        reply = await web.post("/shutdown")
+        assert reply.status_code == 200
+        assert "QSICK 已退出" in reply.text
+
+    # The page is flushed before the teardown starts: the stop event is set on a short timer.
+    await asyncio.wait_for(runtime.wait(), timeout=5)
 
 async def test_the_retained_chat_send_endpoint_is_still_gated(tmp_path: Path, monkeypatch):
     """保留的 ``/api/chat/send`` 仍受 ``webui.chat_enabled`` 控制。

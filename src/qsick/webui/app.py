@@ -56,7 +56,7 @@ def _asset_version(static_dir: Path) -> str:
     """
     newest = 0.0
     total = 0
-    for name in ("app.css", "app.js", "cache.css", "cursor.css", "cursor.js", "htmx-lite.js"):
+    for name in ("app.css", "app.js", "cache.css", "cursor.css", "cursor.js", "htmx-lite.js", "logo.png"):
         try:
             stat = (static_dir / name).stat()
         except OSError:
@@ -127,6 +127,47 @@ def _auth(app: "FastAPI") -> AuthStore:
     """
     return app.state.auth
 
+
+#: Served in response to the red 退出 button in the topbar. Deliberately self-contained: the process
+#: is about to stop and its static assets are about to disappear, so this page must not depend on any.
+_SHUTDOWN_PAGE = """<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>QSICK · 已退出</title>
+<style>
+  :root { color-scheme: light dark; font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f9ff; color: #0f1f3d; }
+  .card { width: min(430px, calc(100vw - 32px)); padding: 34px 30px; border-radius: 18px;
+          border: 1px solid rgba(15, 40, 70, .12); background: #fff;
+          box-shadow: 0 24px 60px rgba(15, 40, 70, .12); text-align: center; }
+  .icon { display: grid; place-items: center; width: 52px; height: 52px; margin: 0 auto 18px;
+          border-radius: 50%; background: rgba(220, 38, 38, .12); color: #dc2626; font-size: 24px; }
+  h1 { margin: 0 0 8px; font-size: 19px; }
+  p { margin: 6px 0 0; font-size: 13.5px; line-height: 1.9; color: #5b6b88; }
+  .note { margin-top: 16px; font-size: 12px; color: #8391aa; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #0b1322; color: #e6eefb; }
+    .card { background: #121c30; border-color: rgba(148, 190, 255, .16); box-shadow: 0 24px 60px rgba(0, 0, 0, .5); }
+    p { color: #9db0cf; }
+    .note { color: #7d90b0; }
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⏻</div>
+    <h1>QSICK 已退出</h1>
+    <p>正在停止所有实例、协议端与 WebUI，进程会在几秒内结束。</p>
+    <p>现在可以关闭这个页面了。</p>
+    <div class="note">如果没有自动退出，请回到终端按 Ctrl+C。</div>
+  </div>
+</body>
+</html>
+"""
 
 def create_app(runtime: "Runtime") -> FastAPI:
     app = FastAPI(title="QSICK WebUI", docs_url=None, redoc_url=None)
@@ -330,6 +371,22 @@ def create_app(runtime: "Runtime") -> FastAPI:
         response.delete_cookie("qsick_token")
         response.delete_cookie(AUTH_COOKIE)
         return response
+
+
+
+    @app.post("/shutdown", response_class=HTMLResponse, include_in_schema=False)
+    async def shutdown(request: Request) -> Response:
+        """Close QSICK from the topbar's red 退出 button.
+
+        The stop event is scheduled instead of set here: this handler must return so uvicorn can flush
+        the goodbye page before the runtime begins tearing its own servers down. `Runtime.stop()` still
+        performs the actual ordered teardown (instances -> reverse ws -> servers -> plugins -> store).
+        """
+        denied = guard(request)
+        if denied:
+            return denied
+        asyncio.get_running_loop().call_later(0.8, runtime.request_shutdown, "webui")
+        return HTMLResponse(_SHUTDOWN_PAGE, headers={"Cache-Control": "no-store"})
 
     # ---------------------------------------------------------------- 安全与隐私
 

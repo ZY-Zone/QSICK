@@ -1707,6 +1707,18 @@ class Runtime:
             except Exception as exc:  # noqa: BLE001 - the watcher must keep running
                 log.debug("session link sync failed", error=str(exc))
 
+    def request_shutdown(self, reason: str = "") -> None:
+        """Ask the process owner to stop: `wait()` returns and the launcher's finally runs `stop()`.
+
+        The WebUI's red 退出 button posts here. Only the stop event is set -- teardown stays on
+        the task that owns the runtime, so the running uvicorn server can still flush the response
+        that told the browser what happened, and `stop()` keeps its single, ordered exit path.
+        """
+        if self._stopping.is_set():
+            return
+        log.info("shutdown requested", reason=reason or "unspecified")
+        self._stopping.set()
+
     async def stop(self) -> None:
         self._stopping.set()
         if self._headless_manager is not None:
