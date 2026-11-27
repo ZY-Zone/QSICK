@@ -41,6 +41,30 @@ import sys
 #: directory holding this file, which is the only stable anchor for the entry script.
 ENTRY = os.path.join(SPECPATH, "launcher.py")
 
+#: 产物目录名带版本号，`build.ps1` 用同一个规则算出来。
+#:
+#: 两边都从 `pyproject.toml` 读，而不是一方传给另一方：spec 由 pyinstaller 直接执行，
+#: 没有别的地方能可靠地把参数递进来。读同一个文件是唯一保证两者不漂移的办法。
+REPO = os.path.dirname(SPECPATH)
+
+
+def _version() -> str:
+    import re
+
+    path = os.path.join(REPO, "pyproject.toml")
+    with open(path, "r", encoding="utf-8") as handle:
+        for line in handle:
+            match = re.match(r'^version\s*=\s*"([^"]+)"', line)
+            if match:
+                return match.group(1)
+    raise SystemExit(f"无法从 {path} 读出 version")
+
+
+VERSION = _version()
+
+#: exe 仍叫 QSICK.exe。版本靠目录区分——改 exe 名会让快捷方式、脚本里的引用全部失效。
+APP_NAME = f"QSICK-{VERSION}"
+
 #: Built from the artwork by `packaging/make_icon.py`; committed so a build does not depend on Pillow
 #: or on the original PNG being present. Eight sizes from 16 to 256, because Windows picks a
 #: different one per surface (title bar, taskbar, Alt+Tab, large-icon view).
@@ -163,5 +187,7 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="QSICK",
+    # `dist/QSICK-<version>/`. The EXE above keeps the plain `QSICK` name; only the folder carries
+    # the version, so several builds can sit side by side without overwriting each other.
+    name=APP_NAME,
 )

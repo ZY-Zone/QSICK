@@ -41,9 +41,26 @@ $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $DistRoot = Join-Path $RepoRoot 'dist'
-$AppDir = Join-Path $DistRoot 'QSICK'
 $WorkDir = Join-Path $DistRoot '.pyinstaller'
 $SpecFile = Join-Path $RepoRoot 'packaging\qsick.spec'
+
+#: 版本号只从 `pyproject.toml` 读。
+#:
+#: 它是打包工具认的那一份。`src/qsick/__init__.py` 里还有一份 `__version__`，是运行时真正读的，
+#: 两处互不相干——所以下面会比对，不一致就让构建失败，而不是产出一个自称版本 A、元数据版本 B 的东西。
+$PyprojectPath = Join-Path $RepoRoot 'pyproject.toml'
+$VersionMatch = Select-String -Path $PyprojectPath -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
+if (-not $VersionMatch) {
+    throw "无法从 $PyprojectPath 读出 version"
+}
+$Version = $VersionMatch.Matches[0].Groups[1].Value
+
+#: 产物目录带上版本号：`dist/QSICK-1.0/`。
+#:
+#: 同一个 dist 下放多个版本不会互相覆盖，出问题时也能一眼看出手上这份是哪一版。
+#: exe 本身仍叫 QSICK.exe——版本靠目录区分，改 exe 名会让快捷方式、脚本里的引用全部失效。
+$AppName = "QSICK-$Version"
+$AppDir = Join-Path $DistRoot $AppName
 
 #: 构建用的独立虚拟环境。
 #:
@@ -114,6 +131,29 @@ if (-not (Test-Path $SpecFile)) {
 }
 Write-Info "spec      $SpecFile"
 
+# 版本一致性：`pyproject.toml` 与 `src/qsick/__init__.py` 各有一份，互不关联。
+#
+# 只改一边的后果是静默的：`pip`/`uv` 认为的版本和 `qsick --version`、OneBot `get_version_info`
+# 报的版本不同，而且没有任何地方会报错。在构建这一步拦下来，代价最小。
+$InitPath = Join-Path $RepoRoot 'src\qsick\__init__.py'
+$InitMatch = Select-String -Path $InitPath -Pattern '^__version__\s*=\s*"([^"]+)"' | Select-Object -First 1
+if (-not $InitMatch) {
+    throw "无法从 $InitPath 读出 __version__"
+}
+$InitVersion = $InitMatch.Matches[0].Groups[1].Value
+if ($InitVersion -ne $Version) {
+    throw @"
+版本号不一致，已停止构建。
+
+  pyproject.toml        version     = "$Version"
+  src/qsick/__init__.py __version__ = "$InitVersion"
+
+两处都要改：前者是打包元数据，后者是运行时真正读的那份。
+"@
+}
+Write-Info "version   $Version（pyproject.toml 与 __init__.py 一致）"
+Write-Info "产物目录  dist\$AppName"
+
 $uv = Get-Command uv -ErrorAction SilentlyContinue
 if (-not $uv) {
     throw '找不到 uv。安装：powershell -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/install.ps1 | iex"'
@@ -178,7 +218,11 @@ if (-not (Test-Path $BuildPyInstaller)) {
 
 if ($Clean) {
     Write-Step '清理旧产物'
-    foreach ($path in @($AppDir, $WorkDir)) {
+    # 只清当前版本的目录：`dist/` 下允许并存多个版本，把别的版本一起删掉就违背了带版本号的意义。
+    #
+    # 顺带清掉旧的无版本名 `dist/QSICK/`：它是改名之前的产物，留着会让人以为有两套东西。
+    $legacy = Join-Path $DistRoot 'QSICK'
+    foreach ($path in @($AppDir, $WorkDir, $legacy)) {
         if (Test-Path $path) {
             Remove-Item -Recurse -Force $path
             Write-Info "已删除 $path"
