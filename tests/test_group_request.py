@@ -165,3 +165,21 @@ def test_a_resolvable_applicant_still_gets_a_number():
     event = mapper._group_request(2169010946, "u_known", "")
     assert event["user_id"] == 1927676487
     assert event["user_id_uid"] == "u_known"
+
+
+def test_doubt_is_captured_from_the_callback_and_not_referenced_out_of_scope():
+    """Measured failure: `doubt is not defined`, thrown *after* the call had already succeeded.
+
+    `groupEvent`'s selector receives `(doubt, list)` and returns the list; the rows are built outside
+    that closure, so `doubt` has to be captured. A working request that then throws is the worst
+    shape of bug -- the notifications were fetched and the caller saw an error.
+    """
+    source = MODULE.read_text(encoding="utf-8")
+    start = source.index("if (op === 'group.notices')")
+    end = source.index("if (op === 'group.request.operate')")
+    body = source[start:end]
+    assert "let doubtFlag = false;" in body
+    assert "doubtFlag = Boolean(doubt);" in body
+    assert "doubt: doubtFlag" in body
+    # And it must not reference the bare name in the returned object.
+    assert "doubt: Boolean(doubt)" not in body

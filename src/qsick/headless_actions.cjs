@@ -2342,8 +2342,15 @@ function createActionDispatcher(options = {}) {
       // 1 = agree, 2 = refuse, 3 = ignore.
       const svc = service(s, 'Group',
         ['fetchGroupNotify', 'addKernelGroupListener', 'removeKernelGroupListener']);
+      // `doubt` arrives as the callback's first argument and has to be captured here: it is not in
+      // scope where the rows are built, and referring to it there threw `doubt is not defined`
+      // *after* the call had already succeeded -- a confusing failure for a working request.
+      let doubtFlag = false;
       const notifies = await groupEvent(svc, 'fetchGroupNotify', [{}], 'onGroupNotifiesUpdated',
-        (doubt, list) => (Array.isArray(list) ? list : undefined));
+        (doubt, list) => {
+          doubtFlag = Boolean(doubt);
+          return Array.isArray(list) ? list : undefined;
+        });
       const rows = notifies.map(row => {
         if (!object(row)) return null;
         const group = object(row.group) ? row.group : {};
@@ -2366,7 +2373,7 @@ function createActionDispatcher(options = {}) {
           action_time: row.actionTime === undefined ? '' : String(row.actionTime),
         };
       }).filter(Boolean);
-      return { doubt: Boolean(doubt), count: rows.length, notifies: rows };
+      return { doubt: doubtFlag, count: rows.length, notifies: rows };
     }
     if (op === 'group.request.operate') {
       // Agree to, refuse or ignore one pending group request.
