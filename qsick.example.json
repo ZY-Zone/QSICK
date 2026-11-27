@@ -29,7 +29,7 @@
     "chat_enabled": false
   },
   "transport": {
-    "mode": "mock",
+    "mode": "headless",
     "pipe_prefix": "\\\\.\\pipe\\qsick",
     "payload_path": "",
     "connect_timeout": 5.0,

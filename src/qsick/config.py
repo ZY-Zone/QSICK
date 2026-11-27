@@ -84,9 +84,17 @@ class WebUIConfig:
 
 @dataclass(slots=True)
 class TransportConfig:
-    """``mock`` runs a synthetic QQ; ``pipe`` attaches to the native payload."""
+    """``mock`` runs a synthetic QQ; ``pipe`` attaches to the native payload; ``headless``
+    attaches to the headless client instances under ``headless_root``."""
 
-    mode: str = "mock"
+    # Default is `headless`, not `mock`.
+    #
+    # This is what `start.bat` gets when it runs `uv run qsick` with no flag: the script leaves
+    # `MODE` empty for a plain double-click, and `load_config` falls back to this field when there is
+    # no `qsick.json`. With `mock` here, a fresh checkout silently ran the synthetic runtime and
+    # every message went to a fake QQ that nobody was watching -- which looks exactly like "the bot
+    # works but nothing arrives". `mock` is still reachable with `--mock` / `start.bat mock`.
+    mode: str = "headless"
     # Named-pipe prefix. The payload creates ``<prefix>.<pid>.ctl`` / ``.evt``.
     pipe_prefix: str = r"\\.\pipe\qsick"
     payload_path: str = ""
