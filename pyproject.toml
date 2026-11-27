@@ -1,10 +1,10 @@
 [project]
 name = "qsick"
 version = "0.3.0"
-description = "QSICK — an injectable OneBot v11 runtime for QQ NT, Python core + native payload"
+description = "QSICK — an injectable OneBot v11/Milky runtime for QQ NT, Python core + native payload"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "AGPL-3.0-or-later" }
+license = { text = "LICENSE for QSICK" }
 authors = [{ name = "QSICK contributors" }]
 dependencies = [
     "fastapi>=0.115",

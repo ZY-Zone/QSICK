@@ -1,6 +1,12 @@
+<img src="logo.png" width = "305" height = "305" alt="QSICK" align=right />
+
+<div align="center">
+
 # QSICK
 
 一个QQNT的api导出工具
+
+</div>
 
 ***
 声明：仅项目主要结构、readme.md、以及少量代码由创作者人工编写\
@@ -104,7 +110,7 @@ sentences/            陶冶情操hh😄
   特定用途适用性与非侵权。
 - **第三方组件。** `qsick_payload.dll` 是专有二进制组件，不在 AGPL 范围内，仅随 QSICK
   分发且仅限非商业用途；条款见 [NATIVE-NOTICE.md](native/qsick-payload/NATIVE-NOTICE.md)。
-  源码部分以 AGPL-3.0-or-later 授权，见 [LICENSE](LICENSE)。
+  源码部分以 LICENSE for QSICK 授权，见 [LICENSE](LICENSE)。
 - **与腾讯无关。** QQ 与腾讯是各自权利人的商标；QSICK 与腾讯无隶属、背书或支持关系。
 
 **如果你不同意以上任何一条，请不要使用本项目。**
