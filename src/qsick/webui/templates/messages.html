@@ -15,16 +15,19 @@
 
 <section class="card">
   {% if messages %}
-    <table class="table">
-      <thead><tr><th>ID</th><th>账号</th><th>会话</th><th>发送者</th><th>内容</th><th>附件</th><th class="right">时间</th></tr></thead>
+    <table class="table messages-table">
+      <thead><tr><th>ID</th><th>账号</th><th>会话</th><th class="col-sender">发送者</th><th class="col-text">内容</th><th>附件</th><th class="right">时间</th></tr></thead>
       <tbody>
       {% for m in messages %}
         <tr>
           <td class="num">{{ m.message_id }}</td>
           <td class="nowrap"><code class="faint">{{ m.account or "—" }}</code></td>
           <td class="nowrap"><span class="chatpill">{{ "群" if m.is_group else "私" }} {{ m.chat_id }}</span></td>
-          <td class="nowrap">{{ m.sender_label }}</td>
-          <td class="preview" title="{{ m.text }}">{{ m.text }}</td>
+          {# 发送者与内容两列的文字长度不封顶：一条长消息就会把整张表撑开，把附件和时间挤到最右边。
+             宽度与省略号必须落在块级子元素上 —— 在 table-layout: auto 下，单元格自身的
+             max-width 遇到 nowrap 内容会被忽略。 #}
+          <td><div class="cell-clip col-sender" title="{{ m.sender_label }}">{{ m.sender_label }}</div></td>
+          <td><div class="cell-clip col-text" title="{{ m.text }}">{{ m.text }}</div></td>
           <td class="nowrap">{% for a in attachments.get(m.message_id, []) %}{# rel=noreferrer 不只是卫生习惯：gchat.qpic.cn 会校验 Referer，页面地址 http://127.0.0.1:5754 会被
    判为 invalid url 并返回 400。不带 Referer 就正常返回图片。 #}
           <a class="btn ghost sm" href="{{ a.href }}" title="{{ a.title }}" download rel="noreferrer">{{ a.label }}</a> {% endfor %}</td>

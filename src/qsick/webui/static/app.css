@@ -182,10 +182,9 @@ code, pre, .mono { font-family: var(--mono); }
 
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .brand .logo {
-  display: grid; place-items: center; width: 32px; height: 32px;
-  border: 1px solid var(--sky); border-radius: 8px;
-  color: var(--sky-strong); font-weight: 700; font-size: 12px; letter-spacing: 0.5px;
-  background: var(--panel);
+  display: block; width: 32px; height: 32px;
+  border: 1px solid var(--line-strong); border-radius: 50%;
+  background: #fff; object-fit: cover;
 }
 .brand strong { display: block; font-size: 13.5px; letter-spacing: 0.2px; }
 .brand small { color: var(--faint); font-size: 11px; }
@@ -225,7 +224,7 @@ code, pre, .mono { font-family: var(--mono); }
   .topbar .nav-center { position: static; transform: none; flex: 1; max-width: none; }
 }
 
-.topbar .right { display: flex; align-items: center; gap: 8px; }
+.topbar .right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 
 .pill {
   display: inline-flex; align-items: center; gap: 7px;
@@ -251,6 +250,24 @@ code, pre, .mono { font-family: var(--mono); }
 }
 .iconbtn:hover { color: var(--sky-strong); border-color: var(--sky); }
 .iconbtn svg { width: 15px; height: 15px; }
+
+/* 顶栏最右的「退出」：红底白字，和灰色的图标按钮区分开——它关闭的是进程，不是会话。 */
+.quit-form { display: inline-flex; margin: 0; }
+.quit-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid #dc2626; background: #dc2626; color: #fff;
+  font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: background-color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out),
+              transform var(--dur) var(--ease-jelly);
+}
+.quit-btn:hover { background: #b91c1c; border-color: #b91c1c; color: #fff; transform: translateY(-1px); }
+.quit-btn:active { transform: translateY(0) scale(.97); }
+.quit-btn svg { width: 14px; height: 14px; }
+@media (max-width: 720px) {
+  .quit-btn { width: 32px; padding: 0; justify-content: center; }
+  .quit-btn span { display: none; }
+}
 
 /* ------------------------------------------------------------------ pages */
 .page-head {
@@ -455,6 +472,15 @@ a.stat.stat-link:hover {
 .table tbody tr:hover td { background: var(--panel-2); }
 .table .num { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
 .preview { max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 消息缓存表：发送者与内容两列固定宽度，超出部分显示省略号。
+   宽度必须落在块级子元素上：table-layout 是 auto，单元格自身的 max-width 遇到 nowrap 内容会被
+   忽略，于是最长的那个发送者名或最长的一条消息决定了整列宽度，把「附件」和「时间」挤到右侧。
+   两列给的是 width 而不是 max-width —— 用户要的是固定宽度，不是"最多这么多"。 */
+.messages-table .cell-clip {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.messages-table .col-sender { width: 210px; }
+.messages-table .col-text { width: 460px; }
 .chatpill {
   display: inline-block; padding: 0 7px; border-radius: 999px; font-size: 10.5px;
   border: 1px solid var(--line-strong); color: var(--sky-strong); background: var(--panel);
@@ -739,7 +765,10 @@ footer.foot {
 
 @media (max-width: 720px) {
   .topbar { flex-wrap: wrap; gap: 8px; padding: 10px 14px; }
-  .nav { order: 3; width: 100%; }
+  /* 第一行只放品牌与右上角动作，导航整行下移。
+     只写 order/width 不够：.topbar .nav-center 的 flex:1 会把剩余空间全部吃掉，
+     .right 的 margin-left:auto 就分不到空位，退出按钮会停在品牌右边。 */
+  .topbar .nav-center { order: 3; flex: 0 0 100%; width: 100%; }
   /* 顶栏换行后高度不再固定，二级菜单不能在它下面 sticky 着——会盖住第一块卡片。 */
   .subnav-center { position: static; top: auto; }
   .topbar .right { margin-left: auto; }
