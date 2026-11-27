@@ -1,6 +1,6 @@
 [project]
 name = "qsick"
-version = "0.3.0"
+version = "1.0"
 description = "QSICK — an injectable OneBot v11/Milky runtime for QQ NT, Python core + native payload"
 readme = "README.md"
 requires-python = ">=3.12"
