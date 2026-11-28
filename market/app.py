@@ -284,6 +284,11 @@ class MarketHandler(BaseHTTPRequestHandler):
             else:
                 self._error(404, "not found")
             return
+        if path == PREFIX:
+            # 没有尾斜杠时相对 static/ 与 api/ 会解析到上一层，导致页面无样式；统一 301 到规范的目录 URL。
+            location = PREFIX + "/" + (("?" + parsed.query) if parsed.query else "")
+            self._send(301, b"", "text/plain", {"Location": location})
+            return
         sub = path[len(PREFIX):] or "/"
         query = parse_qs(parsed.query)
         if sub.startswith("/files/"):
