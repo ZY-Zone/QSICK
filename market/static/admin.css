@@ -1,0 +1,70 @@
+/* 插件市场管理页：复用 style.css 的 token / 按钮 / 弹窗基础，只加管理布局。 */
+.admin-body { background: var(--bg); }
+.admin-body .ambient { display: none; }
+.admin-nav {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  max-width: 1120px; margin: 16px auto 0; padding: 10px 16px;
+  border: 1px solid var(--line); border-radius: 16px;
+  background: var(--panel); backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-sm);
+}
+.admin-nav-actions { display: flex; align-items: center; gap: 8px; }
+.admin-main { max-width: 1120px; margin: 0 auto; padding: 34px 18px 56px; }
+.admin-login { display: grid; place-items: center; min-height: 62vh; }
+.login-card {
+  width: min(420px, 100%); padding: 28px;
+  border: 1px solid var(--line); border-radius: 18px;
+  background: var(--panel-solid); box-shadow: var(--shadow-md);
+}
+.login-card h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -.02em; }
+.login-lead { margin: 0 0 20px; color: var(--muted); font-size: 12.5px; line-height: 1.8; }
+.login-submit { width: 100%; margin-top: 16px; }
+.admin-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.admin-head h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -.02em; }
+.admin-head > div > p:last-child { margin: 0; color: var(--muted); font-size: 12px; }
+.admin-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.a-stat { padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.a-stat b { display: block; font-size: 24px; line-height: 1.2; letter-spacing: -.03em; }
+.a-stat span { color: var(--faint); font-size: 10.5px; }
+.admin-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.admin-tabs { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
+.a-tab { padding: 7px 11px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 11.5px; cursor: pointer; }
+.a-tab:hover { color: var(--ink); background: var(--sky-soft); }
+.a-tab.active { color: var(--sky); background: var(--sky-soft); font-weight: 600; }
+.admin-toolbar .search-field { min-width: 230px; }
+.admin-list { display: grid; gap: 9px; }
+.admin-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 14px; border: 1px solid var(--line); border-radius: 13px;
+  background: var(--panel); box-shadow: var(--shadow-sm);
+}
+.admin-row .plugin-icon { width: 40px; height: 40px; border-radius: 10px; flex: none; }
+.admin-row-main { flex: 1; min-width: 0; }
+.admin-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.admin-row-head strong { font-size: 13.5px; }
+.admin-row-head code { color: var(--faint); font-size: 10px; }
+.admin-row-desc { margin: 4px 0; color: var(--muted); font-size: 11.5px; line-height: 1.6; }
+.admin-row-meta { color: var(--faint); font: 10px/1.5 var(--mono); }
+.admin-row-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex: none; max-width: 280px; }
+.a-status { padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--muted); font: 9.5px/1.7 var(--mono); }
+.a-status.pending { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
+.a-status.approved { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
+.a-status.rejected, .a-status.removed { color: var(--err); border-color: color-mix(in srgb, var(--err) 30%, var(--line)); }
+.admin-row-actions .btn { padding: 5px 9px; font-size: 10.5px; border-radius: 7px; }
+#edit textarea {
+  width: 100%; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 10px;
+  background: var(--panel-solid); color: var(--ink); font: inherit; font-size: 12.5px; resize: vertical; outline: none;
+}
+#edit textarea:focus { border-color: var(--sky); box-shadow: 0 0 0 3px var(--sky-soft); }
+#edit .form-grid { padding: 0; }
+@media (max-width: 720px) {
+  .admin-nav { margin: 10px 10px 0; padding: 8px 10px; }
+  .admin-nav .brand-copy small { display: none; }
+  .admin-main { padding: 24px 12px 44px; }
+  .admin-stats { grid-template-columns: 1fr 1fr; }
+  .admin-row { flex-wrap: wrap; }
+  .admin-row-actions { max-width: none; width: 100%; justify-content: flex-start; }
+  .admin-toolbar .search-field { flex: 1; min-width: 0; }
+  .admin-body .modal { padding: 17px; }
+  .admin-body .form-grid { grid-template-columns: 1fr; }
+}

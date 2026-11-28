@@ -18,6 +18,7 @@ chmod 755 "$APP_DIR"
 
 if [ ! -f "$ENV_FILE" ]; then
     token=$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')
+    admin_secret=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
     umask 077
     cat >"$ENV_FILE" <<EOF
 QSICK_MARKET_HOST=127.0.0.1
@@ -25,6 +26,10 @@ QSICK_MARKET_PORT=8787
 QSICK_MARKET_DB=$DATA_DIR/market.db
 QSICK_MARKET_FILES=$DATA_DIR/files
 QSICK_MARKET_TOKEN=$token
+QSICK_MARKET_ADMIN_SECRET=$admin_secret
+# 生成管理密码哈希后填入，例如：
+# python3 -c 'from market.app import password_hash; print(password_hash("..."))'
+QSICK_MARKET_ADMIN_HASH=
 EOF
 fi
 chown root:root "$ENV_FILE"

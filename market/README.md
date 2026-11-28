@@ -29,27 +29,62 @@ sh deploy/renew_https.sh      # monthly renewal (wire it to a timer)
 | `archive_sha256` / `archive_size` | uploaded archive integrity and size |
 | `qsick_min` / `qsick_max` | compatible QSICK client range |
 | `published_at` / `updated_at` | timestamps |
+| `status` | `pending`（待审核）/ `approved`（已上架）/ `rejected`（已拒绝）/ `removed`（已下架） |
 | `stars`, `views`, `likes` | counters managed by the market |
 
 ## API
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| GET | `/api/plugins?q=&sort=&order=&client=&page=&per=` | list + search + sort |
-| GET | `/api/plugins/all` | full dump (for sync) |
-| GET | `/api/plugins/{id}` | detail, `?view=1` increments views |
-| GET | `/api/plugins/{id}/install` | install metadata (`repo_url`, `archive_url`) |
+| GET | `/api/plugins?q=&sort=&order=&client=&page=&per=` | public list; only approved plugins |
+| GET | `/api/plugins/all` | public full dump; only approved |
+| GET | `/api/plugins/{id}` | detail, `?view=1` increments views; only approved |
+| GET | `/api/plugins/{id}/install` | install metadata (`repo_url`, `archive_url`); only approved |
 | POST | `/api/plugins/{id}/like` | toggle like for a voter |
-| POST | `/api/plugins` | admin upsert (single) |
-| POST | `/api/plugins/upload` | admin multipart upload of a plugin zip (field `file`); metadata comes from `basic.json` |
+| POST | `/api/plugins/upload` | **public** multipart upload (field `file`); creates a `pending` entry |
 | GET | `/files/{id}/{name}.zip` | download an uploaded archive |
-| PUT | `/api/plugins` | admin full replace: `{"items":[...]}` |
-| DELETE | `/api/plugins/{id}` | admin delete |
-| POST | `/api/plugins/{id}/refresh` | admin refresh stars/updated from GitHub/Gitee |
-| GET | `/api/health` | health + count |
+| POST | `/api/plugins` | operator upsert via `X-Market-Token` (immediately approved) |
+| PUT | `/api/plugins` | operator full replace via token |
+| DELETE | `/api/plugins/{id}` | admin token or admin Cookie; deletes archive |
+| POST | `/api/plugins/{id}/refresh` | operator token; refresh stars/updated from GitHub/Gitee |
+| GET | `/api/admin/session` | current admin session state |
+| POST | `/api/admin/login` | `{"password":"..."}` → HttpOnly admin Cookie |
+| POST | `/api/admin/logout` | clear admin Cookie |
+| GET | `/api/admin/plugins` | admin list with all statuses |
+| POST | `/api/admin/plugins/{id}/approve\|reject\|unpublish` | approve / reject / take down |
+| PATCH | `/api/admin/plugins/{id}` | edit metadata |
+| POST | `/api/admin/plugins/{id}/delete` | delete plugin + archives |
+| GET | `/api/health` | health + approved count |
 
-Admin calls need `X-Market-Token: <token>` (or `Authorization: Bearer`). The token
-lives in `/etc/qsick-market.env`, root-only:
+Public `POST /api/plugins/upload` does not require a token. Uploaded entries start
+as `pending`; they are invisible to the public market until an admin approves
+them. The operator API (`X-Market-Token`) is still available for scripted
+publishes and immediately creates approved entries.
+
+## Admin UI
+
+Open `<http://sickcc.online/QSICK/plugins-market/admin>`; log in with the
+configured admin password. The panel can approve/reject, edit metadata, take
+plugins down, and delete them.
+
+Server configuration in `/etc/qsick-market.env`:
+
+```bash
+# PBKDF2-SHA256 encoded password hash, generate with:
+# python3 -c 'from market.app import password_hash; print(password_hash("..."))'
+QSICK_MARKET_ADMIN_HASH=pbkdf2_sha256$260000$...
+# random HMAC key used to sign the admin session cookie
+QSICK_MARKET_ADMIN_SECRET=...
+```
+
+The plaintext password is never stored on the server; only the PBKDF2 hash and a
+random cookie-signing secret live in the root-only env file. Admin cookies are
+`HttpOnly`, `SameSite=Lax`, and valid for 8 hours.
+
+## Operator API
+
+The old token API is still available for scripted publishes; those entries are
+approved immediately. The token lives in `/etc/qsick-market.env`, root-only:
 
 ```bash
 TOKEN=$(sed -n 's/^QSICK_MARKET_TOKEN=//p' /etc/qsick-market.env)
@@ -65,11 +100,10 @@ curl -X PUT .../api/plugins -H "X-Market-Token: $TOKEN" \
   -H 'Content-Type: application/json' --data-binary @plugins.json
 ```
 
-Upload a plugin archive:
+Upload a plugin archive (public, no token; lands in the review queue):
 
 ```bash
 curl -X POST http://127.0.0.1:8787/QSICK/plugins-market/api/plugins/upload \
-  -H "X-Market-Token: $TOKEN" \
   -F "file=@qsick-guard.zip" \
   -F "repo_url=https://github.com/you/qsick-guard"
 ```
@@ -85,10 +119,11 @@ plugin are retained.
 
 Open `<http://sickcc.online/QSICK/plugins-market/>`:
 
-- 浏览 / 搜索 / 排序 / 分页 / 点赞 / 版本匹配
+- 浏览 / 搜索 / 自定义排序 / 分页 / 点赞 / 版本匹配
 - 「查看 / 安装」详情：版本、兼容范围、归档大小、SHA-256、安装地址与下载
-- 右上角「上传插件」：填入管理 token，选择 zip，可补充仓库/图标/兼容版本后发布
-- token 只随本次上传请求发送，不写入 localStorage
+- 右上角「上传插件」：公开上传，选择 zip，可补充仓库/图标/兼容版本；提交后进入待审核
+- 审核通过后才会出现在公开市场；管理员入口 `<http://sickcc.online/QSICK/plugins-market/admin>`
+
 
 ## Sorting
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.cookiejar
 import io
 import json
 import sys
@@ -15,13 +16,16 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app import PREFIX, MarketServer  # noqa: E402
+from app import PREFIX, MarketServer, password_hash  # noqa: E402
 
 TOKEN = "test-token"
+ADMIN_PASSWORD = "test-admin-password"
 
 
 @pytest.fixture()
-def server(tmp_path: Path):
+def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("QSICK_MARKET_ADMIN_HASH", password_hash(ADMIN_PASSWORD))
+    monkeypatch.setenv("QSICK_MARKET_ADMIN_SECRET", "test-admin-secret")
     instance = MarketServer(("127.0.0.1", 0), str(tmp_path / "market.db"), TOKEN)
     thread = threading.Thread(target=instance.serve_forever, daemon=True)
     thread.start()
@@ -32,7 +36,14 @@ def server(tmp_path: Path):
         instance.server_close()
 
 
-def call(base: str, path: str, method: str = "GET", payload: dict | None = None, token: str | None = None):
+def call(
+    base: str,
+    path: str,
+    method: str = "GET",
+    payload: dict | None = None,
+    token: str | None = None,
+    opener: urllib.request.OpenerDirector | None = None,
+):
     data = json.dumps(payload).encode() if payload is not None else None
     request = urllib.request.Request(base + path, data=data, method=method)
     if data is not None:
@@ -40,10 +51,19 @@ def call(base: str, path: str, method: str = "GET", payload: dict | None = None,
     if token:
         request.add_header("X-Market-Token", token)
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
+        target = opener.open(request, timeout=10) if opener else urllib.request.urlopen(request, timeout=10)
+        with target as response:
             return response.status, json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         return exc.code, json.loads(exc.read().decode("utf-8"))
+
+
+def admin_login(base: str):
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    status, body = call(base, "/api/admin/login", "POST", {"password": ADMIN_PASSWORD}, opener=opener)
+    assert status == 200, body
+    return opener
 
 
 def plugin(plugin_id: str = "guard", **overrides) -> dict:
@@ -175,6 +195,19 @@ def _raw_call(base: str, path: str, body: bytes, content_type: str, token: str |
         return exc.code, json.loads(exc.read().decode("utf-8"))
 
 
+def test_admin_login_and_pages(server: str):
+    status, _ = call(server, "/api/admin/plugins")
+    assert status == 401
+    status, _ = call(server, "/api/admin/login", "POST", {"password": "wrong"})
+    assert status == 401
+    opener = admin_login(server)
+    status, body = call(server, "/api/admin/plugins", opener=opener)
+    assert status == 200 and body["total"] == 0
+    with urllib.request.urlopen(server + "/admin", timeout=10) as response:
+        html = response.read().decode("utf-8")
+    assert "市场管理" in html and "插件管理" in html
+
+
 def test_upload_plugin_archive(server: str):
     manifest = {
         "id": "uploaded",
@@ -185,16 +218,28 @@ def test_upload_plugin_archive(server: str):
     archive_data = _plugin_zip(manifest, {"plugin.py": b"VALUE = 1\n"})
     body, content_type = _multipart({"repo_url": "https://github.com/example/uploaded"}, "uploaded.zip", archive_data)
 
-    status, _ = _raw_call(server, "/api/plugins/upload", body, content_type)
-    assert status == 401
-
-    status, payload = _raw_call(server, "/api/plugins/upload", body, content_type, token=TOKEN)
+    status, payload = _raw_call(server, "/api/plugins/upload", body, content_type)
     assert status == 200, payload
     plugin = payload["plugin"]
+    assert payload["pending"] is True
     assert plugin["id"] == "uploaded"
     assert plugin["version"] == "1.2.3"
+    assert plugin["status"] == "pending"
     assert plugin["archive_size"] == len(archive_data)
     assert len(plugin["archive_sha256"]) == 64
+
+    # 公开市场在审核通过前看不到、也装不了。
+    status, _ = call(server, "/api/plugins/uploaded/install")
+    assert status == 404
+    status, body = call(server, "/api/plugins?per=10")
+    assert body["total"] == 0
+
+    opener = admin_login(server)
+    status, body = call(server, "/api/admin/plugins", opener=opener)
+    assert status == 200 and body["total"] == 1 and body["items"][0]["status"] == "pending"
+
+    status, body = call(server, "/api/admin/plugins/uploaded/approve", "POST", opener=opener)
+    assert status == 200 and body["plugin"]["status"] == "approved"
 
     status, body_json = call(server, "/api/plugins/uploaded/install")
     assert status == 200
@@ -203,7 +248,23 @@ def test_upload_plugin_archive(server: str):
     with urllib.request.urlopen(archive_url, timeout=10) as response:
         assert response.read() == archive_data
 
-    status, _ = call(server, "/api/plugins/uploaded", "DELETE", token=TOKEN)
+    status, body = call(
+        server,
+        "/api/admin/plugins/uploaded",
+        "PATCH",
+        {"name": "Uploaded Edited", "description": "edited"},
+        opener=opener,
+    )
+    assert status == 200 and body["plugin"]["name"] == "Uploaded Edited"
+
+    status, _ = call(server, "/api/admin/plugins/uploaded/unpublish", "POST", opener=opener)
+    assert status == 200
+    status, _ = call(server, "/api/plugins/uploaded/install")
+    assert status == 404
+    status, body = call(server, "/api/plugins?per=10")
+    assert body["total"] == 0
+
+    status, _ = call(server, "/api/admin/plugins/uploaded/delete", "POST", opener=opener)
     assert status == 200
     with pytest.raises(urllib.error.HTTPError) as exc:
         urllib.request.urlopen(archive_url, timeout=10)
@@ -212,10 +273,10 @@ def test_upload_plugin_archive(server: str):
 
 def test_upload_rejects_bad_archive(server: str):
     body, content_type = _multipart({}, "bad.zip", b"not a zip")
-    status, _ = _raw_call(server, "/api/plugins/upload", body, content_type, token=TOKEN)
+    status, _ = _raw_call(server, "/api/plugins/upload", body, content_type)
     assert status == 400
 
     empty_zip = _plugin_zip({"name": "No Id"})
     body, content_type = _multipart({}, "bad.zip", empty_zip)
-    status, _ = _raw_call(server, "/api/plugins/upload", body, content_type, token=TOKEN)
+    status, _ = _raw_call(server, "/api/plugins/upload", body, content_type)
     assert status == 400

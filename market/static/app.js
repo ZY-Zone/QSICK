@@ -375,9 +375,6 @@
 
   function openUpload() {
     uploadFile = null;
-    $("upload-token").value = "";
-    $("upload-token").type = "password";
-    $("upload-token-toggle").textContent = "显示";
     ["upload-icon", "upload-repo", "upload-min", "upload-max"].forEach(function (id) { $(id).value = ""; });
     $("upload-file").value = "";
     $("file-chip").hidden = true;
@@ -398,8 +395,6 @@
 
   function submitUpload() {
     if (uploading) return;
-    var token = $("upload-token").value.trim();
-    if (!token) { uploadStatus("请填写管理 Token", true); $("upload-token").focus(); return; }
     if (!uploadFile) { uploadStatus("请选择 .zip 插件包", true); return; }
     var form = new FormData();
     form.append("file", uploadFile);
@@ -413,7 +408,6 @@
     uploadStatus("");
     var xhr = new XMLHttpRequest();
     xhr.open("POST", "api/plugins/upload");
-    xhr.setRequestHeader("X-Market-Token", token);
     xhr.upload.onprogress = function (event) {
       if (!event.lengthComputable) return;
       var percent = Math.round((event.loaded / event.total) * 100);
@@ -433,14 +427,14 @@
       $("progress-bar").style.width = "100%";
       $("progress-text").textContent = "已完成";
       var plugin = body.plugin;
+      var name = plugin ? plugin.name : (uploadFile ? uploadFile.name : "插件");
       $("upload").close();
-      toast("发布成功：" + (plugin ? plugin.name : uploadFile.name));
+      toast("已提交审核：" + name + "，通过后会出现在市场");
       uploadFile = null;
       state.page = 1;
       state.q = "";
       $("search").value = "";
       load();
-      if (plugin) showDetail(plugin);
     };
     xhr.onerror = function () {
       uploading = false;
@@ -468,10 +462,32 @@
       load();
     }, 260);
   });
-  $("sort").addEventListener("change", function (event) {
-    state.sort = event.target.value;
-    state.page = 1;
-    load();
+  var sortTrigger = $("sortTrigger");
+  var sortPop = $("sortPop");
+  function closeSortMenu() {
+    sortPop.classList.remove("open");
+    sortTrigger.setAttribute("aria-expanded", "false");
+  }
+  sortTrigger.addEventListener("click", function (event) {
+    event.stopPropagation();
+    var open = sortPop.classList.toggle("open");
+    sortTrigger.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  $$(".menu-item", sortPop).forEach(function (item) {
+    item.addEventListener("click", function () {
+      state.sort = item.getAttribute("data-value");
+      $("sortLabel").textContent = item.textContent;
+      $$(".menu-item", sortPop).forEach(function (other) { other.classList.toggle("active", other === item); });
+      closeSortMenu();
+      state.page = 1;
+      load();
+    });
+  });
+  document.addEventListener("click", function (event) {
+    if (!sortPop.contains(event.target) && event.target !== sortTrigger && !sortTrigger.contains(event.target)) closeSortMenu();
+  });
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") closeSortMenu();
   });
   $("order").addEventListener("click", function () {
     state.order = state.order === "desc" ? "asc" : "desc";
@@ -505,12 +521,6 @@
   $("upload-close").addEventListener("click", function () { $("upload").close(); });
   $("upload-cancel").addEventListener("click", function () { $("upload").close(); });
   $("upload-submit").addEventListener("click", submitUpload);
-  $("upload-token-toggle").addEventListener("click", function () {
-    var input = $("upload-token");
-    var visible = input.type === "text";
-    input.type = visible ? "password" : "text";
-    $("upload-token-toggle").textContent = visible ? "显示" : "隐藏";
-  });
 
   var dropzone = $("dropzone");
   dropzone.addEventListener("click", function () { $("upload-file").click(); });

@@ -9,7 +9,9 @@ Run:  python3 app.py            (reads QSICK_MARKET_* environment variables)
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
 import io
 import json
 import mimetypes
@@ -24,6 +26,7 @@ import zipfile
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
@@ -35,6 +38,8 @@ MAX_UPLOAD = int(os.environ.get("QSICK_MARKET_MAX_UPLOAD", str(32 * 1024 * 1024)
 MAX_UNPACKED = 128 * 1024 * 1024
 MAX_ENTRIES = 2000
 SLUG = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
+ADMIN_COOKIE = "qsick_market_admin"
+ADMIN_TTL = 8 * 3600
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS plugins (
@@ -49,6 +54,7 @@ CREATE TABLE IF NOT EXISTS plugins (
     archive_url TEXT NOT NULL DEFAULT '',
     archive_sha256 TEXT NOT NULL DEFAULT '',
     archive_size INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'approved',
     published_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     stars INTEGER NOT NULL DEFAULT 0,
@@ -78,6 +84,29 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def password_hash(password: str, iterations: int = 260000) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return "pbkdf2_sha256${}${}${}".format(
+        iterations,
+        base64.urlsafe_b64encode(salt).decode("ascii").rstrip("="),
+        base64.urlsafe_b64encode(digest).decode("ascii").rstrip("="),
+    )
+
+
+def password_verify(password: str, encoded: str) -> bool:
+    try:
+        scheme, iterations, salt_text, digest_text = encoded.split("$", 3)
+        if scheme != "pbkdf2_sha256":
+            return False
+        salt = base64.urlsafe_b64decode(salt_text + "=" * (-len(salt_text) % 4))
+        expected = base64.urlsafe_b64decode(digest_text + "=" * (-len(digest_text) % 4))
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, int(iterations))
+        return hmac.compare_digest(actual, expected)
+    except (ValueError, TypeError):
+        return False
+
+
 def connect(path: str) -> sqlite3.Connection:
     db = sqlite3.connect(path, timeout=10)
     db.row_factory = sqlite3.Row
@@ -89,6 +118,8 @@ def connect(path: str) -> sqlite3.Connection:
         db.execute("ALTER TABLE plugins ADD COLUMN archive_sha256 TEXT NOT NULL DEFAULT ''")
     if "archive_size" not in columns:
         db.execute("ALTER TABLE plugins ADD COLUMN archive_size INTEGER NOT NULL DEFAULT 0")
+    if "status" not in columns:
+        db.execute("ALTER TABLE plugins ADD COLUMN status TEXT NOT NULL DEFAULT 'approved'")
     return db
 
 
@@ -196,6 +227,7 @@ def entry_dict(db: sqlite3.Connection, row: sqlite3.Row, client: str = "") -> di
         "archive_url": row["archive_url"] or archive_for(row["repo_url"], ""),
         "archive_sha256": row["archive_sha256"],
         "archive_size": row["archive_size"],
+        "status": row["status"],
         "published_at": row["published_at"],
         "updated_at": row["updated_at"],
         "stars": row["stars"],
@@ -217,6 +249,8 @@ class MarketServer(ThreadingHTTPServer):
         default_files = os.environ.get("QSICK_MARKET_FILES", "").strip()
         self.files_dir = Path(files_dir or default_files or (Path(db_path).parent / "files"))
         self.public_base = os.environ.get("QSICK_MARKET_PUBLIC_BASE", "").strip().rstrip("/")
+        self.admin_hash = os.environ.get("QSICK_MARKET_ADMIN_HASH", "").strip()
+        self.admin_secret = os.environ.get("QSICK_MARKET_ADMIN_SECRET", "").strip()
 
 
 class MarketHandler(BaseHTTPRequestHandler):
@@ -274,6 +308,57 @@ class MarketHandler(BaseHTTPRequestHandler):
         seed = f"{self.client_address[0]}|{self.headers.get('User-Agent', '')}"
         return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:32]
 
+    def _admin_ui(self) -> bool:
+        if not (self.server.admin_hash and self.server.admin_secret):
+            return False
+        cookie = SimpleCookie(self.headers.get("Cookie") or "").get(ADMIN_COOKIE)
+        if cookie is None or not cookie.value:
+            return False
+        try:
+            expiry_text, signature = cookie.value.split(".", 1)
+            expiry = int(expiry_text)
+        except (ValueError, AttributeError):
+            return False
+        if expiry < int(time.time()):
+            return False
+        expected = hmac.new(
+            self.server.admin_secret.encode("utf-8"),
+            f"admin|{expiry}".encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        return hmac.compare_digest(expected, signature)
+
+    def _admin_cookie(self) -> str:
+        expiry = int(time.time()) + ADMIN_TTL
+        signature = hmac.new(
+            self.server.admin_secret.encode("utf-8"),
+            f"admin|{expiry}".encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        return (
+            f"{ADMIN_COOKIE}={expiry}.{signature}; Path={PREFIX}; "
+            f"Max-Age={ADMIN_TTL}; HttpOnly; SameSite=Lax"
+        )
+
+    def _require_admin_ui(self) -> bool:
+        if self._admin_ui():
+            return True
+        self._error(401, "admin login required")
+        return False
+
+    def _admin_list(self, query: dict[str, list[str]]) -> None:
+        status = (query.get("status") or [""])[0].strip().lower()
+        with connect(self.server.db_path) as db:
+            if status:
+                rows = db.execute(
+                    "SELECT * FROM plugins WHERE status = ? ORDER BY updated_at DESC, id",
+                    (status,),
+                ).fetchall()
+            else:
+                rows = db.execute("SELECT * FROM plugins ORDER BY updated_at DESC, id").fetchall()
+            items = [entry_dict(db, row) for row in rows]
+        self._json(200, {"ok": True, "total": len(items), "items": items})
+
     # -------------------------------------------------------------------- GET
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -301,9 +386,21 @@ class MarketHandler(BaseHTTPRequestHandler):
         if sub.startswith("/static/"):
             self._static(sub[len("/static/"):])
             return
+        if sub in ("/admin", "/admin/"):
+            html = (BASE / "admin.html").read_text(encoding="utf-8").replace("__PREFIX__", PREFIX)
+            self._send(200, html.encode("utf-8"), "text/html; charset=utf-8", {"Cache-Control": "no-cache"})
+            return
+        if sub == "/api/admin/session":
+            self._json(200, {"ok": True, "authed": self._admin_ui()})
+            return
+        if sub == "/api/admin/plugins":
+            if not self._require_admin_ui():
+                return
+            self._admin_list(query)
+            return
         if sub == "/api/health":
             with connect(self.server.db_path) as db:
-                total = db.execute("SELECT COUNT(*) AS n FROM plugins").fetchone()["n"]
+                total = db.execute("SELECT COUNT(*) AS n FROM plugins WHERE status = 'approved'").fetchone()["n"]
             self._json(200, {"ok": True, "plugins": total, "time": now()})
             return
         if sub == "/api/plugins":
@@ -397,9 +494,7 @@ class MarketHandler(BaseHTTPRequestHandler):
                 pass
 
     def _upload(self) -> None:
-        if not self._admin():
-            self._error(401, "admin token required")
-            return
+        """公开上传：先进入待审核，管理员通过后才出现在市场。"""
         try:
             fields, filename, data = self._read_multipart()
         except ValueError as exc:
@@ -446,8 +541,8 @@ class MarketHandler(BaseHTTPRequestHandler):
                     """
                     INSERT INTO plugins (id, name, repo_url, description, icon_url, version,
                                          qsick_min, qsick_max, archive_url, archive_sha256, archive_size,
-                                         published_at, updated_at, stars)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                                         published_at, updated_at, stars, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending')
                     """,
                     (
                         plugin_id,
@@ -469,7 +564,8 @@ class MarketHandler(BaseHTTPRequestHandler):
                 db.execute(
                     """
                     UPDATE plugins SET name=?, repo_url=?, description=?, icon_url=?, version=?,
-                        qsick_min=?, qsick_max=?, archive_url=?, archive_sha256=?, archive_size=?, updated_at=?
+                        qsick_min=?, qsick_max=?, archive_url=?, archive_sha256=?, archive_size=?,
+                        updated_at=?, status='pending'
                     WHERE id=?
                     """,
                     (
@@ -491,7 +587,7 @@ class MarketHandler(BaseHTTPRequestHandler):
             saved = db.execute("SELECT * FROM plugins WHERE id = ?", (plugin_id,)).fetchone()
             entry = entry_dict(db, saved)
         self._cleanup_archives(plugin_id, stored_name)
-        self._json(200, {"ok": True, "plugin": entry})
+        self._json(200, {"ok": True, "pending": True, "plugin": entry})
 
     def _static(self, name: str) -> None:
         target = (BASE / "static" / name).resolve()
@@ -522,6 +618,7 @@ class MarketHandler(BaseHTTPRequestHandler):
         with connect(self.server.db_path) as db:
             rows = db.execute("SELECT * FROM plugins").fetchall()
             items = [entry_dict(db, row, client) for row in rows]
+        items = [item for item in items if item.get("status") == "approved"]
         if needle:
             items = [
                 item
@@ -564,12 +661,13 @@ class MarketHandler(BaseHTTPRequestHandler):
         with connect(self.server.db_path) as db:
             rows = db.execute("SELECT * FROM plugins ORDER BY published_at DESC").fetchall()
             items = [entry_dict(db, row, client) for row in rows]
+        items = [item for item in items if item.get("status") == "approved"]
         self._json(200, {"total": len(items), "items": items})
 
     def _detail(self, plugin_id: str, count_view: bool) -> None:
         with connect(self.server.db_path) as db:
             row = db.execute("SELECT * FROM plugins WHERE id = ?", (plugin_id,)).fetchone()
-            if row is None:
+            if row is None or row["status"] != "approved":
                 self._error(404, "plugin not found")
                 return
             if count_view:
@@ -581,7 +679,7 @@ class MarketHandler(BaseHTTPRequestHandler):
     def _install(self, plugin_id: str) -> None:
         with connect(self.server.db_path) as db:
             row = db.execute("SELECT * FROM plugins WHERE id = ?", (plugin_id,)).fetchone()
-            if row is None:
+            if row is None or row["status"] != "approved":
                 self._error(404, "plugin not found")
                 return
             entry = entry_dict(db, row)
@@ -599,10 +697,119 @@ class MarketHandler(BaseHTTPRequestHandler):
             },
         )
 
+    def _admin_login(self) -> None:
+        if not (self.server.admin_hash and self.server.admin_secret):
+            self._error(503, "admin password is not configured on the server")
+            return
+        try:
+            payload = self._body()
+        except (ValueError, json.JSONDecodeError) as exc:
+            self._error(400, f"invalid body: {exc}")
+            return
+        password = str(payload.get("password") or "")
+        if not password_verify(password, self.server.admin_hash):
+            self._error(401, "password incorrect")
+            return
+        body = json.dumps({"ok": True, "authed": True}).encode("utf-8")
+        self._send(200, body, "application/json; charset=utf-8", {"Set-Cookie": self._admin_cookie()})
+
+    def _admin_logout(self) -> None:
+        body = json.dumps({"ok": True}).encode("utf-8")
+        self._send(
+            200,
+            body,
+            "application/json; charset=utf-8",
+            {"Set-Cookie": f"{ADMIN_COOKIE}=; Path={PREFIX}; Max-Age=0; HttpOnly; SameSite=Lax"},
+        )
+
+    def _admin_action(self, plugin_id: str, action: str) -> None:
+        if not self._require_admin_ui():
+            return
+        if not SLUG.match(plugin_id):
+            self._error(404, "plugin not found")
+            return
+        if action == "delete":
+            with connect(self.server.db_path) as db:
+                db.execute("DELETE FROM plugins WHERE id = ?", (plugin_id,))
+                db.execute("DELETE FROM likes WHERE plugin_id = ?", (plugin_id,))
+                db.commit()
+            shutil.rmtree(self.server.files_dir / plugin_id, ignore_errors=True)
+            self._json(200, {"ok": True})
+            return
+        status = {"approve": "approved", "reject": "rejected", "unpublish": "removed"}[action]
+        with connect(self.server.db_path) as db:
+            row = db.execute("SELECT * FROM plugins WHERE id = ?", (plugin_id,)).fetchone()
+            if row is None:
+                self._error(404, "plugin not found")
+                return
+            db.execute(
+                "UPDATE plugins SET status = ?, updated_at = ? WHERE id = ?",
+                (status, now(), plugin_id),
+            )
+            db.commit()
+            row = db.execute("SELECT * FROM plugins WHERE id = ?", (plugin_id,)).fetchone()
+            entry = entry_dict(db, row)
+        self._json(200, {"ok": True, "plugin": entry})
+
+    def _admin_patch(self, plugin_id: str) -> None:
+        if not self._require_admin_ui():
+            return
+        if not SLUG.match(plugin_id):
+            self._error(404, "plugin not found")
+            return
+        try:
+            payload = self._body()
+        except (ValueError, json.JSONDecodeError) as exc:
+            self._error(400, f"invalid body: {exc}")
+            return
+        allowed = {
+            "name": 100, "description": 2000, "version": 40, "repo_url": 500,
+            "icon_url": 500, "qsick_min": 40, "qsick_max": 40,
+        }
+        updates: dict[str, str] = {}
+        for key, limit in allowed.items():
+            if key not in payload:
+                continue
+            value = str(payload.get(key) or "").strip()[:limit]
+            if key == "name" and not value:
+                self._error(400, "name 不能为空")
+                return
+            if key in ("repo_url", "icon_url") and value and not value.startswith(("https://", "http://")):
+                self._error(400, f"{key} 必须是 http(s) URL")
+                return
+            updates[key] = value
+        if not updates:
+            self._error(400, "没有可更新的字段")
+            return
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        with connect(self.server.db_path) as db:
+            row = db.execute("SELECT status FROM plugins WHERE id = ?", (plugin_id,)).fetchone()
+            if row is None or row["status"] != "approved":
+                self._error(404, "plugin not found")
+                return
+            db.execute(
+                f"UPDATE plugins SET {assignments}, updated_at = ? WHERE id = ?",
+                (*updates.values(), now(), plugin_id),
+            )
+            db.commit()
+            row = db.execute("SELECT * FROM plugins WHERE id = ?", (plugin_id,)).fetchone()
+            entry = entry_dict(db, row)
+        self._json(200, {"ok": True, "plugin": entry})
+
     # ------------------------------------------------------------------- POST
     def do_POST(self) -> None:  # noqa: N802
         sub = self.path[len(PREFIX):] if self.path.startswith(PREFIX) else self.path
         sub = sub.split("?", 1)[0]
+        if sub == "/api/admin/login":
+            self._admin_login()
+            return
+        if sub == "/api/admin/logout":
+            self._admin_logout()
+            return
+        admin_action = re.match(r"^/api/admin/plugins/([A-Za-z0-9._-]+)/(approve|reject|unpublish|delete)$", sub)
+        if admin_action:
+            self._admin_action(admin_action.group(1), admin_action.group(2))
+            return
         if sub == "/api/plugins/upload":
             self._upload()
             return
@@ -629,6 +836,14 @@ class MarketHandler(BaseHTTPRequestHandler):
             self._refresh(match.group(1))
             return
         self._error(404, "not found")
+
+    def do_PATCH(self) -> None:  # noqa: N802
+        sub = self.path[len(PREFIX):] if self.path.startswith(PREFIX) else self.path
+        match = re.match(r"^/api/admin/plugins/([A-Za-z0-9._-]+)$", sub.split("?", 1)[0])
+        if not match:
+            self._error(404, "not found")
+            return
+        self._admin_patch(match.group(1))
 
     def do_PUT(self) -> None:  # noqa: N802
         sub = self.path[len(PREFIX):] if self.path.startswith(PREFIX) else self.path
@@ -683,7 +898,7 @@ class MarketHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:  # noqa: N802
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Market-Token")
         self.end_headers()
 

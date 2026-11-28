@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f5f8ff" />
+  <title>插件管理 · QSICK 插件市场</title>
+  <base href="__PREFIX__/" />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem("qsick-market-theme");
+        var dark = saved === "dark" || (saved !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="icon" type="image/png" href="static/logo.png" />
+  <link rel="stylesheet" href="static/style.css?v=20261128a" />
+  <link rel="stylesheet" href="static/admin.css?v=20261128a" />
+</head>
+<body class="admin-body">
+<header class="admin-nav">
+  <a class="brand" href="./">
+    <img class="brand-logo" src="static/logo.png" alt="" width="32" height="32" />
+    <span class="brand-copy"><strong>QSICK</strong><small>插件市场 · 管理</small></span>
+  </a>
+  <div class="admin-nav-actions">
+    <a class="btn btn-glass btn-sm" href="./">返回市场</a>
+    <button class="btn btn-glass btn-sm" id="logout" type="button" hidden>退出管理</button>
+  </div>
+</header>
+
+<main class="admin-main">
+  <section id="loginView" class="admin-login">
+    <div class="login-card">
+      <p class="eyebrow"><span class="eyebrow-dot"></span>ADMIN</p>
+      <h1>市场管理</h1>
+      <p class="login-lead">审核待发布插件、编辑信息，或下架不再维护的插件。</p>
+      <form id="loginForm" autocomplete="off">
+        <label class="field">
+          <span>管理密码</span>
+          <div class="input-wrap">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+            <input id="password" type="password" placeholder="输入管理密码" autocomplete="current-password" />
+            <button class="icon-btn mini" id="passwordToggle" type="button">显示</button>
+          </div>
+        </label>
+        <p class="form-status" id="loginStatus" hidden></p>
+        <button class="btn btn-primary login-submit" id="loginSubmit" type="submit">进入管理</button>
+      </form>
+      <p class="tiny">密码不会写入浏览器存储；登录状态由 HttpOnly Cookie 维持。</p>
+    </div>
+  </section>
+
+  <section id="dashboard" hidden>
+    <div class="admin-head">
+      <div>
+        <p class="eyebrow"><span class="eyebrow-dot yellow"></span>REVIEW</p>
+        <h1>插件管理</h1>
+        <p id="adminSub">—</p>
+      </div>
+      <button class="btn btn-glass btn-sm" id="refresh" type="button">刷新列表</button>
+    </div>
+
+    <div class="admin-stats">
+      <div class="a-stat"><b id="statPending">0</b><span>待审核</span></div>
+      <div class="a-stat"><b id="statApproved">0</b><span>已上架</span></div>
+      <div class="a-stat"><b id="statRemoved">0</b><span>已下架</span></div>
+      <div class="a-stat"><b id="statRejected">0</b><span>已拒绝</span></div>
+    </div>
+
+    <div class="admin-toolbar">
+      <div class="admin-tabs" role="tablist" aria-label="筛选状态">
+        <button class="a-tab" type="button" data-status="pending" role="tab">待审核</button>
+        <button class="a-tab" type="button" data-status="approved" role="tab">已上架</button>
+        <button class="a-tab" type="button" data-status="removed" role="tab">已下架</button>
+        <button class="a-tab" type="button" data-status="rejected" role="tab">已拒绝</button>
+        <button class="a-tab" type="button" data-status="" role="tab">全部</button>
+      </div>
+      <label class="search-field">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
+        <input id="adminSearch" type="search" placeholder="搜索名称或 ID" autocomplete="off" />
+      </label>
+    </div>
+
+    <div id="adminList" class="admin-list"></div>
+    <div id="adminEmpty" class="empty-state" hidden>
+      <div class="empty-art"><svg viewBox="0 0 24 24"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg></div>
+      <h3>这里是空的</h3>
+      <p>当前筛选条件下没有插件。</p>
+    </div>
+  </section>
+</main>
+
+<dialog id="edit" class="modal">
+  <div class="modal-head">
+    <div>
+      <p class="eyebrow"><span class="eyebrow-dot yellow"></span>EDIT</p>
+      <h2>编辑插件</h2>
+    </div>
+    <button class="icon-btn" id="editClose" type="button" aria-label="关闭">×</button>
+  </div>
+  <p class="modal-desc" id="editMeta"></p>
+  <div class="form-grid">
+    <label class="field"><span>名称</span><input id="edit-name" /></label>
+    <label class="field"><span>版本</span><input id="edit-version" /></label>
+    <label class="field"><span>仓库地址</span><input id="edit-repo" placeholder="https://…" /></label>
+    <label class="field"><span>图标 URL</span><input id="edit-icon" placeholder="https://…" /></label>
+    <label class="field"><span>最低 QSICK</span><input id="edit-min" /></label>
+    <label class="field"><span>最高 QSICK</span><input id="edit-max" /></label>
+  </div>
+  <label class="field"><span>简介</span><textarea id="edit-desc" rows="4"></textarea></label>
+  <p class="form-status" id="editStatus" hidden></p>
+  <div class="modal-actions">
+    <button class="btn btn-glass" id="editCancel" type="button">取消</button>
+    <button class="btn btn-primary" id="editSave" type="button">保存修改</button>
+  </div>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="static/admin.js?v=20261128a"></script>
+</body>
+</html>

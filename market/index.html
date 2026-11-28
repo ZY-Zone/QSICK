@@ -144,19 +144,20 @@
           <input id="search" type="search" placeholder="搜索名称、简介或插件 ID" autocomplete="off" />
           <kbd>Ctrl K</kbd>
         </label>
-        <label class="select-field" title="排序字段">
-          <span>排序</span>
-          <select id="sort">
-            <option value="published">发布日期</option>
-            <option value="updated">最后更新</option>
-            <option value="name">名称</option>
-            <option value="stars">Stars</option>
-            <option value="views">浏览量</option>
-            <option value="likes">点赞数</option>
-            <option value="match">匹配客户端</option>
-          </select>
-          <svg aria-hidden="true"><use href="#i-chevron-down"/></svg>
-        </label>
+        <div class="menu-field" id="sortMenu">
+          <button class="menu-trigger" id="sortTrigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+            <span>排序</span><b id="sortLabel">发布日期</b><svg aria-hidden="true"><use href="#i-chevron-down"/></svg>
+          </button>
+          <div class="menu-pop" id="sortPop" role="listbox" aria-label="排序字段">
+            <button type="button" class="menu-item active" data-value="published" role="option">发布日期</button>
+            <button type="button" class="menu-item" data-value="updated" role="option">最后更新</button>
+            <button type="button" class="menu-item" data-value="name" role="option">名称</button>
+            <button type="button" class="menu-item" data-value="stars" role="option">Stars</button>
+            <button type="button" class="menu-item" data-value="views" role="option">浏览量</button>
+            <button type="button" class="menu-item" data-value="likes" role="option">点赞数</button>
+            <button type="button" class="menu-item" data-value="match" role="option">匹配客户端</button>
+          </div>
+        </div>
         <button class="icon-btn" id="order" type="button" title="切换正序 / 倒序" aria-label="切换排序方向">↓</button>
         <label class="client-field" title="按 QSICK 客户端版本判断兼容性">
           <span>客户端</span>
@@ -201,6 +202,7 @@
     <a href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge" target="_blank" rel="noreferrer noopener">GitHub</a>
     <a href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge/issues" target="_blank" rel="noreferrer noopener">问题反馈</a>
     <a href="http://www.sickcc.online/QSICK/docs/plugins">插件 API 文档</a>
+    <a href="admin">管理</a>
   </div>
 </footer>
 
@@ -246,16 +248,7 @@
     </div>
     <button class="icon-btn" id="upload-close" type="button" aria-label="关闭"><svg><use href="#i-x"/></svg></button>
   </div>
-  <p class="modal-desc">插件包需要是 <code>.zip</code>，根目录（或唯一顶层目录）包含 <code>basic.json</code>。市场会从清单读取 id、名称、版本和简介。</p>
-
-  <label class="field">
-    <span>管理 Token</span>
-    <div class="input-wrap">
-      <svg aria-hidden="true"><use href="#i-key"/></svg>
-      <input id="upload-token" type="password" autocomplete="off" placeholder="X-Market-Token" />
-      <button class="icon-btn mini" id="upload-token-toggle" type="button" aria-label="显示或隐藏 Token">显示</button>
-    </div>
-  </label>
+  <p class="modal-desc">插件包需要是 <code>.zip</code>，根目录（或唯一顶层目录）包含 <code>basic.json</code>。市场会从清单读取 id、名称、版本和简介；<strong>提交后进入待审核，管理员通过后才会出现在市场。</strong></p>
 
   <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="选择插件 zip 文件">
     <input id="upload-file" type="file" accept=".zip,application/zip" hidden />
@@ -289,7 +282,7 @@
     <button class="btn btn-glass" id="upload-cancel" type="button">取消</button>
     <button class="btn btn-primary" id="upload-submit" type="button"><svg><use href="#i-upload"/></svg>发布插件</button>
   </div>
-  <p class="tiny">Token 只随本次上传请求发送，不会保存到页面存储。上传前请确认你拥有该插件的发布权。</p>
+  <p class="tiny">上传是公开的；发布前请确认你拥有该插件的发布权，并遵守 QSICK 的许可证与社区规则。</p>
 </dialog>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
