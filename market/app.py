@@ -291,7 +291,7 @@ class MarketHandler(BaseHTTPRequestHandler):
             return
         if sub in ("/", "/index.html"):
             html = (BASE / "index.html").read_text(encoding="utf-8").replace("__PREFIX__", PREFIX)
-            self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
+            self._send(200, html.encode("utf-8"), "text/html; charset=utf-8", {"Cache-Control": "no-cache"})
             return
         if sub.startswith("/static/"):
             self._static(sub[len("/static/"):])
