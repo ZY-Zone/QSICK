@@ -12,10 +12,14 @@
       <span class="logo">QS</span>
       <div>
         <strong>QSICK 插件市场</strong>
-        <small>插件只托管在 GitHub / Gitee，本市场只存元数据</small>
+        <small>浏览、安装，或上传自己的插件包</small>
       </div>
     </div>
-    <div class="stats" id="stats">—</div>
+    <div class="top-right">
+      <span class="stats" id="stats">—</span>
+      <button id="upload-open" class="ghost" type="button">上传插件</button>
+      <a class="ghost button-link" href="https://github.com/ZY-Zone/QSICK--QQ_NT-Bridge" target="_blank" rel="noreferrer noopener">GitHub</a>
+    </div>
   </header>
 
   <section class="toolbar">
@@ -37,7 +41,7 @@
   <main>
     <div id="empty" class="empty" hidden>
       <strong>还没有插件</strong>
-      <p>运营者可以通过 <code>POST /api/plugins</code> 推送插件（需要管理 token）。</p>
+      <p>运营者可以点右上角「上传插件」，或通过 <code>POST /api/plugins</code> 推送元数据。</p>
     </div>
     <div id="grid" class="grid" aria-live="polite"></div>
     <div class="pager">
@@ -49,23 +53,61 @@
 
   <dialog id="detail">
     <div class="dialog-head">
-      <h2 id="detail-title">安装插件</h2>
+      <h2 id="detail-title">插件详情</h2>
       <button id="detail-close" class="ghost" type="button">关闭</button>
     </div>
     <p class="muted" id="detail-desc"></p>
-    <label>下载地址 <input id="detail-url" readonly /></label>
+    <div class="facts" id="detail-facts"></div>
+    <label>安装地址 <input id="detail-url" readonly /></label>
     <div class="inline">
-      <button id="detail-copy" type="button">复制下载地址</button>
-      <a id="detail-repo" class="ghost" target="_blank" rel="noreferrer noopener">打开仓库</a>
+      <button id="detail-copy" type="button">复制安装地址</button>
+      <a id="detail-download" class="ghost button-link" target="_blank" rel="noreferrer noopener">下载归档</a>
+      <a id="detail-repo" class="ghost button-link" target="_blank" rel="noreferrer noopener">打开仓库</a>
     </div>
     <p class="muted" style="margin-top:12px">
-      在 QSICK WebUI 的“插件市场”里点击安装/更新，会由 QSICK 下载并校验后落盘。
+      在 QSICK WebUI 的「插件市场」里点击安装/更新，会由 QSICK 下载并校验后落盘。
     </p>
+  </dialog>
+
+  <dialog id="upload">
+    <div class="dialog-head">
+      <h2>上传插件</h2>
+      <button id="upload-close" class="ghost" type="button">关闭</button>
+    </div>
+    <p class="muted">
+      需要一个 <code>.zip</code> 插件包：根目录（或唯一顶层目录）必须包含 <code>basic.json</code>。
+      市场会从清单里读取 id、名称、版本与简介，并把归档保存到本站供安装。
+    </p>
+    <label>管理 Token
+      <input id="upload-token" type="password" autocomplete="off" placeholder="X-Market-Token" />
+    </label>
+    <label>插件包
+      <input id="upload-file" type="file" accept=".zip,application/zip" />
+    </label>
+    <div class="form-grid">
+      <label>图标 URL（可选）
+        <input id="upload-icon" placeholder="https://…" autocomplete="off" />
+      </label>
+      <label>仓库地址（可选）
+        <input id="upload-repo" placeholder="https://github.com/…" autocomplete="off" />
+      </label>
+      <label>最低 QSICK 版本（可选）
+        <input id="upload-min" placeholder="0.2.0" autocomplete="off" />
+      </label>
+      <label>最高 QSICK 版本（可选）
+        <input id="upload-max" placeholder="0.4.0" autocomplete="off" />
+      </label>
+    </div>
+    <p class="hint" id="upload-status" hidden></p>
+    <div class="inline" style="margin-top:12px">
+      <button id="upload-submit" type="button">上传并发布</button>
+      <span class="muted">token 只随本次请求发送，不会保存到页面</span>
+    </div>
   </dialog>
 
   <footer>
     <span>QSICK Market</span>
-    <span class="muted">仅存储仓库 URL、简介、图标、版本；stars/浏览/点赞为本市场计数</span>
+    <span class="muted">上传的归档由本站托管；外部仓库插件仍可从 GitHub / Gitee 安装</span>
   </footer>
 
   <div id="toast" class="toast" hidden></div>

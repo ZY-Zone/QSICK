@@ -10,7 +10,7 @@ UNIT=/etc/systemd/system/qsick-market.service
 
 id -u qsickmarket >/dev/null 2>&1 || useradd --system --home "$DATA_DIR" --shell /usr/sbin/nologin qsickmarket
 
-mkdir -p "$DATA_DIR"
+mkdir -p "$DATA_DIR/files"
 chown -R qsickmarket:qsickmarket "$DATA_DIR"
 chmod 750 "$DATA_DIR"
 chown -R qsickmarket:qsickmarket "$APP_DIR"
@@ -23,6 +23,7 @@ if [ ! -f "$ENV_FILE" ]; then
 QSICK_MARKET_HOST=127.0.0.1
 QSICK_MARKET_PORT=8787
 QSICK_MARKET_DB=$DATA_DIR/market.db
+QSICK_MARKET_FILES=$DATA_DIR/files
 QSICK_MARKET_TOKEN=$token
 EOF
 fi

@@ -57,13 +57,6 @@ def _segments(message: Any) -> list[dict[str, Any]]:
     """
     if not isinstance(message, list):
         return []
-    parts: list[dict[str, Any]] = []
-    for segment in message:
-        if not isinstance(segment, dict):
-            continue
-        kind = str(segment.get("type") or "")
-        data = segment.get("data") if isinstance(segment.get("data"), dict) else {}
-        parts.append({"kind": kind, "type": kind, "data": data})
     return codec.parts_to_segments(_to_parts(message))
 
 

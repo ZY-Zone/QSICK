@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import io
 import json
 import sys
 import threading
 import urllib.error
 import urllib.request
+import urllib.parse
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -131,4 +134,88 @@ def test_full_push_replaces_all(server: str):
 def test_invalid_payload_rejected(server: str):
     bad = plugin(repo_url="https://example.com/not-a-repo")
     status, _ = call(server, "/api/plugins", "POST", bad, token=TOKEN)
+    assert status == 400
+
+
+def _plugin_zip(manifest: dict, extra: dict[str, bytes] | None = None) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("basic.json", json.dumps(manifest, ensure_ascii=False))
+        for name, data in (extra or {}).items():
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+def _multipart(fields: dict[str, str], filename: str, data: bytes):
+    boundary = "----qsick-market-test"
+    chunks: list[bytes] = []
+    for key, value in fields.items():
+        chunks.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode()
+        )
+    chunks.append(
+        f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+        f"Content-Type: application/zip\r\n\r\n".encode()
+        + data
+        + b"\r\n"
+    )
+    chunks.append(f"--{boundary}--\r\n".encode())
+    return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
+
+
+def _raw_call(base: str, path: str, body: bytes, content_type: str, token: str | None = None):
+    request = urllib.request.Request(base + path, data=body, method="POST")
+    request.add_header("Content-Type", content_type)
+    if token:
+        request.add_header("X-Market-Token", token)
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read().decode("utf-8"))
+
+
+def test_upload_plugin_archive(server: str):
+    manifest = {
+        "id": "uploaded",
+        "name": "Uploaded",
+        "version": "1.2.3",
+        "description": "from zip",
+    }
+    archive_data = _plugin_zip(manifest, {"plugin.py": b"VALUE = 1\n"})
+    body, content_type = _multipart({"repo_url": "https://github.com/example/uploaded"}, "uploaded.zip", archive_data)
+
+    status, _ = _raw_call(server, "/api/plugins/upload", body, content_type)
+    assert status == 401
+
+    status, payload = _raw_call(server, "/api/plugins/upload", body, content_type, token=TOKEN)
+    assert status == 200, payload
+    plugin = payload["plugin"]
+    assert plugin["id"] == "uploaded"
+    assert plugin["version"] == "1.2.3"
+    assert plugin["archive_size"] == len(archive_data)
+    assert len(plugin["archive_sha256"]) == 64
+
+    status, body_json = call(server, "/api/plugins/uploaded/install")
+    assert status == 200
+    archive_url = body_json["archive_url"]
+    assert archive_url.startswith("http://127.0.0.1:") and archive_url.endswith(".zip")
+    with urllib.request.urlopen(archive_url, timeout=10) as response:
+        assert response.read() == archive_data
+
+    status, _ = call(server, "/api/plugins/uploaded", "DELETE", token=TOKEN)
+    assert status == 200
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(archive_url, timeout=10)
+    assert exc.value.code == 404
+
+
+def test_upload_rejects_bad_archive(server: str):
+    body, content_type = _multipart({}, "bad.zip", b"not a zip")
+    status, _ = _raw_call(server, "/api/plugins/upload", body, content_type, token=TOKEN)
+    assert status == 400
+
+    empty_zip = _plugin_zip({"name": "No Id"})
+    body, content_type = _multipart({}, "bad.zip", empty_zip)
+    status, _ = _raw_call(server, "/api/plugins/upload", body, content_type, token=TOKEN)
     assert status == 400

@@ -1,7 +1,8 @@
 """Milky 消息段 <-> 内部部件。
 
-Milky 的段类型是**带 tag 的对象**（`{"type": "text", "text": "..."}`），不是 OneBot 的
-`{"type": ..., "data": {...}}`。文件名与 CQ 码和 v11 都不同，所以这里单独写一份，而不是去
+Milky 的段在线上是 `{"type": ..., "data": {...}}`（规范 struct/IncomingSegment）。本模块内部
+先拼扁平段 `{"type": "text", "text": "..."}`，由 `parts_to_segments` 统一包成 `data`；解码两种形状都收。
+字段名与 CQ 码和 v11 都不同，所以这里单独写一份，而不是去
 改 v11 的 codec——两份 codec 各自对着自己的规范，改一个不会悄悄影响另一个。
 
 字段映射：
@@ -68,6 +69,7 @@ def segment_to_part(segment: Any) -> dict[str, Any]:
     """一个 Milky 接收段 -> 一个内部部件。"""
     if not isinstance(segment, dict):
         raise PartError(f"segment must be an object, got {type(segment).__name__}")
+    segment = _unwrap_segment(segment)
     tag = str(segment.get("type") or "").strip()
     if not tag:
         raise PartError("segment needs a 'type'")
@@ -189,8 +191,26 @@ def part_to_segment(part: dict[str, Any]) -> dict[str, Any]:
 
 
 def parts_to_segments(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """内部部件数组 -> Milky 发送段数组。"""
-    return [part_to_segment(part) for part in parts if isinstance(part, dict)]
+    """内部部件数组 -> 规范形状的 Milky 段数组：`{"type": ..., "data": {...}}`。
+
+    规范（struct/IncomingSegment）里段字段只有 `type` 和 `data`，内容全在 `data` 下。
+    以前输出的是扁平的 `{"type": "text", "text": ...}`，客户端读 `data.text` 读到空，
+    表现为推送"没有内容"。
+    """
+    return [wrap_segment(part_to_segment(part)) for part in parts if isinstance(part, dict)]
+
+
+def wrap_segment(flat: dict[str, Any]) -> dict[str, Any]:
+    """扁平段 -> `{"type", "data"}`。"""
+    return {"type": flat.get("type"), "data": {k: v for k, v in flat.items() if k != "type"}}
+
+
+def _unwrap_segment(segment: dict[str, Any]) -> dict[str, Any]:
+    """`{"type", "data"}` -> 扁平段；本来就扁平的原样返回（兼容旧客户端）。"""
+    data = segment.get("data")
+    if isinstance(data, dict):
+        return {**data, "type": segment.get("type")}
+    return segment
 
 
 #: 规范里每个媒体段带了哪些字段。只输出这一组里**真有值**的那些，不补默认值：

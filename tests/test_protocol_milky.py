@@ -85,11 +85,11 @@ class TestSegments:
         parts = milky.decode_message([{"type": "reply", "message_id": big}])
         assert parts[0]["id"] == str(big)
         back = milky.encode_message(parts)
-        assert str(back[0]["message_id"]) == str(big)
+        assert str(back[0]["data"]["message_id"]) == str(big)
 
     def test_text_round_trips(self, milky):
         segments = milky.encode_message([{"kind": "text", "text": "你好"}])
-        assert segments == [{"type": "text", "text": "你好"}]
+        assert segments == [{"type": "text", "data": {"text": "你好"}}]
 
 
 class TestActions:
@@ -223,7 +223,7 @@ class TestEvents:
         })
         assert event["event_type"] == "message_receive"
         assert event["data"]["message_scene"] == "group"
-        assert event["data"]["segments"] == [{"type": "text", "text": "hi"}]
+        assert event["data"]["segments"] == [{"type": "text", "data": {"text": "hi"}}]
 
     def test_a_private_message_reports_the_friend(self, milky):
         event = milky.encode_event({

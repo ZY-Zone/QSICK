@@ -106,21 +106,41 @@ UrlResolver = Callable[[Element], Awaitable[str | None]]
 
 
 async def resolve_media(elements: list[Element], resolver: UrlResolver | None) -> list[Element]:
-    """Fill ``data['url']`` for media elements that only carry an id."""
-    if resolver is None:
-        return elements
+    """Fill ``data['url']`` for media elements that only carry an id or a host-relative path."""
     for element in elements:
         if element.type not in MEDIA_TYPES:
             continue
-        if element.data.get("url"):
+        stored = str(element.data.get("url") or "")
+        if _fetchable_url(stored):
             continue
-        try:
-            url = await resolver(element)
-        except Exception:  # a broken resolver must not lose the message
-            url = None
+        # QQ hands an image a host-relative path. `/gchatpic_new/...` is complete once given a host;
+        # `/download?...` carries no rkey and the server refuses it, so it must be rebuilt.
+        if stored.startswith("/gchatpic_new/"):
+            element.data["url"] = IMAGE_HOST + stored
+            continue
+        url = None
+        if resolver is not None:
+            try:
+                url = await resolver(element)
+            except Exception:  # a broken resolver must not lose the message
+                url = None
         if url:
             element.data["url"] = url
+        elif stored.startswith("/"):
+            # No token could be had. An absolute URL is still more useful than a bare path.
+            element.data["url"] = IMAGE_HOST + stored
     return elements
+
+
+#: Host for the host-relative image paths QQ reports.
+IMAGE_HOST = "https://gchat.qpic.cn"
+
+
+def _fetchable_url(url: str) -> bool:
+    """An absolute http(s) URL that does not still need an rkey."""
+    if not url.startswith(("http://", "https://")):
+        return False
+    return not ("/download?" in url and "rkey=" not in url)
 
 
 # ---------------------------------------------------------------------- onebot
@@ -461,14 +481,11 @@ def to_cq_string(elements: Iterable[Element]) -> str:
             parts.append(f"[CQ:at,qq={qq}]")
         elif element.type == "face":
             parts.append(f"[CQ:face,id={element.data.get('id', 0)}]")
-        elif element.type == "image":
-            parts.append(f"[CQ:image,file={element.data.get('file_id', '')}]")
-        elif element.type == "record":
-            parts.append(f"[CQ:record,file={element.data.get('file_id', '')}]")
-        elif element.type == "video":
-            parts.append(f"[CQ:video,file={element.data.get('file_id', '')}]")
-        elif element.type == "file":
-            parts.append(f"[CQ:file,file={element.data.get('file_id', '')}]")
+        elif element.type in ("image", "record", "video", "file"):
+            # `file` carries the URL a consumer can fetch; the id is only the fallback when no URL exists.
+            d = element.data
+            target = d.get("url") or d.get("file_id") or d.get("file") or ""
+            parts.append(f"[CQ:{element.type},file={_cq_param(target)}]")
         elif element.type == "forward":
             # OneBot v11 has a CQ form for a merged forward. Emitting it keeps `raw_message`
             # readable and round-trippable; the previous fallback collapsed a whole chat record

@@ -10,14 +10,17 @@ Run:  python3 app.py            (reads QSICK_MARKET_* environment variables)
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import mimetypes
 import os
 import re
 import secrets
+import shutil
 import sqlite3
 import sys
 import time
+import zipfile
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -28,6 +31,9 @@ from urllib.parse import parse_qs, quote, urlparse
 BASE = Path(__file__).resolve().parent
 PREFIX = "/QSICK/plugins-market"
 MAX_BODY = 512 * 1024
+MAX_UPLOAD = int(os.environ.get("QSICK_MARKET_MAX_UPLOAD", str(32 * 1024 * 1024)))
+MAX_UNPACKED = 128 * 1024 * 1024
+MAX_ENTRIES = 2000
 SLUG = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
 
 SCHEMA = """
@@ -41,6 +47,8 @@ CREATE TABLE IF NOT EXISTS plugins (
     qsick_min TEXT NOT NULL DEFAULT '',
     qsick_max TEXT NOT NULL DEFAULT '',
     archive_url TEXT NOT NULL DEFAULT '',
+    archive_sha256 TEXT NOT NULL DEFAULT '',
+    archive_size INTEGER NOT NULL DEFAULT 0,
     published_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     stars INTEGER NOT NULL DEFAULT 0,
@@ -75,6 +83,12 @@ def connect(path: str) -> sqlite3.Connection:
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA journal_mode=WAL")
     db.executescript(SCHEMA)
+    columns = {row["name"] for row in db.execute("PRAGMA table_info(plugins)")}
+    # 老库直接补列，避免为了上传功能要求手工迁移。
+    if "archive_sha256" not in columns:
+        db.execute("ALTER TABLE plugins ADD COLUMN archive_sha256 TEXT NOT NULL DEFAULT ''")
+    if "archive_size" not in columns:
+        db.execute("ALTER TABLE plugins ADD COLUMN archive_size INTEGER NOT NULL DEFAULT 0")
     return db
 
 
@@ -111,6 +125,64 @@ def archive_for(repo: str, archive: str) -> str:
     return ""
 
 
+def archive_manifest(data: bytes) -> dict:
+    """校验上传的 zip，并返回 basic.json 里的市场元数据。"""
+    if len(data) > MAX_UPLOAD:
+        raise ValueError(f"插件包不能超过 {MAX_UPLOAD // (1024 * 1024)} MB")
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile as exc:
+        raise ValueError("不是有效的 zip 文件") from exc
+    with archive:
+        members: list[tuple[zipfile.ZipInfo, str]] = []
+        total = 0
+        for info in archive.infolist():
+            if info.is_dir():
+                continue
+            name = info.filename.replace("\\", "/")
+            if name.startswith("__MACOSX/") or name.endswith(".DS_Store"):
+                continue
+            parts = [part for part in name.split("/") if part not in ("", ".")]
+            if not parts or any(part == ".." for part in parts):
+                raise ValueError(f"zip 包含不安全路径: {info.filename}")
+            total += info.file_size
+            if total > MAX_UNPACKED:
+                raise ValueError("zip 解压后过大")
+            members.append((info, "/".join(parts)))
+        if not members:
+            raise ValueError("zip 是空的")
+        if len(members) > MAX_ENTRIES:
+            raise ValueError("zip 文件数量过多")
+        first = {name.split("/")[0] for _, name in members}
+        if len(first) == 1 and all("/" in name for _, name in members):
+            prefix = next(iter(first)) + "/"
+            members = [(info, name[len(prefix):]) for info, name in members]
+        names = {name for _, name in members}
+        if "basic.json" not in names:
+            raise ValueError("zip 根目录缺少 basic.json")
+        info = next(info for info, name in members if name == "basic.json")
+        if info.file_size > 256 * 1024:
+            raise ValueError("basic.json 过大")
+        try:
+            manifest = json.loads(archive.read(info).decode("utf-8"))
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise ValueError("basic.json 不是有效的 JSON") from exc
+    if not isinstance(manifest, dict):
+        raise ValueError("basic.json 必须是 JSON 对象")
+    plugin_id = str(manifest.get("id") or "").strip()
+    if not SLUG.match(plugin_id):
+        raise ValueError("basic.json 的 id 不符合 slug 规则")
+    name = str(manifest.get("name") or "").strip()
+    if not name:
+        raise ValueError("basic.json 缺少 name")
+    return {
+        "id": plugin_id,
+        "name": name[:100],
+        "version": str(manifest.get("version") or "").strip()[:40],
+        "description": str(manifest.get("description") or "").strip()[:1000],
+    }
+
+
 def entry_dict(db: sqlite3.Connection, row: sqlite3.Row, client: str = "") -> dict:
     entry = {
         "id": row["id"],
@@ -122,6 +194,8 @@ def entry_dict(db: sqlite3.Connection, row: sqlite3.Row, client: str = "") -> di
         "qsick_min": row["qsick_min"],
         "qsick_max": row["qsick_max"],
         "archive_url": row["archive_url"] or archive_for(row["repo_url"], ""),
+        "archive_sha256": row["archive_sha256"],
+        "archive_size": row["archive_size"],
         "published_at": row["published_at"],
         "updated_at": row["updated_at"],
         "stars": row["stars"],
@@ -136,10 +210,13 @@ class MarketServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address: tuple[str, int], db_path: str, token: str) -> None:
+    def __init__(self, address: tuple[str, int], db_path: str, token: str, files_dir: str | None = None) -> None:
         super().__init__(address, MarketHandler)
         self.db_path = db_path
         self.token = token
+        default_files = os.environ.get("QSICK_MARKET_FILES", "").strip()
+        self.files_dir = Path(files_dir or default_files or (Path(db_path).parent / "files"))
+        self.public_base = os.environ.get("QSICK_MARKET_PUBLIC_BASE", "").strip().rstrip("/")
 
 
 class MarketHandler(BaseHTTPRequestHandler):
@@ -209,6 +286,9 @@ class MarketHandler(BaseHTTPRequestHandler):
             return
         sub = path[len(PREFIX):] or "/"
         query = parse_qs(parsed.query)
+        if sub.startswith("/files/"):
+            self._serve_archive(sub[len("/files/"):])
+            return
         if sub in ("/", "/index.html"):
             html = (BASE / "index.html").read_text(encoding="utf-8").replace("__PREFIX__", PREFIX)
             self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
@@ -235,6 +315,178 @@ class MarketHandler(BaseHTTPRequestHandler):
             self._install(match.group(1))
             return
         self._error(404, "not found")
+
+    def _public_base(self) -> str:
+        """公开访问基址，用于生成 archive_url（QSICK 安装端要求绝对 http(s) URL）。"""
+        if self.server.public_base:
+            return self.server.public_base
+        proto = (self.headers.get("X-Forwarded-Proto") or "http").split(",")[0].strip() or "http"
+        host = (self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or "sickcc.online").split(",")[0].strip()
+        return f"{proto}://{host}{PREFIX}"
+
+    def _read_multipart(self) -> tuple[dict[str, str], str, bytes]:
+        content_type = self.headers.get("Content-Type") or ""
+        match = re.search(r'boundary=(?:"([^"]+)"|([^;]+))', content_type)
+        if not match:
+            raise ValueError("请求不是 multipart/form-data")
+        boundary = (match.group(1) or match.group(2) or "").strip().encode("utf-8")
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0:
+            raise ValueError("请求体为空")
+        if length > MAX_UPLOAD + 1024 * 1024:
+            raise ValueError("upload too large")
+        raw = self.rfile.read(length)
+        fields: dict[str, str] = {}
+        filename = ""
+        data: bytes | None = None
+        delimiter = b"--" + boundary
+        for chunk in raw.split(delimiter):
+            if chunk in (b"", b"--", b"--\r\n"):
+                continue
+            chunk = chunk.lstrip(b"\r\n")
+            if chunk.startswith(b"--"):
+                continue
+            head, sep, body = chunk.partition(b"\r\n\r\n")
+            if not sep:
+                continue
+            if body.endswith(b"\r\n"):
+                body = body[:-2]
+            headers = head.decode("utf-8", "replace")
+            name_match = re.search(r'name="([^"]+)"', headers)
+            file_match = re.search(r'filename="([^"]*)"', headers)
+            if file_match:
+                filename = file_match.group(1)
+                data = body
+            elif name_match:
+                fields[name_match.group(1)] = body.decode("utf-8", "replace")
+        return fields, filename, data or b""
+
+    def _serve_archive(self, rel: str) -> None:
+        match = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._-]{0,63})/([A-Za-z0-9][A-Za-z0-9._-]*\.zip)", rel)
+        if not match:
+            self._error(404, "not found")
+            return
+        plugin_id, filename = match.groups()
+        folder = (self.server.files_dir / plugin_id).resolve()
+        target = (folder / filename).resolve()
+        if folder not in target.parents or not target.is_file():
+            self._error(404, "not found")
+            return
+        self._send(
+            200,
+            target.read_bytes(),
+            "application/zip",
+            {
+                "Content-Disposition": f'attachment; filename="{plugin_id}-{filename}"',
+                "Cache-Control": "public, max-age=31536000, immutable",
+            },
+        )
+
+    def _cleanup_archives(self, plugin_id: str, keep: str) -> None:
+        folder = self.server.files_dir / plugin_id
+        archives = sorted(folder.glob("*.zip"), key=lambda item: item.stat().st_mtime, reverse=True)
+        for old in archives[5:]:
+            try:
+                old.unlink()
+            except OSError:
+                pass
+
+    def _upload(self) -> None:
+        if not self._admin():
+            self._error(401, "admin token required")
+            return
+        try:
+            fields, filename, data = self._read_multipart()
+        except ValueError as exc:
+            status = 413 if "too large" in str(exc) else 400
+            self._error(status, str(exc))
+            return
+        if not filename or not data:
+            self._error(400, "缺少插件包文件")
+            return
+        if not filename.lower().endswith(".zip"):
+            self._error(400, "插件包必须是 .zip")
+            return
+        try:
+            manifest = archive_manifest(data)
+        except ValueError as exc:
+            self._error(400, str(exc))
+            return
+
+        plugin_id = manifest["id"]
+        repo = str(fields.get("repo_url") or "").strip()[:300]
+        if repo and not repo.startswith(("https://", "http://")):
+            self._error(400, "repo_url 必须是 http(s) URL")
+            return
+        icon = str(fields.get("icon_url") or "").strip()[:500]
+        qsick_min = str(fields.get("qsick_min") or "").strip()[:40]
+        qsick_max = str(fields.get("qsick_max") or "").strip()[:40]
+
+        digest = hashlib.sha256(data).hexdigest()
+        folder = self.server.files_dir / plugin_id
+        folder.mkdir(parents=True, exist_ok=True)
+        stored_name = f"{digest[:20]}.zip"
+        target = folder / stored_name
+        temp = folder / (stored_name + ".part")
+        temp.write_bytes(data)
+        os.chmod(temp, 0o640)
+        temp.replace(target)
+        archive_url = f"{self._public_base()}/files/{plugin_id}/{stored_name}"
+        stamp = now()
+
+        with connect(self.server.db_path) as db:
+            row = db.execute("SELECT * FROM plugins WHERE id = ?", (plugin_id,)).fetchone()
+            if row is None:
+                db.execute(
+                    """
+                    INSERT INTO plugins (id, name, repo_url, description, icon_url, version,
+                                         qsick_min, qsick_max, archive_url, archive_sha256, archive_size,
+                                         published_at, updated_at, stars)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    """,
+                    (
+                        plugin_id,
+                        manifest["name"],
+                        repo,
+                        manifest["description"],
+                        icon,
+                        manifest["version"],
+                        qsick_min,
+                        qsick_max,
+                        archive_url,
+                        digest,
+                        len(data),
+                        stamp,
+                        stamp,
+                    ),
+                )
+            else:
+                db.execute(
+                    """
+                    UPDATE plugins SET name=?, repo_url=?, description=?, icon_url=?, version=?,
+                        qsick_min=?, qsick_max=?, archive_url=?, archive_sha256=?, archive_size=?, updated_at=?
+                    WHERE id=?
+                    """,
+                    (
+                        manifest["name"],
+                        repo or row["repo_url"],
+                        manifest["description"],
+                        icon or row["icon_url"],
+                        manifest["version"] or row["version"],
+                        qsick_min or row["qsick_min"],
+                        qsick_max or row["qsick_max"],
+                        archive_url,
+                        digest,
+                        len(data),
+                        stamp,
+                        plugin_id,
+                    ),
+                )
+            db.commit()
+            saved = db.execute("SELECT * FROM plugins WHERE id = ?", (plugin_id,)).fetchone()
+            entry = entry_dict(db, saved)
+        self._cleanup_archives(plugin_id, stored_name)
+        self._json(200, {"ok": True, "plugin": entry})
 
     def _static(self, name: str) -> None:
         target = (BASE / "static" / name).resolve()
@@ -336,6 +588,8 @@ class MarketHandler(BaseHTTPRequestHandler):
                 "version": entry["version"],
                 "repo_url": entry["repo_url"],
                 "archive_url": entry["archive_url"],
+                "archive_sha256": entry["archive_sha256"],
+                "archive_size": entry["archive_size"],
                 "icon_url": entry["icon_url"],
             },
         )
@@ -344,6 +598,9 @@ class MarketHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         sub = self.path[len(PREFIX):] if self.path.startswith(PREFIX) else self.path
         sub = sub.split("?", 1)[0]
+        if sub == "/api/plugins/upload":
+            self._upload()
+            return
         try:
             payload = self._body()
         except (ValueError, json.JSONDecodeError) as exc:
@@ -407,10 +664,15 @@ class MarketHandler(BaseHTTPRequestHandler):
         if not self._admin():
             self._error(401, "admin token required")
             return
+        plugin_id = match.group(1)
+        if not SLUG.match(plugin_id):
+            self._error(404, "not found")
+            return
         with connect(self.server.db_path) as db:
-            db.execute("DELETE FROM plugins WHERE id = ?", (match.group(1),))
-            db.execute("DELETE FROM likes WHERE plugin_id = ?", (match.group(1),))
+            db.execute("DELETE FROM plugins WHERE id = ?", (plugin_id,))
+            db.execute("DELETE FROM likes WHERE plugin_id = ?", (plugin_id,))
             db.commit()
+        shutil.rmtree(self.server.files_dir / plugin_id, ignore_errors=True)
         self._json(200, {"ok": True})
 
     def do_OPTIONS(self) -> None:  # noqa: N802

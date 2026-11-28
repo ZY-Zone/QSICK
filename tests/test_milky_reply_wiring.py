@@ -127,7 +127,7 @@ def test_message_wrap_and_history_sort_without_id_as_sequence():
                "group_id": 3, "sender": {"user_id": 2}, "message": [{"type": "text", "data": {"text": "hello"}}]}
     data = reply("get_message", message)["data"]["message"]
     assert data["message_scene"] == "group" and data["peer_id"] == 3 and data["sender_id"] == 2
-    assert data["segments"] == [{"type": "text", "text": "hello"}]
+    assert data["segments"] == [{"type": "text", "data": {"text": "hello"}}]
     assert "group" not in data  # No invented default entity.
     history = reply("get_history_messages", {"messages": [message, {**message, "message_seq": 11}]})["data"]
     assert [m["message_seq"] for m in history["messages"]] == [11, 12]

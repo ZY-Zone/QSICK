@@ -141,7 +141,8 @@ def test_measurements_survive_the_whole_event_conversion():
     assert record["data"]["duration"] == 5
 
     segments = convert(event)["data"]["segments"]
-    assert segments[0]["width"] == 640 and segments[0]["height"] == 480
-    assert segments[0]["sub_type"] == "sticker"
-    assert segments[1]["duration"] == 12
-    assert segments[2]["duration"] == 5
+    data = segments[0]["data"]  # 规范形状：内容在 data 下
+    assert data["width"] == 640 and data["height"] == 480
+    assert data["sub_type"] == "sticker"
+    assert segments[1]["data"]["duration"] == 12
+    assert segments[2]["data"]["duration"] == 5
