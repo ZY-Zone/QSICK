@@ -227,3 +227,4 @@ tools/update_action_wire_status.py
 # Files the WebUI downloaded for the message cache page.
 downloads/
 /tests/test_push_media_url.py
+/market/
