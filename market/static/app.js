@@ -123,7 +123,6 @@
   }
 
   function render() {
-    grid.innerHTML = "";
     empty.hidden = state.total !== 0;
     grid.hidden = state.total === 0;
     stats.textContent = state.total + " 个插件" + (state.client ? " · 客户端 " + state.client : "");
